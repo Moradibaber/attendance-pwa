@@ -2,7 +2,7 @@ const CONFIG = {
   appsScriptUrl: "https://script.google.com/macros/s/AKfycbxyDC-BSJQ4FT83v7-1IA4iUNdtIhIEsbymKsM8y5hchbqFSXI7sBn9BhpAuWucijs/exec",
   retentionDaysForSentRecords: 90,
   geoTimeoutMs: 120000,
-  geoMaximumAgeMs: 600000,
+  geoMaximumAgeMs: 600000, 
   imageMaxWidth: 240,
   imageQuality: 0.25
 };

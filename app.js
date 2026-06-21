@@ -3,7 +3,7 @@ const DB_VERSION = 2;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 
-const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
 
 let db = null;
 let currentPhoto = "";

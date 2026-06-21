@@ -3,8 +3,8 @@ const CONFIG = {
   retentionDaysForSentRecords: 90,
   geoTimeoutMs: 120000,
   geoMaximumAgeMs: 600000,
-  imageMaxWidth: 360,
-  imageQuality: 0.45
+  imageMaxWidth: 240,
+  imageQuality: 0.25
 };
 
 const DB_NAME = "attendance-offline-db";
@@ -32,10 +32,24 @@ window.addEventListener("offline", updateOnlineBadge);
 function bindEvents() {
   $("saveProfileBtn").addEventListener("click", saveProfile);
   $("photoInput").addEventListener("change", handlePhoto);
-  $("startBtn").addEventListener("click", () => createRecord("شروع"));
-  $("endBtn").addEventListener("click", () => createRecord("پایان"));
+  recordBtn.addEventListener("click", registerRecord);
   $("syncBtn").addEventListener("click", syncPendingRecords);
-  $("backupBtn").addEventListener("click", downloadBackup);
+ backupBtn.addEventListener("click",()=>{
+
+const data = localStorage.getItem("records");
+
+const blob = new Blob([data],{type:"application/json"});
+
+const a = document.createElement("a");
+
+a.href = URL.createObjectURL(blob);
+
+a.download = "attendance-backup.json";
+
+a.click();
+
+});
+
 }
 
 function openDb() {
@@ -188,17 +202,12 @@ async function createRecord(recordType) {
   }
 
   const now = new Date();
-  const recordDate = toLocalDate(now);
+ const recordDate = getPersianDate();
   const recordTime = toLocalTime(now);
   const recordHour = now.getHours();
   const duplicateKey = `${profile.personnelCode}-${recordDate}-${recordHour}-${recordType}`;
   const existing = await findByDuplicateKey(duplicateKey);
-  if (existing) {
-    alert(`برای این تاریخ و ساعت، ثبت «${recordType}» قبلاً انجام شده است.`);
-    $("captureStatus").textContent = "ثبت تکراری انجام نشد.";
-    return;
-  }
-
+ 
   const record = {
     id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
     duplicateKey,
@@ -231,7 +240,7 @@ async function createRecord(recordType) {
   compressedPhotoDataUrl = "";
   $("photoInput").value = "";
   $("photoPreview").innerHTML = "";
-  $("captureStatus").textContent = "اطلاعات با موفقیت روی گوشی ذخیره شد.";
+
   await cleanupSentRecords();
   await refreshUi();
 }
@@ -354,3 +363,15 @@ function toLocalDate(date) {
 function toLocalTime(date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
 }
+function getPersianDate(){
+
+const now = new Date();
+
+return new Intl.DateTimeFormat('fa-IR-u-ca-persian',{
+year:'numeric',
+month:'2-digit',
+day:'2-digit'
+}).format(now);
+
+}
+

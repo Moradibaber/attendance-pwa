@@ -32,10 +32,9 @@ window.addEventListener("offline", updateOnlineBadge);
 function bindEvents() {
   $("saveProfileBtn").addEventListener("click", saveProfile);
   $("photoInput").addEventListener("change", handlePhoto);
-  recordBtn.addEventListener("click", registerRecord);
+  $("recordBtn").addEventListener("click", () => createRecord("تردد"));
   $("syncBtn").addEventListener("click", syncPendingRecords);
- backupBtn.addEventListener("click",()=>{
-
+  $("backupBtn").addEventListener("click",()=>{
 const data = localStorage.getItem("records");
 
 const blob = new Blob([data],{type:"application/json"});

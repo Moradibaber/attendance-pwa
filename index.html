@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f766e" />
+  <title>ثبت تردد آفلاین</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="card hero">
+      <h1>ثبت تردد آفلاین</h1>
+      <p>ثبت شروع/پایان همراه عکس، موقعیت و زمان؛ ارسال دستی پس از اتصال اینترنت.</p>
+      <div id="onlineBadge" class="badge">در حال بررسی وضعیت اینترنت...</div>
+    </header>
+
+    <section class="card warning">
+      <strong>هشدار مهم</strong>
+      <p>
+        شما در حال استفاده از سامانه ثبت تردد هستید. حذف اطلاعات برنامه، پاک کردن حافظه مرورگر،
+        حذف برنامه یا زدن گزینه Clear data / Clear storage ممکن است باعث حذف اطلاعات تردد ارسال‌نشده شود.
+        ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد و عواقب حذف آن به عهده کاربر است.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>مشخصات پرسنلی</h2>
+      <label>شماره پرسنلی
+        <input id="personnelCode" inputmode="numeric" autocomplete="off" placeholder="مثلاً 12345" />
+      </label>
+      <label>نام
+        <input id="firstName" autocomplete="given-name" placeholder="نام" />
+      </label>
+      <label>نام خانوادگی
+        <input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
+      </label>
+      <button id="saveProfileBtn" class="secondary">ذخیره مشخصات روی همین گوشی</button>
+    </section>
+
+    <section class="card">
+      <h2>ثبت تردد</h2>
+      <p class="muted">در هر تاریخ و هر ساعت، فقط یک ثبت «شروع» و یک ثبت «پایان» مجاز است.</p>
+
+      <label>عکس چهره
+        <input id="photoInput" type="file" accept="image/*" capture="user" />
+      </label>
+      <div id="photoPreview" class="preview"></div>
+
+      <div class="grid2">
+        <button id="startBtn" class="primary">ثبت شروع</button>
+        <button id="endBtn" class="primary alt">ثبت پایان</button>
+      </div>
+      <p id="captureStatus" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>ارسال و وضعیت</h2>
+      <div class="stats">
+        <div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
+        <div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
+        <div><span id="failedCount">0</span><small>ناموفق</small></div>
+      </div>
+      <button id="syncBtn" class="success">ارسال اطلاعات ذخیره‌شده</button>
+      <button id="backupBtn" class="secondary">دریافت پشتیبان اضطراری</button>
+      <p id="syncStatus" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>آخرین ثبت‌ها</h2>
+      <div id="recordsList" class="records"></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

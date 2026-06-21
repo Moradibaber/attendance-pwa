@@ -1,0 +1,58 @@
+:root {
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --primary: #0f766e;
+  --primary-dark: #115e59;
+  --danger-bg: #fff7ed;
+  --danger-border: #fb923c;
+  --border: #e2e8f0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Tahoma, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.app { width: min(760px, 100%); margin: 0 auto; padding: 14px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  margin: 12px 0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .06);
+}
+.hero { background: linear-gradient(135deg, #0f766e, #14b8a6); color: white; }
+h1, h2 { margin: 0 0 10px; }
+p { line-height: 1.8; }
+.warning { background: var(--danger-bg); border-color: var(--danger-border); }
+label { display: block; margin: 12px 0; font-weight: 700; }
+input, button {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 13px;
+  margin-top: 7px;
+  font: inherit;
+}
+button { border: 0; cursor: pointer; font-weight: 800; }
+.primary { background: var(--primary); color: white; }
+.primary.alt { background: #2563eb; }
+.success { background: #16a34a; color: white; }
+.secondary { background: #e2e8f0; color: #0f172a; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.badge { display: inline-block; background: rgba(255,255,255,.2); padding: 8px 12px; border-radius: 999px; }
+.muted { color: var(--muted); }
+.status { min-height: 28px; color: var(--primary-dark); font-weight: 700; }
+.preview img { max-width: 160px; border-radius: 14px; border: 1px solid var(--border); margin-top: 8px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
+.stats div { background: #f8fafc; border-radius: 14px; padding: 12px; text-align: center; }
+.stats span { display: block; font-size: 28px; font-weight: 900; }
+.stats small { color: var(--muted); }
+.record { border-bottom: 1px solid var(--border); padding: 10px 0; }
+.record:last-child { border-bottom: 0; }
+.record b { color: var(--primary-dark); }
+@media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }

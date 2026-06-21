@@ -1,5 +1,5 @@
 const CONFIG = {
-  appsScriptUrl: "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec",
+  appsScriptUrl: "https://script.google.com/macros/s/AKfycbxyDC-BSJQ4FT83v7-1IA4iUNdtIhIEsbymKsM8y5hchbqFSXI7sBn9BhpAuWucijs/exec",
   retentionDaysForSentRecords: 90,
   geoTimeoutMs: 120000,
   geoMaximumAgeMs: 600000,

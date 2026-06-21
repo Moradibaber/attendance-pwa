@@ -1,421 +1,540 @@
-const CONFIG = {
-  appsScriptUrl: "https://script.google.com/macros/s/AKfycbxyDC-BSJQ4FT83v7-1IA4iUNdtIhIEsbymKsM8y5hchbqFSXI7sBn9BhpAuWucijs/exec",
-  retentionDaysForSentRecords: 90,
-  geoTimeoutMs: 120000,
-  geoMaximumAgeMs: 600000,
-  imageMaxWidth: 240,
-  imageQuality: 0.25
-};
+const DB_NAME = "attendance-pwa-db";
+const DB_VERSION = 2;
+const STORE_RECORDS = "records";
+const STORE_PROFILE = "profile";
 
-const DB_NAME="attendance-offline-db";
-const DB_VERSION=2;
-const STORE_RECORDS="records";
-const STORE_SETTINGS="settings";
+const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 
-let db;
-let compressedPhotoDataUrl="";
+let db = null;
+let currentPhoto = "";
 
-const $=id=>document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
-window.addEventListener("load",async()=>{
+document.addEventListener("DOMContentLoaded", async () => {
+  db = await openDb();
 
-db=await openDb();
-await loadProfile();
+  bindEvents();
+  await loadProfile();
+  await refreshUi();
 
-bindEvents();
-updateOnlineBadge();
-refreshUi();
+  updateOnlineBadge();
 
-if(navigator.onLine)syncPendingRecords();
+  if (navigator.onLine) {
+    await syncPendingRecords();
+  }
 
+  window.addEventListener("online", async () => {
+    updateOnlineBadge();
+    await syncPendingRecords();
+  });
+
+  window.addEventListener("offline", updateOnlineBadge);
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
 });
 
-window.addEventListener("online",async()=>{
+function bindEvents() {
+  if ($("saveProfileBtn")) {
+    $("saveProfileBtn").addEventListener("click", saveProfile);
+  }
 
-updateOnlineBadge();
-syncPendingRecords();
+  if ($("recordBtn")) {
+    $("recordBtn").addEventListener("click", () => {
+      if (!$("photoInput")) {
+        setStatus("خطا: ورودی دوربین در صفحه پیدا نشد.");
+        return;
+      }
 
-});
+      $("photoInput").value = "";
+      $("photoInput").click();
+    });
+  }
 
-window.addEventListener("offline",updateOnlineBadge);
+  if ($("photoInput")) {
+    $("photoInput").addEventListener("change", async () => {
+      const file = $("photoInput").files && $("photoInput").files[0];
 
-function bindEvents(){
+      if (!file) {
+        setStatus("عکسی انتخاب نشد.");
+        return;
+      }
 
-$("saveProfileBtn").addEventListener("click",saveProfile);
+      try {
+        setStatus("در حال آماده‌سازی عکس...");
+        currentPhoto = await compressImage(file);
 
-$("recordBtn").addEventListener("click",()=>{
+        if ($("photoPreview")) {
+          $("photoPreview").src = currentPhoto;
+          $("photoPreview").style.display = "block";
+        }
 
-$("photoInput").click();
+        await createRecord("تردد");
+      } catch (error) {
+        setStatus("خطا در آماده‌سازی عکس: " + error.message);
+      }
+    });
+  }
 
-});
+  if ($("syncBtn")) {
+    $("syncBtn").addEventListener("click", syncPendingRecords);
+  }
 
-$("photoInput").addEventListener("change",async e=>{
-
-await handlePhoto(e);
-await createRecord("تردد");
-
-});
-
-$("backupBtn").addEventListener("click",downloadBackup);
-
+  if ($("backupBtn")) {
+    $("backupBtn").addEventListener("click", downloadBackup);
+  }
 }
 
-function openDb(){
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-return new Promise((resolve,reject)=>{
+    request.onupgradeneeded = (event) => {
+      const database = event.target.result;
 
-const req=indexedDB.open(DB_NAME,DB_VERSION);
+      if (!database.objectStoreNames.contains(STORE_RECORDS)) {
+        const recordsStore = database.createObjectStore(STORE_RECORDS, {
+          keyPath: "id",
+          autoIncrement: true
+        });
 
-req.onupgradeneeded=()=>{
+        recordsStore.createIndex("status", "status", { unique: false });
+      } else {
+        const transaction = event.target.transaction;
+        const recordsStore = transaction.objectStore(STORE_RECORDS);
 
-const db=req.result;
+        if (!recordsStore.indexNames.contains("status")) {
+          recordsStore.createIndex("status", "status", { unique: false });
+        }
 
-if(!db.objectStoreNames.contains(STORE_RECORDS)){
+        if (recordsStore.indexNames.contains("duplicateKey")) {
+          recordsStore.deleteIndex("duplicateKey");
+        }
+      }
 
-const store=db.createObjectStore(STORE_RECORDS,{keyPath:"id"});
-store.createIndex("status","status",{unique:false});
+      if (!database.objectStoreNames.contains(STORE_PROFILE)) {
+        database.createObjectStore(STORE_PROFILE, { keyPath: "id" });
+      }
+    };
 
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-if(!db.objectStoreNames.contains(STORE_SETTINGS)){
+function dbPut(storeName, value) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, "readwrite");
+    const store = transaction.objectStore(storeName);
+    const request = store.put(value);
 
-db.createObjectStore(STORE_SETTINGS,{keyPath:"key"});
-
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-};
+function dbGet(storeName, key) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, "readonly");
+    const store = transaction.objectStore(storeName);
+    const request = store.get(key);
 
-req.onsuccess=()=>resolve(req.result);
-req.onerror=()=>reject(req.error);
-
-});
-
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-function tx(name,mode="readonly"){
+function dbGetAll(storeName) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, "readonly");
+    const store = transaction.objectStore(storeName);
+    const request = store.getAll();
 
-return db.transaction(name,mode).objectStore(name);
-
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-function dbPut(store,val){
+function dbDelete(storeName, key) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, "readwrite");
+    const store = transaction.objectStore(storeName);
+    const request = store.delete(key);
 
-return new Promise((res,rej)=>{
-
-const r=tx(store,"readwrite").put(val);
-
-r.onsuccess=()=>res(val);
-r.onerror=()=>rej(r.error);
-
-});
-
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
-function dbGet(store,key){
+async function saveProfile() {
+  const profile = {
+    id: "main",
+    personnelCode: ($("personnelCode")?.value || "").trim(),
+    firstName: ($("firstName")?.value || "").trim(),
+    lastName: ($("lastName")?.value || "").trim()
+  };
 
-return new Promise((res,rej)=>{
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    setStatus("لطفاً نام، نام خانوادگی و شماره پرسنلی را کامل وارد کنید.");
+    return;
+  }
 
-const r=tx(store).get(key);
-
-r.onsuccess=()=>res(r.result);
-r.onerror=()=>rej(r.error);
-
-});
-
+  await dbPut(STORE_PROFILE, profile);
+  setStatus("مشخصات با موفقیت ذخیره شد.");
 }
 
-function dbGetAll(store){
+async function loadProfile() {
+  const profile = await dbGet(STORE_PROFILE, "main");
 
-return new Promise((res,rej)=>{
+  if (!profile) return;
 
-const r=tx(store).getAll();
-
-r.onsuccess=()=>res(r.result||[]);
-r.onerror=()=>rej(r.error);
-
-});
-
+  if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
+  if ($("firstName")) $("firstName").value = profile.firstName || "";
+  if ($("lastName")) $("lastName").value = profile.lastName || "";
 }
 
-function dbDelete(store,key){
+async function getProfile() {
+  const savedProfile = await dbGet(STORE_PROFILE, "main");
 
-return new Promise((res,rej)=>{
+  const profile = {
+    personnelCode: ($("personnelCode")?.value || savedProfile?.personnelCode || "").trim(),
+    firstName: ($("firstName")?.value || savedProfile?.firstName || "").trim(),
+    lastName: ($("lastName")?.value || savedProfile?.lastName || "").trim()
+  };
 
-const r=tx(store,"readwrite").delete(key);
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    throw new Error("لطفاً ابتدا مشخصات پرسنلی را کامل وارد و ذخیره کنید.");
+  }
 
-r.onsuccess=()=>res();
-r.onerror=()=>rej(r.error);
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
 
-});
-
+  return profile;
 }
 
-function updateOnlineBadge(){
+async function createRecord(type) {
+  try {
+    setStatus("در حال دریافت موقعیت مکانی...");
 
-$("onlineBadge").textContent=navigator.onLine?"وضعیت: آنلاین":"وضعیت: آفلاین";
+    const profile = await getProfile();
+    const location = await getLocation();
 
+    const now = new Date();
+    const record = {
+      personnelCode: profile.personnelCode,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      type: type,
+      recordDate: getPersianDate(now),
+      recordTime: getTime(now),
+      latitude: location.latitude,
+      longitude: location.longitude,
+      accuracy: location.accuracy,
+      deviceTime: now.toISOString(),
+      photo: currentPhoto || "",
+      status: "pending",
+      createdAt: now.toISOString()
+    };
+
+    await dbPut(STORE_RECORDS, record);
+
+    currentPhoto = "";
+
+    setStatus("ثبت تردد با موفقیت ذخیره شد.");
+
+    await refreshUi();
+
+    if (navigator.onLine) {
+      await syncPendingRecords();
+    }
+  } catch (error) {
+    setStatus(error.message || "خطا در ثبت تردد.");
+  }
 }
 
-async function saveProfile(){
+function getLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({
+        latitude: "",
+        longitude: "",
+        accuracy: ""
+      });
+      return;
+    }
 
-const p=getProfile();
-
-if(!p.personnelCode||!p.firstName||!p.lastName){
-
-alert("مشخصات کامل نیست");
-return;
-
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy
+        });
+      },
+      () => {
+        resolve({
+          latitude: "",
+          longitude: "",
+          accuracy: ""
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      }
+    );
+  });
 }
 
-await dbPut(STORE_SETTINGS,{key:"profile",value:p});
+async function syncPendingRecords() {
+  if (!navigator.onLine) {
+    setSyncStatus("اینترنت قطع است. اطلاعات ذخیره می‌ماند.");
+    return;
+  }
 
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE_YOUR")) {
+    setSyncStatus("لینک Google Apps Script در app.js تنظیم نشده است.");
+    return;
+  }
+
+  const records = await dbGetAll(STORE_RECORDS);
+  const unsentRecords = records.filter((record) => record.status === "pending" || record.status === "failed");
+
+  if (unsentRecords.length === 0) {
+    setSyncStatus("اطلاعات ارسال‌نشده‌ای وجود ندارد.");
+    await refreshUi();
+    return;
+  }
+
+  setSyncStatus("در حال ارسال اطلاعات ذخیره‌شده...");
+
+  for (const record of unsentRecords) {
+    try {
+      const payload = {
+        personnelCode: record.personnelCode || "",
+        firstName: record.firstName || "",
+        lastName: record.lastName || "",
+        type: record.type || "تردد",
+        recordDate: record.recordDate || "",
+        recordTime: record.recordTime || "",
+        latitude: record.latitude || "",
+        longitude: record.longitude || "",
+        accuracy: record.accuracy || "",
+        deviceTime: record.deviceTime || "",
+        photo: record.photo || "",
+        status: "sent",
+        createdAt: record.createdAt || ""
+      };
+
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        mode: "cors",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+
+      if (result && result.ok) {
+        record.status = "sent";
+        record.sentAt = new Date().toISOString();
+        await dbPut(STORE_RECORDS, record);
+
+        if (result.message) {
+          showAdminMessage(result.message);
+        }
+      } else {
+        record.status = "failed";
+        record.error = result && result.error ? result.error : "خطا در پاسخ سرور";
+        await dbPut(STORE_RECORDS, record);
+      }
+    } catch (error) {
+      record.status = "failed";
+      record.error = error.message || String(error);
+      await dbPut(STORE_RECORDS, record);
+    }
+  }
+
+  setSyncStatus("ارسال اطلاعات انجام شد.");
+  await refreshUi();
 }
 
-function getProfile(){
+async function refreshUi() {
+  const records = await dbGetAll(STORE_RECORDS);
 
-return{
+  const pendingCount = records.filter((record) => record.status === "pending").length;
+  const sentCount = records.filter((record) => record.status === "sent").length;
+  const failedCount = records.filter((record) => record.status === "failed").length;
 
-personnelCode:$("personnelCode").value.trim(),
-firstName:$("firstName").value.trim(),
-lastName:$("lastName").value.trim()
+  if ($("pendingCount")) $("pendingCount").textContent = pendingCount;
+  if ($("sentCount")) $("sentCount").textContent = sentCount;
+  if ($("failedCount")) $("failedCount").textContent = failedCount;
 
-};
-
+  renderRecords(records);
 }
 
-async function loadProfile(){
+function renderRecords(records) {
+  if (!$("recordsList")) return;
 
-const row=await dbGet(STORE_SETTINGS,"profile");
+  if (!records.length) {
+    $("recordsList").innerHTML = "<p>هنوز ترددی ثبت نشده است.</p>";
+    return;
+  }
 
-if(!row?.value)return;
+  const sortedRecords = [...records].sort((a, b) => {
+    return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  });
 
-$("personnelCode").value=row.value.personnelCode||"";
-$("firstName").value=row.value.firstName||"";
-$("lastName").value=row.value.lastName||"";
+  $("recordsList").innerHTML = sortedRecords
+    .slice(0, 30)
+    .map((record) => {
+      const statusText =
+        record.status === "sent"
+          ? "ارسال شده"
+          : record.status === "failed"
+            ? "ارسال ناموفق"
+            : "در انتظار ارسال";
 
+      return `
+        <div class="record-item">
+          <strong>${escapeHtml(record.firstName || "")} ${escapeHtml(record.lastName || "")}</strong>
+          <div>شماره پرسنلی: ${escapeHtml(record.personnelCode || "")}</div>
+          <div>تاریخ: ${escapeHtml(record.recordDate || "")}</div>
+          <div>ساعت: ${escapeHtml(record.recordTime || "")}</div>
+          <div>وضعیت: ${statusText}</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
-async function handlePhoto(e){
+function updateOnlineBadge() {
+  if (!$("onlineBadge")) return;
 
-const file=e.target.files?.[0];
-if(!file)return;
-
-compressedPhotoDataUrl=await compressImage(file);
-
-$("photoPreview").innerHTML=`<img src="${compressedPhotoDataUrl}">`;
-
+  if (navigator.onLine) {
+    $("onlineBadge").textContent = "آنلاین";
+    $("onlineBadge").className = "status online";
+  } else {
+    $("onlineBadge").textContent = "آفلاین";
+    $("onlineBadge").className = "status offline";
+  }
 }
 
-function compressImage(file){
-
-return new Promise(resolve=>{
-
-const img=new Image();
-const reader=new FileReader();
-
-reader.onload=()=>img.src=reader.result;
-
-img.onload=()=>{
-
-const scale=Math.min(1,CONFIG.imageMaxWidth/img.width);
-
-const canvas=document.createElement("canvas");
-
-canvas.width=img.width*scale;
-canvas.height=img.height*scale;
-
-const ctx=canvas.getContext("2d");
-
-ctx.drawImage(img,0,0,canvas.width,canvas.height);
-
-resolve(canvas.toDataURL("image/jpeg",CONFIG.imageQuality));
-
-};
-
-reader.readAsDataURL(file);
-
-});
-
+function setStatus(message) {
+  if ($("captureStatus")) {
+    $("captureStatus").textContent = message;
+  }
 }
 
-async function createRecord(type){
-
-const profile=getProfile();
-
-if(!profile.personnelCode){
-
-alert("مشخصات ذخیره نشده");
-return;
-
+function setSyncStatus(message) {
+  if ($("syncStatus")) {
+    $("syncStatus").textContent = message;
+  } else {
+    setStatus(message);
+  }
 }
 
-$("captureStatus").textContent="در حال دریافت GPS...";
+function showAdminMessage(message) {
+  const finalMessage = "پیام مدیر: " + message;
 
-let pos=null;
+  if ($("syncStatus")) {
+    $("syncStatus").textContent = finalMessage;
+  } else {
+    setStatus(finalMessage);
+  }
 
-try{
-
-pos=await getLocation();
-
-}catch{}
-
-const now=new Date();
-
-const rec={
-
-id:crypto.randomUUID(),
-personnelCode:profile.personnelCode,
-firstName:profile.firstName,
-lastName:profile.lastName,
-recordType:type,
-recordDate:getPersianDate(),
-recordTime:toLocalTime(now),
-deviceTime:now.toISOString(),
-latitude:pos?.coords?.latitude??"",
-longitude:pos?.coords?.longitude??"",
-accuracy:pos?.coords?.accuracy??"",
-photo:compressedPhotoDataUrl,
-status:"pending",
-createdAt:now.toISOString(),
-sentAt:""
-
-};
-
-await dbPut(STORE_RECORDS,rec);
-
-compressedPhotoDataUrl="";
-$("photoPreview").innerHTML="";
-$("captureStatus").textContent="ثبت شد";
-
-await refreshUi();
-
-if(navigator.onLine){
-
-syncPendingRecords();
-
+  alert(finalMessage);
 }
 
+function getPersianDate(date) {
+  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
 }
 
-function getLocation(){
-
-return new Promise((res,rej)=>{
-
-navigator.geolocation.getCurrentPosition(res,rej,{
-enableHighAccuracy:false,
-timeout:CONFIG.geoTimeoutMs,
-maximumAge:CONFIG.geoMaximumAgeMs
-});
-
-});
-
+function getTime(date) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(date);
 }
 
-async function syncPendingRecords(){
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
 
-if(!navigator.onLine)return;
+    reader.onload = () => {
+      const image = new Image();
 
-const records=await dbGetAll(STORE_RECORDS);
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
 
-const pending=records.filter(r=>r.status!=="sent");
+        const maxWidth = 900;
+        const maxHeight = 900;
 
-for(const r of pending){
+        let width = image.width;
+        let height = image.height;
 
-try{
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
 
-const resp=await fetch(CONFIG.appsScriptUrl,{
-method:"POST",
-headers:{"Content-Type":"text/plain"},
-body:JSON.stringify(r)
-});
+        canvas.width = width;
+        canvas.height = height;
 
-const result=await resp.json();
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, width, height);
 
-if(result.ok){
+        const compressed = canvas.toDataURL("image/jpeg", 0.65);
+        resolve(compressed);
+      };
 
-r.status="sent";
-r.sentAt=new Date().toISOString();
+      image.onerror = () => reject(new Error("عکس قابل خواندن نیست."));
+      image.src = reader.result;
+    };
 
-await dbPut(STORE_RECORDS,r);
-
+    reader.onerror = () => reject(new Error("خطا در خواندن عکس."));
+    reader.readAsDataURL(file);
+  });
 }
 
-}catch{
+async function downloadBackup() {
+  const records = await dbGetAll(STORE_RECORDS);
 
-r.status="failed";
-await dbPut(STORE_RECORDS,r);
+  const blob = new Blob([JSON.stringify(records, null, 2)], {
+    type: "application/json;charset=utf-8"
+  });
 
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = "attendance-backup.json";
+  link.click();
+
+  URL.revokeObjectURL(url);
 }
 
-}
-
-refreshUi();
-
-}
-
-async function refreshUi(){
-
-const records=await dbGetAll(STORE_RECORDS);
-
-$("pendingCount").textContent=records.filter(r=>r.status==="pending").length;
-$("sentCount").textContent=records.filter(r=>r.status==="sent").length;
-$("failedCount").textContent=records.filter(r=>r.status==="failed").length;
-
-const latest=records.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,10);
-
-$("recordsList").innerHTML=latest.map(r=>`
-
-<div class="record">
-
-<b>${r.recordDate}</b>
-${r.recordTime}<br>
-
-${r.firstName} ${r.lastName}<br>
-
-${translateStatus(r.status)}
-
-</div>
-
-`).join("");
-
-}
-
-function translateStatus(s){
-
-return{
-
-pending:"در انتظار ارسال",
-sent:"ارسال شده",
-failed:"ارسال ناموفق"
-
-}[s]||s;
-
-}
-
-function toLocalTime(d){
-
-return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-
-}
-
-function getPersianDate(){
-
-return new Intl.DateTimeFormat("fa-IR-u-ca-persian",{year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-
-}
-
-async function downloadBackup(){
-
-const records=await dbGetAll(STORE_RECORDS);
-
-const blob=new Blob([JSON.stringify(records,null,2)],{type:"application/json"});
-
-const url=URL.createObjectURL(blob);
-
-const a=document.createElement("a");
-
-a.href=url;
-a.download="attendance-backup.json";
-a.click();
-
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }

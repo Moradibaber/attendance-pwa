@@ -1,66 +1,71 @@
-<!doctype html>  
+<!doctype html>
 <html lang="fa" dir="rtl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f766e" />
-   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f766e" />
+<link rel="manifest" href="manifest.json" />
+<link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
-  <main class="app">
-    <p id="onlineBadge" class="status"></p>
+<main class="app">
 
-    <section class="card warning">
-      <strong>هشدار مهم</strong>
-      <p>
-        شما در حال استفاده از سامانه ثبت تردد هستید. حذف اطلاعات برنامه، پاک کردن حافظه مرورگر،
-        حذف برنامه یا زدن گزینه Clear data / Clear storage باعث حذف اطلاعات تردد ارسال‌نشده می شود.
-        ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد و عواقب حذف آن به عهده کاربر است.
-      </p>
-    </section>
+<p id="onlineBadge" class="status"></p>
 
-    <section class="card">
-      <h2>مشخصات پرسنلی</h2>
-     
-        <input id="personnelCode" inputmode="numeric" autocomplete="off" placeholder="مثلاً 2000.. یا 1200...شماره پرسنلی" />
-  
-        <input id="firstName" autocomplete="given-name" placeholder="نام" />
-     
-        <input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
-      <button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
-    </section>
+<section class="card warning">
+<strong>هشدار مهم</strong>
+<p>
+شما در حال استفاده از سامانه ثبت تردد هستید. حذف اطلاعات برنامه، پاک کردن حافظه مرورگر،
+حذف برنامه یا زدن گزینه Clear data / Clear storage باعث حذف اطلاعات تردد ارسال‌نشده می شود.
+ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد و عواقب حذف آن به عهده کاربر است.
+</p>
+</section>
 
-    <section class="card">
-      <h2>ثبت تردد</h2>
-      
-      <label>عکس چهره
-        <input id="photoInput" type="file" accept="image/*" capture="user" />
-      </label>
-      <div id="photoPreview" class="preview"></div>
+<section class="card">
+<h2>مشخصات پرسنلی</h2>
 
-   <button id="recordBtn" class="primary">ثبت تردد</button>
-  <button id="syncBtn" class="success">ارسال اطلاعات ذخیره‌شده</button>
-      <p id="captureStatus" class="status"></p>
-    </section>
+<input id="personnelCode" inputmode="numeric" autocomplete="off" placeholder="مثلاً 2000.. یا 1200...شماره پرسنلی" />
+<input id="firstName" autocomplete="given-name" placeholder="نام" />
+<input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
 
-    <section class="card">
-      <h2>ارسال و وضعیت</h2>
-      <div class="stats">
-        <div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
-        <div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
-        <div><span id="failedCount">0</span><small>ناموفق</small></div>
-      </div>
-    
-      <button id="backupBtn" class="secondary">دریافت پشتیبان اضطراری</button>
-      <p id="syncStatus" class="status"></p>
-    </section>
+<button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
+</section>
 
-    <section class="card">
-      <h2>آخرین ثبت‌ها</h2>
-      <div id="recordsList" class="records"></div>
-    </section>
-  </main>
-  <script src="app.js"></script>
+<section class="card">
+<h2>ثبت تردد</h2>
+
+<input id="photoInput" type="file" accept="image/*" capture="user" style="display:none" />
+
+<div id="photoPreview" class="preview"></div>
+
+<button id="recordBtn" class="primary">ثبت تردد</button>
+<button id="syncBtn" class="success">ارسال اطلاعات ذخیره‌شده</button>
+
+<p id="captureStatus" class="status"></p>
+</section>
+
+<section class="card">
+<h2>ارسال و وضعیت</h2>
+
+<div class="stats">
+<div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
+<div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
+<div><span id="failedCount">0</span><small>ناموفق</small></div>
+</div>
+
+<button id="backupBtn" class="secondary">دریافت پشتیبان اضطراری</button>
+
+<p id="syncStatus" class="status"></p>
+</section>
+
+<section class="card">
+<h2>آخرین ثبت‌ها</h2>
+<div id="recordsList" class="records"></div>
+</section>
+
+</main>
+
+<script src="app.js"></script>
 </body>
 </html>

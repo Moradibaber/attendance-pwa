@@ -18,434 +18,391 @@ let compressedPhotoDataUrl = "";
 const $ = (id) => document.getElementById(id);
 
 window.addEventListener("load", async () => {
-  try {
-    db = await openDb();
-    await registerServiceWorker();
-    await requestPersistentStorage();
-    await loadProfile();
-    bindEvents();
-    updateOnlineBadge();
-    await refreshUi();
-  } catch (error) {
-    alert("خطا در راه‌اندازی برنامه: " + String(error.message || error));
-  }
+
+  db = await openDb();
+  await loadProfile();
+
+  bindEvents();
+  updateOnlineBadge();
+  refreshUi();
+
 });
 
 window.addEventListener("online", updateOnlineBadge);
 window.addEventListener("offline", updateOnlineBadge);
 
-function bindEvents() {
-  $("saveProfileBtn").addEventListener("click", saveProfile);
-  $("photoInput").addEventListener("change", handlePhoto);
-  $("recordBtn").addEventListener("click", () => createRecord("تردد"));
-  $("syncBtn").addEventListener("click", syncPendingRecords);
-  $("backupBtn").addEventListener("click", downloadBackup);
+function bindEvents(){
+
+$("saveProfileBtn").addEventListener("click", saveProfile);
+
+$("recordBtn").addEventListener("click", ()=>{
+
+$("photoInput").click();
+
+});
+
+$("photoInput").addEventListener("change", async (e)=>{
+
+await handlePhoto(e);
+
+await createRecord("تردد");
+
+});
+
+$("syncBtn").addEventListener("click", syncPendingRecords);
+
+$("backupBtn").addEventListener("click", downloadBackup);
+
 }
 
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+function openDb(){
 
-    request.onupgradeneeded = () => {
-      const database = request.result;
+return new Promise((resolve,reject)=>{
 
-      if (!database.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = database.createObjectStore(STORE_RECORDS, { keyPath: "id" });
-        store.createIndex("status", "status", { unique: false });
-      } else {
-        const transaction = request.transaction;
-        const store = transaction.objectStore(STORE_RECORDS);
+const req=indexedDB.open(DB_NAME,DB_VERSION);
 
-        if (!store.indexNames.contains("status")) {
-          store.createIndex("status", "status", { unique: false });
-        }
+req.onupgradeneeded=()=>{
 
-        if (store.indexNames.contains("duplicateKey")) {
-          store.deleteIndex("duplicateKey");
-        }
-      }
+const db=req.result;
 
-      if (!database.objectStoreNames.contains(STORE_SETTINGS)) {
-        database.createObjectStore(STORE_SETTINGS, { keyPath: "key" });
-      }
-    };
+if(!db.objectStoreNames.contains(STORE_RECORDS)){
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+const store=db.createObjectStore(STORE_RECORDS,{keyPath:"id"});
+
+store.createIndex("status","status",{unique:false});
+
 }
 
-function tx(storeName, mode = "readonly") {
-  return db.transaction(storeName, mode).objectStore(storeName);
+if(!db.objectStoreNames.contains(STORE_SETTINGS)){
+
+db.createObjectStore(STORE_SETTINGS,{keyPath:"key"});
+
 }
 
-function dbPut(storeName, value) {
-  return new Promise((resolve, reject) => {
-    const request = tx(storeName, "readwrite").put(value);
-    request.onsuccess = () => resolve(value);
-    request.onerror = () => reject(request.error);
-  });
+};
+
+req.onsuccess=()=>resolve(req.result);
+req.onerror=()=>reject(req.error);
+
+});
+
 }
 
-function dbGet(storeName, key) {
-  return new Promise((resolve, reject) => {
-    const request = tx(storeName).get(key);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+function tx(name,mode="readonly"){
+
+return db.transaction(name,mode).objectStore(name);
+
 }
 
-function dbGetAll(storeName) {
-  return new Promise((resolve, reject) => {
-    const request = tx(storeName).getAll();
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
-  });
+function dbPut(store,val){
+
+return new Promise((res,rej)=>{
+
+const r=tx(store,"readwrite").put(val);
+
+r.onsuccess=()=>res(val);
+r.onerror=()=>rej(r.error);
+
+});
+
 }
 
-function dbDelete(storeName, key) {
-  return new Promise((resolve, reject) => {
-    const request = tx(storeName, "readwrite").delete(key);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
+function dbGet(store,key){
+
+return new Promise((res,rej)=>{
+
+const r=tx(store).get(key);
+
+r.onsuccess=()=>res(r.result);
+r.onerror=()=>rej(r.error);
+
+});
+
 }
 
-async function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    try {
-      await navigator.serviceWorker.register("sw.js");
-    } catch (_) {}
-  }
+function dbGetAll(store){
+
+return new Promise((res,rej)=>{
+
+const r=tx(store).getAll();
+
+r.onsuccess=()=>res(r.result||[]);
+r.onerror=()=>rej(r.error);
+
+});
+
 }
 
-async function requestPersistentStorage() {
-  if (navigator.storage?.persist) {
-    const persisted = await navigator.storage.persisted();
-    if (!persisted) {
-      await navigator.storage.persist();
-    }
-  }
+function dbDelete(store,key){
+
+return new Promise((res,rej)=>{
+
+const r=tx(store,"readwrite").delete(key);
+
+r.onsuccess=()=>res();
+r.onerror=()=>rej(r.error);
+
+});
+
 }
 
-function updateOnlineBadge() {
-  const badge = $("onlineBadge");
-  if (!badge) return;
+function updateOnlineBadge(){
 
-  badge.textContent = navigator.onLine ? "وضعیت: آنلاین" : "وضعیت: آفلاین";
+$("onlineBadge").textContent=navigator.onLine?"وضعیت: آنلاین":"وضعیت: آفلاین";
+
 }
 
-async function saveProfile() {
-  const profile = getProfile();
+async function saveProfile(){
 
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    alert("لطفاً شماره پرسنلی، نام و نام خانوادگی را کامل کنید.");
-    return;
-  }
+const p=getProfile();
 
-  await dbPut(STORE_SETTINGS, { key: "profile", value: profile });
+if(!p.personnelCode||!p.firstName||!p.lastName){
+
+alert("مشخصات کامل نیست");
+
+return;
+
 }
 
-function getProfile() {
-  return {
-    personnelCode: $("personnelCode").value.trim(),
-    firstName: $("firstName").value.trim(),
-    lastName: $("lastName").value.trim()
-  };
+await dbPut(STORE_SETTINGS,{key:"profile",value:p});
+
 }
 
-async function loadProfile() {
-  const row = await dbGet(STORE_SETTINGS, "profile");
+function getProfile(){
 
-  if (!row?.value) return;
+return{
 
-  $("personnelCode").value = row.value.personnelCode || "";
-  $("firstName").value = row.value.firstName || "";
-  $("lastName").value = row.value.lastName || "";
+personnelCode:$("personnelCode").value.trim(),
+firstName:$("firstName").value.trim(),
+lastName:$("lastName").value.trim()
+
+};
+
 }
 
-async function handlePhoto(event) {
-  const file = event.target.files?.[0];
+async function loadProfile(){
 
-  if (!file) return;
+const row=await dbGet(STORE_SETTINGS,"profile");
 
-  compressedPhotoDataUrl = await compressImage(file);
-  $("photoPreview").innerHTML = `<img alt="پیش‌نمایش عکس" src="${compressedPhotoDataUrl}">`;
+if(!row?.value)return;
+
+$("personnelCode").value=row.value.personnelCode||"";
+$("firstName").value=row.value.firstName||"";
+$("lastName").value=row.value.lastName||"";
+
 }
 
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const reader = new FileReader();
+async function handlePhoto(e){
 
-    reader.onload = () => {
-      img.src = reader.result;
-    };
+const file=e.target.files?.[0];
 
-    reader.onerror = () => reject(reader.error);
+if(!file)return;
 
-    img.onload = () => {
-      const scale = Math.min(1, CONFIG.imageMaxWidth / img.width);
+compressedPhotoDataUrl=await compressImage(file);
 
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
+$("photoPreview").innerHTML=`<img src="${compressedPhotoDataUrl}">`;
 
-      const context = canvas.getContext("2d");
-      context.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      resolve(canvas.toDataURL("image/jpeg", CONFIG.imageQuality));
-    };
-
-    img.onerror = reject;
-
-    reader.readAsDataURL(file);
-  });
 }
 
-async function createRecord(recordType) {
-  const profile = getProfile();
+function compressImage(file){
 
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    alert("ابتدا مشخصات پرسنلی را کامل و ذخیره کنید.");
-    return;
-  }
+return new Promise((resolve)=>{
 
-  if (!compressedPhotoDataUrl) {
-    alert("لطفاً ابتدا عکس چهره را بگیرید.");
-    return;
-  }
+const img=new Image();
 
-  $("captureStatus").textContent = "در حال دریافت موقعیت مکانی؛ لطفاً صبر کنید...";
+const reader=new FileReader();
 
-  let position;
+reader.onload=()=>img.src=reader.result;
 
-  try {
-    position = await getLocation();
-  } catch (error) {
-    const confirmSave = confirm("موقعیت مکانی دریافت نشد. آیا ثبت بدون موقعیت انجام شود؟");
+img.onload=()=>{
 
-    if (!confirmSave) {
-      $("captureStatus").textContent = "ثبت لغو شد.";
-      return;
-    }
-  }
+const scale=Math.min(1,CONFIG.imageMaxWidth/img.width);
 
-  const now = new Date();
-  const recordId = window.crypto?.randomUUID
-    ? window.crypto.randomUUID()
-    : `${Date.now()}-${Math.random()}`;
+const canvas=document.createElement("canvas");
 
-  const recordDate = getPersianDate();
-  const recordTime = toLocalTime(now);
-  const recordHour = now.getHours();
+canvas.width=img.width*scale;
 
-  const record = {
-    id: recordId,
-    duplicateKey: recordId,
-    personnelCode: profile.personnelCode,
-    firstName: profile.firstName,
-    lastName: profile.lastName,
-    recordType,
-    recordDate,
-    recordTime,
-    recordHour,
-    deviceTime: now.toISOString(),
-    latitude: position?.coords?.latitude ?? "",
-    longitude: position?.coords?.longitude ?? "",
-    accuracy: position?.coords?.accuracy ?? "",
-    photo: compressedPhotoDataUrl,
-    status: "pending",
-    note: "",
-    createdAt: now.toISOString(),
-    sentAt: ""
-  };
+canvas.height=img.height*scale;
 
-  try {
-    await dbPut(STORE_RECORDS, record);
-  } catch (error) {
-    alert("خطای ذخیره‌سازی رخ داد: " + String(error.message || error));
-    $("captureStatus").textContent = "ثبت انجام نشد.";
-    return;
-  }
+const ctx=canvas.getContext("2d");
 
-  compressedPhotoDataUrl = "";
-  $("photoInput").value = "";
-  $("photoPreview").innerHTML = "";
-  $("captureStatus").textContent = "ثبت تردد با موفقیت ذخیره شد.";
+ctx.drawImage(img,0,0,canvas.width,canvas.height);
 
-  await cleanupSentRecords();
-  await refreshUi();
+resolve(canvas.toDataURL("image/jpeg",CONFIG.imageQuality));
+
+};
+
+reader.readAsDataURL(file);
+
+});
+
 }
 
-function getLocation() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Geolocation is not supported"));
-      return;
-    }
+async function createRecord(type){
 
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: false,
-      timeout: CONFIG.geoTimeoutMs,
-      maximumAge: CONFIG.geoMaximumAgeMs
-    });
-  });
+const profile=getProfile();
+
+if(!profile.personnelCode){
+
+alert("مشخصات ذخیره نشده");
+
+return;
+
 }
 
-async function syncPendingRecords() {
-  if (!CONFIG.appsScriptUrl.startsWith("https://")) {
-    alert("ابتدا آدرس Google Apps Script را در فایل app.js وارد کنید.");
-    return;
-  }
+$("captureStatus").textContent="در حال دریافت GPS...";
 
-  if (!navigator.onLine) {
-    alert("اینترنت وصل نیست. بعداً دوباره ارسال کنید.");
-    return;
-  }
+let pos=null;
 
-  const records = await dbGetAll(STORE_RECORDS);
-  const pending = records.filter((record) => record.status !== "sent");
+try{
 
-  if (!pending.length) {
-    $("syncStatus").textContent = "رکورد ارسال‌نشده‌ای وجود ندارد.";
-    return;
-  }
+pos=await getLocation();
 
-  let sent = 0;
+}catch{}
 
-  for (const record of pending) {
-    $("syncStatus").textContent = `در حال ارسال ${sent + 1} از ${pending.length}...`;
+const now=new Date();
 
-    try {
-      const response = await fetch(CONFIG.appsScriptUrl, {
-        method: "POST",
-        mode: "cors",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify(record)
-      });
+const id=crypto.randomUUID();
 
-      const result = await response.json();
+const rec={
 
-      if (!result.ok) {
-        throw new Error(result.error || "Upload failed");
-      }
+id:id,
+personnelCode:profile.personnelCode,
+firstName:profile.firstName,
+lastName:profile.lastName,
+recordType:type,
+recordDate:getPersianDate(),
+recordTime:toLocalTime(now),
+deviceTime:now.toISOString(),
+latitude:pos?.coords?.latitude??"",
+longitude:pos?.coords?.longitude??"",
+accuracy:pos?.coords?.accuracy??"",
+photo:compressedPhotoDataUrl,
+status:"pending",
+createdAt:now.toISOString(),
+sentAt:""
 
-      record.status = "sent";
-      record.sentAt = new Date().toISOString();
-      record.note = "";
+};
 
-      await dbPut(STORE_RECORDS, record);
+await dbPut(STORE_RECORDS,rec);
 
-      sent += 1;
-    } catch (error) {
-      record.status = "failed";
-      record.note = String(error.message || error);
+compressedPhotoDataUrl="";
 
-      await dbPut(STORE_RECORDS, record);
-    }
-  }
+$("photoPreview").innerHTML="";
 
-  await cleanupSentRecords();
-  await refreshUi();
+$("captureStatus").textContent="ثبت شد";
 
-  $("syncStatus").textContent = `${sent} رکورد با موفقیت ارسال شد. رکوردهای ناموفق باقی می‌مانند.`;
+await refreshUi();
+
+if(navigator.onLine){
+
+await syncPendingRecords();
+
 }
 
-async function cleanupSentRecords() {
-  const records = await dbGetAll(STORE_RECORDS);
-  const cutoff = Date.now() - CONFIG.retentionDaysForSentRecords * 24 * 60 * 60 * 1000;
-
-  for (const record of records) {
-    if (
-      record.status === "sent" &&
-      record.sentAt &&
-      new Date(record.sentAt).getTime() < cutoff
-    ) {
-      await dbDelete(STORE_RECORDS, record.id);
-    }
-  }
 }
 
-async function downloadBackup() {
-  const records = await dbGetAll(STORE_RECORDS);
-  const pending = records.filter((record) => record.status !== "sent");
+function getLocation(){
 
-  const payload = JSON.stringify(
-    {
-      exportedAt: new Date().toISOString(),
-      totalRecords: records.length,
-      pendingRecords: pending.length,
-      records: pending
-    },
-    null,
-    2
-  );
+return new Promise((res,rej)=>{
 
-  const blob = new Blob([payload], {
-    type: "application/json;charset=utf-8"
-  });
+navigator.geolocation.getCurrentPosition(res,rej,{
 
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
+enableHighAccuracy:false,
+timeout:CONFIG.geoTimeoutMs,
+maximumAge:CONFIG.geoMaximumAgeMs
 
-  link.href = url;
-  link.download = `attendance-backup-${toGregorianDate(new Date())}.json`;
-  link.click();
+});
 
-  URL.revokeObjectURL(url);
+});
+
 }
 
-async function refreshUi() {
-  const records = await dbGetAll(STORE_RECORDS);
+async function syncPendingRecords(){
 
-  $("pendingCount").textContent = records.filter((record) => record.status === "pending").length;
-  $("sentCount").textContent = records.filter((record) => record.status === "sent").length;
-  $("failedCount").textContent = records.filter((record) => record.status === "failed").length;
+if(!navigator.onLine)return;
 
-  const latest = records
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 8);
+const all=await dbGetAll(STORE_RECORDS);
 
-  $("recordsList").innerHTML = latest.length
-    ? latest.map((record) => `
-      <div class="record">
-        <b>${record.recordType}</b> - ${record.recordDate} ساعت ${record.recordTime}<br>
-        ${record.firstName} ${record.lastName} / ${record.personnelCode}<br>
-        وضعیت: ${translateStatus(record.status)}
-      </div>
-    `).join("")
-    : "هنوز ثبتی انجام نشده است.";
+const pending=all.filter(r=>r.status!=="sent");
+
+for(const r of pending){
+
+try{
+
+const resp=await fetch(CONFIG.appsScriptUrl,{
+
+method:"POST",
+headers:{"Content-Type":"text/plain"},
+body:JSON.stringify(r)
+
+});
+
+const result=await resp.json();
+
+if(result.ok){
+
+r.status="sent";
+r.sentAt=new Date().toISOString();
+
+await dbPut(STORE_RECORDS,r);
+
 }
 
-function translateStatus(status) {
-  return {
-    pending: "ارسال‌نشده",
-    sent: "ارسال‌شده",
-    failed: "ارسال ناموفق"
-  }[status] || status;
+}catch{
+
+r.status="failed";
+
+await dbPut(STORE_RECORDS,r);
+
 }
 
-function toGregorianDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
 }
 
-function toLocalTime(date) {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+refreshUi();
+
 }
 
-function getPersianDate() {
-  const now = new Date();
+async function refreshUi(){
 
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(now);
+const records=await dbGetAll(STORE_RECORDS);
+
+$("pendingCount").textContent=records.filter(r=>r.status==="pending").length;
+
+$("sentCount").textContent=records.filter(r=>r.status==="sent").length;
+
+$("failedCount").textContent=records.filter(r=>r.status==="failed").length;
+
+}
+
+async function downloadBackup(){
+
+const records=await dbGetAll(STORE_RECORDS);
+
+const data=JSON.stringify(records,null,2);
+
+const blob=new Blob([data],{type:"application/json"});
+
+const url=URL.createObjectURL(blob);
+
+const a=document.createElement("a");
+
+a.href=url;
+
+a.download="attendance-backup.json";
+
+a.click();
+
+}
+
+function toLocalTime(d){
+
+return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+
+}
+
+function getPersianDate(){
+
+return new Intl.DateTimeFormat("fa-IR-u-ca-persian",{year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+
 }

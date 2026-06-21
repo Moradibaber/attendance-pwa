@@ -10,12 +10,7 @@
 </head>
 <body>
   <main class="app">
-    <header class="card hero">
-      <h1>ثبت تردد آفلاین</h1>
-      <p>ثبت شروع/پایان همراه عکس، موقعیت و زمان؛ ارسال دستی پس از اتصال اینترنت.</p>
-      <div id="onlineBadge" class="badge">در حال بررسی وضعیت اینترنت...</div>
-    </header>
-
+    
     <section class="card warning">
       <strong>هشدار مهم</strong>
       <p>
@@ -44,10 +39,8 @@
       </label>
       <div id="photoPreview" class="preview"></div>
 
-      <div class="grid2">
-        <button id="startBtn" class="primary">ثبت شروع</button>
-        <button id="endBtn" class="primary alt">ثبت پایان</button>
-      </div>
+   <button id="recordBtn" class="primary">ثبت تردد</button>
+  <button id="syncBtn" class="success">ارسال اطلاعات ذخیره‌شده</button>
       <p id="captureStatus" class="status"></p>
     </section>
 
@@ -58,7 +51,7 @@
         <div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
         <div><span id="failedCount">0</span><small>ناموفق</small></div>
       </div>
-      <button id="syncBtn" class="success">ارسال اطلاعات ذخیره‌شده</button>
+    
       <button id="backupBtn" class="secondary">دریافت پشتیبان اضطراری</button>
       <p id="syncStatus" class="status"></p>
     </section>

@@ -7,51 +7,56 @@ const CONFIG = {
   imageQuality: 0.25
 };
 
-const DB_NAME = "attendance-offline-db";
-const DB_VERSION = 2;
-const STORE_RECORDS = "records";
-const STORE_SETTINGS = "settings";
+const DB_NAME="attendance-offline-db";
+const DB_VERSION=2;
+const STORE_RECORDS="records";
+const STORE_SETTINGS="settings";
 
 let db;
-let compressedPhotoDataUrl = "";
+let compressedPhotoDataUrl="";
 
-const $ = (id) => document.getElementById(id);
+const $=id=>document.getElementById(id);
 
-window.addEventListener("load", async () => {
+window.addEventListener("load",async()=>{
 
-  db = await openDb();
-  await loadProfile();
+db=await openDb();
+await loadProfile();
 
-  bindEvents();
-  updateOnlineBadge();
-  refreshUi();
+bindEvents();
+updateOnlineBadge();
+refreshUi();
+
+if(navigator.onLine)syncPendingRecords();
 
 });
 
-window.addEventListener("online", updateOnlineBadge);
-window.addEventListener("offline", updateOnlineBadge);
+window.addEventListener("online",async()=>{
+
+updateOnlineBadge();
+syncPendingRecords();
+
+});
+
+window.addEventListener("offline",updateOnlineBadge);
 
 function bindEvents(){
 
-$("saveProfileBtn").addEventListener("click", saveProfile);
+$("saveProfileBtn").addEventListener("click",saveProfile);
 
-$("recordBtn").addEventListener("click", ()=>{
+$("recordBtn").addEventListener("click",()=>{
 
 $("photoInput").click();
 
 });
 
-$("photoInput").addEventListener("change", async (e)=>{
+$("photoInput").addEventListener("change",async e=>{
 
 await handlePhoto(e);
-
 await createRecord("تردد");
 
 });
 
-$("syncBtn").addEventListener("click", syncPendingRecords);
-
-$("backupBtn").addEventListener("click", downloadBackup);
+$("backupBtn").addEventListener("click",downloadBackup);
 
 }
 
@@ -68,7 +73,6 @@ const db=req.result;
 if(!db.objectStoreNames.contains(STORE_RECORDS)){
 
 const store=db.createObjectStore(STORE_RECORDS,{keyPath:"id"});
-
 store.createIndex("status","status",{unique:false});
 
 }
@@ -159,7 +163,6 @@ const p=getProfile();
 if(!p.personnelCode||!p.firstName||!p.lastName){
 
 alert("مشخصات کامل نیست");
-
 return;
 
 }
@@ -195,7 +198,6 @@ $("lastName").value=row.value.lastName||"";
 async function handlePhoto(e){
 
 const file=e.target.files?.[0];
-
 if(!file)return;
 
 compressedPhotoDataUrl=await compressImage(file);
@@ -206,10 +208,9 @@ $("photoPreview").innerHTML=`<img src="${compressedPhotoDataUrl}">`;
 
 function compressImage(file){
 
-return new Promise((resolve)=>{
+return new Promise(resolve=>{
 
 const img=new Image();
-
 const reader=new FileReader();
 
 reader.onload=()=>img.src=reader.result;
@@ -221,7 +222,6 @@ const scale=Math.min(1,CONFIG.imageMaxWidth/img.width);
 const canvas=document.createElement("canvas");
 
 canvas.width=img.width*scale;
-
 canvas.height=img.height*scale;
 
 const ctx=canvas.getContext("2d");
@@ -245,7 +245,6 @@ const profile=getProfile();
 if(!profile.personnelCode){
 
 alert("مشخصات ذخیره نشده");
-
 return;
 
 }
@@ -262,11 +261,9 @@ pos=await getLocation();
 
 const now=new Date();
 
-const id=crypto.randomUUID();
-
 const rec={
 
-id:id,
+id:crypto.randomUUID(),
 personnelCode:profile.personnelCode,
 firstName:profile.firstName,
 lastName:profile.lastName,
@@ -287,16 +284,14 @@ sentAt:""
 await dbPut(STORE_RECORDS,rec);
 
 compressedPhotoDataUrl="";
-
 $("photoPreview").innerHTML="";
-
 $("captureStatus").textContent="ثبت شد";
 
 await refreshUi();
 
 if(navigator.onLine){
 
-await syncPendingRecords();
+syncPendingRecords();
 
 }
 
@@ -307,11 +302,9 @@ function getLocation(){
 return new Promise((res,rej)=>{
 
 navigator.geolocation.getCurrentPosition(res,rej,{
-
 enableHighAccuracy:false,
 timeout:CONFIG.geoTimeoutMs,
 maximumAge:CONFIG.geoMaximumAgeMs
-
 });
 
 });
@@ -322,20 +315,18 @@ async function syncPendingRecords(){
 
 if(!navigator.onLine)return;
 
-const all=await dbGetAll(STORE_RECORDS);
+const records=await dbGetAll(STORE_RECORDS);
 
-const pending=all.filter(r=>r.status!=="sent");
+const pending=records.filter(r=>r.status!=="sent");
 
 for(const r of pending){
 
 try{
 
 const resp=await fetch(CONFIG.appsScriptUrl,{
-
 method:"POST",
 headers:{"Content-Type":"text/plain"},
 body:JSON.stringify(r)
-
 });
 
 const result=await resp.json();
@@ -352,7 +343,6 @@ await dbPut(STORE_RECORDS,r);
 }catch{
 
 r.status="failed";
-
 await dbPut(STORE_RECORDS,r);
 
 }
@@ -368,30 +358,37 @@ async function refreshUi(){
 const records=await dbGetAll(STORE_RECORDS);
 
 $("pendingCount").textContent=records.filter(r=>r.status==="pending").length;
-
 $("sentCount").textContent=records.filter(r=>r.status==="sent").length;
-
 $("failedCount").textContent=records.filter(r=>r.status==="failed").length;
+
+const latest=records.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,10);
+
+$("recordsList").innerHTML=latest.map(r=>`
+
+<div class="record">
+
+<b>${r.recordDate}</b>
+${r.recordTime}<br>
+
+${r.firstName} ${r.lastName}<br>
+
+${translateStatus(r.status)}
+
+</div>
+
+`).join("");
 
 }
 
-async function downloadBackup(){
+function translateStatus(s){
 
-const records=await dbGetAll(STORE_RECORDS);
+return{
 
-const data=JSON.stringify(records,null,2);
+pending:"در انتظار ارسال",
+sent:"ارسال شده",
+failed:"ارسال ناموفق"
 
-const blob=new Blob([data],{type:"application/json"});
-
-const url=URL.createObjectURL(blob);
-
-const a=document.createElement("a");
-
-a.href=url;
-
-a.download="attendance-backup.json";
-
-a.click();
+}[s]||s;
 
 }
 
@@ -404,5 +401,21 @@ return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStar
 function getPersianDate(){
 
 return new Intl.DateTimeFormat("fa-IR-u-ca-persian",{year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+
+}
+
+async function downloadBackup(){
+
+const records=await dbGetAll(STORE_RECORDS);
+
+const blob=new Blob([JSON.stringify(records,null,2)],{type:"application/json"});
+
+const url=URL.createObjectURL(blob);
+
+const a=document.createElement("a");
+
+a.href=url;
+a.download="attendance-backup.json";
+a.click();
 
 }

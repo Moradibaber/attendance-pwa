@@ -6,7 +6,8 @@ const STORE_PROFILE = "profile";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
 
 const GPS_WAIT_MS = 12000;
-const GOOD_ACCURACY_METERS = 150;
+const GPS_RETRY_MS = 8000;
+const GOOD_ACCURACY_METERS = 500;
 
 let db = null;
 let currentPhoto = "";
@@ -103,6 +104,11 @@ async function handlePhotoSelected() {
     if (pendingLocationPromise) {
       setStatus("در حال نهایی‌سازی GPS...");
       pendingLocation = await pendingLocationPromise;
+    }
+
+    if (!hasValidLocation(pendingLocation) && isGeolocationUsable()) {
+      setStatus("GPS هنوز دقیق دریافت نشده؛ تلاش مجدد کوتاه...");
+      pendingLocation = await getLocationWithWatch(GPS_RETRY_MS);
     }
 
     await createRecord("تردد");
@@ -230,7 +236,9 @@ async function createRecord(type) {
   try {
     const profile = await getProfile();
 
-    const location = pendingLocation || emptyLocation("not_received", "GPS تا زمان ثبت نهایی دریافت نشد.");
+    const location = hasValidLocation(pendingLocation)
+      ? pendingLocation
+      : emptyLocation("not_received", "GPS تا زمان ثبت نهایی دریافت نشد.");
 
     const now = new Date();
     const record = {
@@ -302,11 +310,17 @@ function getLocationWithWatch(waitMs) {
         navigator.geolocation.clearWatch(watchId);
       }
 
-      if (location && location.latitude && location.longitude) {
+      if (hasValidLocation(location)) {
         resolve(location);
-      } else {
-        resolve(emptyLocation("timeout", lastError || "GPS در زمان مشخص‌شده موقعیت را پیدا نکرد."));
+        return;
       }
+
+      if (hasValidLocation(bestLocation)) {
+        resolve(bestLocation);
+        return;
+      }
+
+      resolve(emptyLocation("timeout", lastError || "GPS در زمان مشخص‌شده موقعیت را پیدا نکرد."));
     };
 
     const timeout = setTimeout(() => {
@@ -339,7 +353,7 @@ function getLocationWithWatch(waitMs) {
         },
         {
           enableHighAccuracy: true,
-          maximumAge: 10000,
+          maximumAge: 30000,
           timeout: waitMs
         }
       );
@@ -347,6 +361,15 @@ function getLocationWithWatch(waitMs) {
       finish(emptyLocation("exception", error.message || String(error)));
     }
   });
+}
+
+function hasValidLocation(location) {
+  if (!location) return false;
+  if (location.status !== "ok") return false;
+  if (location.latitude === "" || location.longitude === "") return false;
+  if (location.latitude === null || location.longitude === null) return false;
+  if (typeof location.latitude === "undefined" || typeof location.longitude === "undefined") return false;
+  return true;
 }
 
 function emptyLocation(status, error) {

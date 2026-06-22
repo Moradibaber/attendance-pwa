@@ -37,6 +37,45 @@ input, button {
   padding: 13px;
   margin-top: 7px;
   font: inherit;
+  .app,
+.card,
+.status,
+input,
+button {
+  text-align: center;
+}
+
+input {
+  direction: rtl;
+}
+
+.preview {
+  display: block;
+  max-width: 120px;
+  max-height: 120px;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+  margin: 10px auto;
+  border-radius: 12px;
+}
+
+.records {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.record-item.compact-record {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 10px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
 }
 button { border: 0; cursor: pointer; font-weight: 800; }
 .primary { background: var(--primary); color: white; }

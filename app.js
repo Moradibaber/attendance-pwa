@@ -47,6 +47,14 @@ function bindEvents() {
         return;
       }
 
+      // ترفند بیدارباش GPS: به محض باز شدن دوربین، GPS را در پس‌زمینه بیدار می‌کنیم
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(() => {}, () => {}, { 
+          enableHighAccuracy: true, 
+          timeout: 10000 
+        });
+      }
+
       $("photoInput").value = "";
       $("photoInput").click();
     });
@@ -214,10 +222,9 @@ async function getProfile() {
 
 async function createRecord(type) {
   try {
-    setStatus("در حال دریافت موقعیت مکانی دقیق...");
-
     const profile = await getProfile();
-    // این متد تا زمانی که موقعیت را پیدا نکند صبر می‌کند
+    
+    // اجرای موقعیت‌یابی با تایم‌اوت ۳۰ ثانیه‌ای هوشمند و شمارش معکوس زنده
     const location = await getLocation();
 
     const now = new Date();
@@ -254,7 +261,8 @@ async function createRecord(type) {
 }
 
 /**
- * سیستم دریافت موقعیت مکانی دو مرحله‌ای (بسیار پایدار برای زمان بیدار شدن GPS گوشی)
+ * دریافت موقعیت با الزام و شمارش معکوس ۳۰ ثانیه‌ای
+ * اگر بعد از ۳۰ ثانیه موقعیت دریافت نشد، با فیلد خالی عبور می‌کند تا عکس ارسال شود.
  */
 function getLocation() {
   return new Promise((resolve) => {
@@ -263,22 +271,22 @@ function getLocation() {
       return;
     }
 
-    // مرحله اول: تلاش برای دریافت موقعیت واقعی و دقیق با GPS
-    const optionsHigh = {
-      enableHighAccuracy: true,
-      timeout: 10000, // حداکثر ۱۰ ثانیه منتظر بیدار شدن GPS می‌ماند
-      maximumAge: 0   // دریافت موقعیت کاملا تازه بدون کش قبلی
-    };
+    let secondsPassed = 0;
+    setStatus(`در حال بیدار کردن GPS و دریافت موقعیت (ثانیه ۰ از ۳۰)... لطفاً صبور باشید.`);
 
-    // مرحله دوم (پشتیبان): استفاده از اطلاعات شبکه‌ای برای سرعت بیشتر در صورت خطای GPS
-    const optionsLow = {
-      enableHighAccuracy: false,
-      timeout: 5000,  // ۵ ثانیه زمان برای گرفتن موقعیت تقریبی شبکه‌ای
-      maximumAge: 60000 // استفاده از کش تا یک دقیقه مجاز است
-    };
+    // ایجاد یک شمارش معکوس بصری برای کاربر روی صفحه
+    const interval = setInterval(() => {
+      secondsPassed++;
+      if (secondsPassed <= 30) {
+        setStatus(`در حال بیدار کردن GPS و دریافت موقعیت (ثانیه ${secondsPassed} از ۳۰)... لطفاً صبور باشید.`);
+      } else {
+        clearInterval(interval);
+      }
+    }, 1000);
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        clearInterval(interval);
         resolve({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
@@ -286,29 +294,30 @@ function getLocation() {
         });
       },
       (error) => {
-        console.warn("GPS دقیق تایم‌اوت خورد یا ناموفق بود، در حال اجرای تلاش مجدد با شبکه...", error);
+        clearInterval(interval);
+        console.warn("تلاش اول GPS ناموفق بود یا بیدار نشد. خطا:", error);
         
-        // اگر GPS گوشی در حالت خواب بود و تایم‌اوت داد، بلافاصله روش شبکه‌ای سریع را امتحان کن
+        // اگر خطایی رخ داد، یک بار دیگر در ثانیه باقی‌مانده به صورت سریع تلاش می‌کنیم
         navigator.geolocation.getCurrentPosition(
-          (position) => {
+          (pos) => {
             resolve({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              accuracy: position.coords.accuracy
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy
             });
           },
           () => {
-            // اگر هر دو روش شکست خورد، برای جلوگیری از کرش، مقادیر خالی بفرست
-            resolve({
-              latitude: "",
-              longitude: "",
-              accuracy: ""
-            });
+            // اگر بعد از ۳۰ ثانیه کلاً پیدا نشد، با موفقیت فیلد خالی برمی‌گرداند تا فرآیند ثبت متوقف نشود
+            resolve({ latitude: "", longitude: "", accuracy: "" });
           },
-          optionsLow
+          { enableHighAccuracy: false, timeout: 4000 }
         );
       },
-      optionsHigh
+      {
+        enableHighAccuracy: true,
+        timeout: 30000, // مهلت کل ۳۰ ثانیه
+        maximumAge: 0   // عدم استفاده از لوکیشن قدیمی و کش شده
+      }
     );
   });
 }

@@ -602,33 +602,36 @@ function getTime(date) {
     hour12: false
   }).format(date);
 }
-
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = (e) => {
       const image = new Image();
       image.onload = () => {
         const canvas = document.createElement("canvas");
-        
-        // تنظیمات جدید برای حجم کمتر
-        const maxWidth = 640; 
-        const maxHeight = 640;
-        
+        // ابعاد کوچک‌تر
+        const MAX_SIZE = 500; 
         let width = image.width;
         let height = image.height;
-        // ... (منطق حفظ نسبت ابعاد)
-        
+
+        if (width > height) {
+          if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+        } else {
+          if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+        }
+
         canvas.width = width;
         canvas.height = height;
-        const context = canvas.getContext("2d");
-        context.drawImage(image, 0, 0, width, height);
+        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
 
-        // کیفیت را روی 0.5 (۵۰٪) گذاشتیم که حجم را به شدت کاهش می‌دهد
-        const compressed = canvas.toDataURL("image/jpeg", 0.5); 
-        resolve(compressed);
+        // استفاده از toBlob به جای toDataURL (حجم خیلی کمتر)
+        canvas.toBlob((blob) => {
+          const readerBlob = new FileReader();
+          readerBlob.onloadend = () => resolve(readerBlob.result);
+          readerBlob.readAsDataURL(blob);
+        }, "image/jpeg", 0.4); // کیفیت ۴۰٪
       };
-      image.src = reader.result;
+      image.src = e.target.result;
     };
     reader.readAsDataURL(file);
   });

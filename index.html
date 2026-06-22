@@ -5,25 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0f766e" />
 <link rel="manifest" href="manifest.json" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=5" />
 <title>ثبت تردد</title>
 </head>
 
 <body>
 <main class="app">
 
-<p id="onlineBadge" class="status"></p>
+<p id="onlineBadge" class="status top-status"></p>
 
-<section class="card warning">
+<section class="card warning compact-warning">
 <strong>هشدار مهم</strong>
 <p>
- پاک کردن حافظه مرورگر
-حذف برنامه یا زدن گزینه Clear data / Clear storage باعث حذف اطلاعات تردد ارسال‌ نشده می‌شود
-ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد وعواقب حذف آن به عهده کاربر است
+پاک کردن حافظه مرورگر، حذف برنامه یا زدن گزینه Clear data / Clear storage باعث حذف اطلاعات تردد ارسال‌نشده می‌شود.
+ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد و عواقب حذف آن به عهده کاربر است.
 </p>
 </section>
 
-<section class="card">
+<section class="card profile-card">
 <h2>مشخصات پرسنلی</h2>
 
 <input id="personnelCode" inputmode="numeric" autocomplete="off" placeholder="شماره پرسنلی" />
@@ -31,21 +30,24 @@
 <input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
 
 <button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
+<p id="profileStatus" class="status small-status"></p>
 </section>
 
-<section class="card">
+<section class="card attendance-card">
 <h2>ثبت تردد</h2>
 
 <input id="photoInput" type="file" accept="image/*" capture="user" style="display:none" />
 
+<div class="photo-row">
 <img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
+</div>
 
 <button id="recordBtn" class="primary">ثبت تردد</button>
 
-<p id="captureStatus" class="status"></p>
+<p id="captureStatus" class="status small-status"></p>
 </section>
 
-<section class="card">
+<section class="card status-card">
 <h2>وضعیت</h2>
 
 <div class="stats">
@@ -54,16 +56,16 @@
 <div><span id="failedCount">0</span><small>ناموفق</small></div>
 </div>
 
-<p id="syncStatus" class="status"></p>
+<p id="syncStatus" class="status small-status"></p>
 </section>
 
-<section class="card">
+<section class="card records-card">
 <h2>ترددهای ثبت شده</h2>
 <div id="recordsList" class="records"></div>
 </section>
 
 </main>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

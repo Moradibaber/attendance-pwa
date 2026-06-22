@@ -613,8 +613,8 @@ function compressImage(file) {
       image.onload = () => {
         const canvas = document.createElement("canvas");
 
-        const maxWidth = 900;
-        const maxHeight = 900;
+        const maxWidth = 640;
+        const maxHeight = 640;
 
         let width = image.width;
         let height = image.height;
@@ -637,7 +637,7 @@ function compressImage(file) {
         const context = canvas.getContext("2d");
         context.drawImage(image, 0, 0, width, height);
 
-        const compressed = canvas.toDataURL("image/jpeg", 0.65);
+        const compressed = canvas.toDataURL("image/jpeg", 0.5);
         resolve(compressed);
       };
 

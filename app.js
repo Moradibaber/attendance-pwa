@@ -214,9 +214,10 @@ async function getProfile() {
 
 async function createRecord(type) {
   try {
-    setStatus("در حال دریافت موقعیت مکانی...");
+    setStatus("در حال دریافت موقعیت مکانی دقیق...");
 
     const profile = await getProfile();
+    // این متد تا زمانی که موقعیت را پیدا نکند صبر می‌کند
     const location = await getLocation();
 
     const now = new Date();
@@ -252,16 +253,29 @@ async function createRecord(type) {
   }
 }
 
+/**
+ * سیستم دریافت موقعیت مکانی دو مرحله‌ای (بسیار پایدار برای زمان بیدار شدن GPS گوشی)
+ */
 function getLocation() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
-      resolve({
-        latitude: "",
-        longitude: "",
-        accuracy: ""
-      });
+      resolve({ latitude: "", longitude: "", accuracy: "" });
       return;
     }
+
+    // مرحله اول: تلاش برای دریافت موقعیت واقعی و دقیق با GPS
+    const optionsHigh = {
+      enableHighAccuracy: true,
+      timeout: 10000, // حداکثر ۱۰ ثانیه منتظر بیدار شدن GPS می‌ماند
+      maximumAge: 0   // دریافت موقعیت کاملا تازه بدون کش قبلی
+    };
+
+    // مرحله دوم (پشتیبان): استفاده از اطلاعات شبکه‌ای برای سرعت بیشتر در صورت خطای GPS
+    const optionsLow = {
+      enableHighAccuracy: false,
+      timeout: 5000,  // ۵ ثانیه زمان برای گرفتن موقعیت تقریبی شبکه‌ای
+      maximumAge: 60000 // استفاده از کش تا یک دقیقه مجاز است
+    };
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -271,18 +285,30 @@ function getLocation() {
           accuracy: position.coords.accuracy
         });
       },
-      () => {
-        resolve({
-          latitude: "",
-          longitude: "",
-          accuracy: ""
-        });
+      (error) => {
+        console.warn("GPS دقیق تایم‌اوت خورد یا ناموفق بود، در حال اجرای تلاش مجدد با شبکه...", error);
+        
+        // اگر GPS گوشی در حالت خواب بود و تایم‌اوت داد، بلافاصله روش شبکه‌ای سریع را امتحان کن
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            resolve({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              accuracy: position.coords.accuracy
+            });
+          },
+          () => {
+            // اگر هر دو روش شکست خورد، برای جلوگیری از کرش، مقادیر خالی بفرست
+            resolve({
+              latitude: "",
+              longitude: "",
+              accuracy: ""
+            });
+          },
+          optionsLow
+        );
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0
-      }
+      optionsHigh
     );
   });
 }
@@ -538,24 +564,3 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-// انتهای فایل app.js این را کپی کن:
-async function getCurrentLocation() {
-    return new Promise((resolve) => {
-        if (!navigator.geolocation) {
-            resolve({ latitude: 0, longitude: 0, accuracy: 0 });
-        }
-        const options = { timeout: 10000, enableHighAccuracy: true };
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                resolve({
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy
-                });
-            },
-            () => { resolve({ latitude: 0, longitude: 0, accuracy: 0 }); },
-            options
-        );
-    });
-}
-

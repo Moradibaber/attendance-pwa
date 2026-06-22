@@ -538,3 +538,24 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+// انتهای فایل app.js این را کپی کن:
+async function getCurrentLocation() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve({ latitude: 0, longitude: 0, accuracy: 0 });
+        }
+        const options = { timeout: 10000, enableHighAccuracy: true };
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                resolve({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                });
+            },
+            () => { resolve({ latitude: 0, longitude: 0, accuracy: 0 }); },
+            options
+        );
+    });
+}
+

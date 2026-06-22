@@ -105,6 +105,11 @@ async function handlePhotoSelected() {
       setStatus("در حال نهایی‌سازی GPS...");
       pendingLocation = await pendingLocationPromise;
     }
+    if ((!pendingLocation || !pendingLocation.latitude) && isGeolocationUsable()) {
+  setStatus("در حال تلاش مجدد برای دریافت GPS...");
+  pendingLocation = await getLocationWithWatch(6000);
+}
+
 
     if (!hasValidLocation(pendingLocation) && isGeolocationUsable()) {
       setStatus("GPS هنوز دقیق دریافت نشده؛ تلاش مجدد کوتاه...");

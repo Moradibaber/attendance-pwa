@@ -5,9 +5,9 @@ const STORE_PROFILE = "profile";
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
 
-const GPS_WAIT_MS = 12000;
-const GPS_RETRY_MS = 8000;
-const GOOD_ACCURACY_METERS = 500;
+const GPS_WAIT_MS = 60000;
+const GPS_RETRY_MS = 20000;
+const GOOD_ACCURACY_METERS = 1000;
 
 let db = null;
 let currentPhoto = "";
@@ -56,8 +56,8 @@ async function startAttendanceCapture() {
 
   try {
     await getProfile();
-  } catch (e) {
-    setStatus(e.message);
+  } catch (error) {
+    setStatus(error.message);
     return;
   }
 
@@ -67,14 +67,20 @@ async function startAttendanceCapture() {
 
   $("photoInput").value = "";
 
-  if (isGeolocationUsable()) {
-    setStatus("دوربین باز می‌شود؛ GPS هم‌زمان دریافت می‌شود.");
-    pendingLocationPromise = getLocationWithWatch(GPS_WAIT_MS);
-  } else {
-    setStatus("GPS در دسترس نیست.");
-  }
+  setStatus("دوربین باز می‌شود...");
 
   $("photoInput").click();
+
+  setTimeout(() => {
+
+    if (isGeolocationUsable()) {
+      setStatus("در حال دریافت GPS...");
+      pendingLocationPromise = getLocationWithWatch(GPS_WAIT_MS);
+    } else {
+      setStatus("GPS در دسترس نیست.");
+    }
+
+  }, 500);
 
 }
 

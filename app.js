@@ -1,16 +1,17 @@
 const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 4; 
+const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
 
-const GPS_WAIT_MS = 30000;
+const GPS_WAIT_MS = 12000;
 const GOOD_ACCURACY_METERS = 150;
 
 let db = null;
 let currentPhoto = "";
 let pendingLocation = null;
+let pendingLocationPromise = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,14 +52,6 @@ function bindEvents() {
   if ($("photoInput")) {
     $("photoInput").addEventListener("change", handlePhotoSelected);
   }
-
-  if ($("syncBtn")) {
-    $("syncBtn").addEventListener("click", syncPendingRecords);
-  }
-
-  if ($("backupBtn")) {
-    $("backupBtn").addEventListener("click", downloadBackup);
-  }
 }
 
 async function startAttendanceCapture() {
@@ -74,23 +67,19 @@ async function startAttendanceCapture() {
     return;
   }
 
+  currentPhoto = "";
   pendingLocation = null;
-
-  if (!isGeolocationUsable()) {
-    setStatus("GPS در دسترس نیست. سایت باید با HTTPS باز شود و مجوز Location فعال باشد.");
-  } else {
-    setStatus("در حال دریافت GPS قبل از باز شدن دوربین... لطفاً صبر کنید.");
-    pendingLocation = await getLocationWithWatch(GPS_WAIT_MS);
-
-    if (pendingLocation.latitude && pendingLocation.longitude) {
-      const accuracy = pendingLocation.accuracy ? ` دقت: ${Math.round(Number(pendingLocation.accuracy))} متر.` : "";
-      setStatus("GPS دریافت شد." + accuracy + " حالا عکس بگیرید.");
-    } else {
-      setStatus("GPS دریافت نشد. عکس بگیرید؛ بعد از عکس یک بار دیگر تلاش می‌شود.");
-    }
-  }
+  pendingLocationPromise = null;
 
   $("photoInput").value = "";
+
+  if (isGeolocationUsable()) {
+    setStatus("دوربین باز می‌شود؛ GPS هم‌زمان دریافت می‌شود.");
+    pendingLocationPromise = getLocationWithWatch(GPS_WAIT_MS);
+  } else {
+    setStatus("GPS در دسترس نیست. سایت باید با HTTPS باز شود و مجوز Location فعال باشد.");
+  }
+
   $("photoInput").click();
 }
 
@@ -103,12 +92,17 @@ async function handlePhotoSelected() {
   }
 
   try {
-    setStatus("در حال آماده‌سازی عکس...");
+    setStatus("در حال کوچک‌سازی عکس...");
     currentPhoto = await compressImage(file);
 
     if ($("photoPreview")) {
       $("photoPreview").src = currentPhoto;
       $("photoPreview").style.display = "block";
+    }
+
+    if (pendingLocationPromise) {
+      setStatus("در حال نهایی‌سازی GPS...");
+      pendingLocation = await pendingLocationPromise;
     }
 
     await createRecord("تردد");
@@ -236,12 +230,7 @@ async function createRecord(type) {
   try {
     const profile = await getProfile();
 
-    let location = pendingLocation || emptyLocation("not_requested", "");
-
-    if (!location.latitude || !location.longitude) {
-      setStatus("در حال تلاش مجدد برای دریافت GPS بعد از عکس...");
-      location = await getLocationWithWatch(15000);
-    }
+    const location = pendingLocation || emptyLocation("not_received", "GPS تا زمان ثبت نهایی دریافت نشد.");
 
     const now = new Date();
     const record = {
@@ -266,11 +255,13 @@ async function createRecord(type) {
 
     currentPhoto = "";
     pendingLocation = null;
+    pendingLocationPromise = null;
 
     if (record.latitude && record.longitude) {
-      setStatus("ثبت تردد با GPS ذخیره شد.");
+      const accuracy = record.accuracy ? ` دقت: ${Math.round(Number(record.accuracy))} متر.` : "";
+      setStatus("ثبت تردد با GPS ذخیره شد." + accuracy);
     } else {
-      setStatus("ثبت تردد ذخیره شد، اما GPS دریافت نشد. علت در گزارش ذخیره شد.");
+      setStatus("ثبت تردد ذخیره شد، اما GPS دریافت نشد.");
     }
 
     await refreshUi();
@@ -300,24 +291,12 @@ function getLocationWithWatch(waitMs) {
     let bestLocation = null;
     let lastError = "";
     let watchId = null;
-    const startedAt = Date.now();
-
-    const timer = setInterval(() => {
-      const passed = Math.floor((Date.now() - startedAt) / 1000);
-      const total = Math.ceil(waitMs / 1000);
-
-      if (bestLocation && bestLocation.latitude && bestLocation.longitude) {
-        setStatus(`GPS پیدا شد. دقت تقریبی: ${Math.round(Number(bestLocation.accuracy || 0))} متر. ثانیه ${passed} از ${total}`);
-      } else {
-        setStatus(`در حال دریافت GPS... ثانیه ${passed} از ${total}`);
-      }
-    }, 1000);
 
     const finish = (location) => {
       if (done) return;
       done = true;
 
-      clearInterval(timer);
+      clearTimeout(timeout);
 
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
@@ -348,7 +327,6 @@ function getLocationWithWatch(waitMs) {
           bestLocation = chooseBetterLocation(bestLocation, location);
 
           if (Number(location.accuracy || 999999) <= GOOD_ACCURACY_METERS) {
-            clearTimeout(timeout);
             finish(location);
           }
         },
@@ -356,18 +334,16 @@ function getLocationWithWatch(waitMs) {
           lastError = getGeolocationErrorMessage(error);
 
           if (error && error.code === 1) {
-            clearTimeout(timeout);
             finish(emptyLocation("permission_denied", lastError));
           }
         },
         {
           enableHighAccuracy: true,
-          maximumAge: 0,
+          maximumAge: 10000,
           timeout: waitMs
         }
       );
     } catch (error) {
-      clearTimeout(timeout);
       finish(emptyLocation("exception", error.message || String(error)));
     }
   });
@@ -515,33 +491,15 @@ function renderRecords(records) {
   });
 
   $("recordsList").innerHTML = sortedRecords
-    .slice(0, 30)
+    .slice(0, 20)
     .map((record) => {
-      const statusText =
-        record.status === "sent"
-          ? "ارسال شده"
-          : record.status === "failed"
-            ? "ارسال ناموفق"
-            : "در انتظار ارسال";
-
-      const gpsText =
-        record.latitude && record.longitude
-          ? `${escapeHtml(record.latitude)}, ${escapeHtml(record.longitude)}`
-          : "ندارد";
-
-      const errorText = record.locationError
-        ? `<div>خطای GPS: ${escapeHtml(record.locationError)}</div>`
-        : "";
+      const date = escapeHtml(record.recordDate || "");
+      const hour = escapeHtml(record.recordHour || record.recordTime || "");
 
       return `
-        <div class="record-item">
-          <strong>${escapeHtml(record.firstName || "")} ${escapeHtml(record.lastName || "")}</strong>
-          <div>شماره پرسنلی: ${escapeHtml(record.personnelCode || "")}</div>
-          <div>تاریخ: ${escapeHtml(record.recordDate || "")}</div>
-          <div>ساعت: ${escapeHtml(record.recordHour || record.recordTime || "")}</div>
-          <div>GPS: ${gpsText}</div>
-          <div>وضعیت: ${statusText}</div>
-          ${errorText}
+        <div class="record-item compact-record">
+          <span>${date}</span>
+          <span>${hour}</span>
         </div>
       `;
     })
@@ -602,57 +560,72 @@ function getTime(date) {
     hour12: false
   }).format(date);
 }
+
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+
+    reader.onerror = () => reject(new Error("خواندن عکس ناموفق بود."));
+
+    reader.onload = (event) => {
       const image = new Image();
+
+      image.onerror = () => reject(new Error("بارگذاری عکس ناموفق بود."));
+
       image.onload = () => {
         const canvas = document.createElement("canvas");
-        // ابعاد کوچک‌تر
-        const MAX_SIZE = 300; 
+
+        const MAX_SIZE = 220;
         let width = image.width;
         let height = image.height;
 
         if (width > height) {
-          if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+          if (width > MAX_SIZE) {
+            height = Math.round(height * (MAX_SIZE / width));
+            width = MAX_SIZE;
+          }
         } else {
-          if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+          if (height > MAX_SIZE) {
+            width = Math.round(width * (MAX_SIZE / height));
+            height = MAX_SIZE;
+          }
         }
 
         canvas.width = width;
         canvas.height = height;
-        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
 
-        // استفاده از toBlob به جای toDataURL (حجم خیلی کمتر)
-        canvas.toBlob((blob) => {
-          const readerBlob = new FileReader();
-          readerBlob.onloadend = () => resolve(readerBlob.result);
-          readerBlob.readAsDataURL(blob);
-        }, "image/jpeg", 0.4); // کیفیت ۴۰٪
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error("فشرده‌سازی عکس ناموفق بود."));
+              return;
+            }
+
+            const readerBlob = new FileReader();
+
+            readerBlob.onerror = () => reject(new Error("تبدیل عکس فشرده ناموفق بود."));
+
+            readerBlob.onloadend = () => {
+              resolve(readerBlob.result);
+            };
+
+            readerBlob.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          0.25
+        );
       };
-      image.src = e.target.result;
+
+      image.src = event.target.result;
     };
+
     reader.readAsDataURL(file);
   });
-}
-
-
-async function downloadBackup() {
-  const records = await dbGetAll(STORE_RECORDS);
-
-  const blob = new Blob([JSON.stringify(records, null, 2)], {
-    type: "application/json;charset=utf-8"
-  });
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = "attendance-backup.json";
-  link.click();
-
-  URL.revokeObjectURL(url);
 }
 
 function escapeHtml(value) {

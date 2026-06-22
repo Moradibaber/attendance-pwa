@@ -28,7 +28,11 @@ function doPost(e) {
       data.duplicateKey
     ]);
 
-    return jsonResponse({ ok: true });
+   return jsonResponse({
+  ok: true,
+  message: "تردد شما ثبت شد"
+});
+
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error.message || error) });
   }

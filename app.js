@@ -610,7 +610,7 @@ function compressImage(file) {
       image.onload = () => {
         const canvas = document.createElement("canvas");
         // ابعاد کوچک‌تر
-        const MAX_SIZE = 500; 
+        const MAX_SIZE = 300; 
         let width = image.width;
         let height = image.height;
 

@@ -5,8 +5,12 @@ const STORE_PROFILE = "profile";
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
 
+const GPS_WAIT_MS = 30000;
+const GOOD_ACCURACY_METERS = 150;
+
 let db = null;
 let currentPhoto = "";
+let pendingLocation = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -41,48 +45,11 @@ function bindEvents() {
   }
 
   if ($("recordBtn")) {
-    $("recordBtn").addEventListener("click", () => {
-      if (!$("photoInput")) {
-        setStatus("خطا: ورودی دوربین در صفحه پیدا نشد.");
-        return;
-      }
-
-      // ترفند بیدارباش GPS: به محض باز شدن دوربین، GPS را در پس‌زمینه بیدار می‌کنیم
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(() => {}, () => {}, { 
-          enableHighAccuracy: true, 
-          timeout: 10000 
-        });
-      }
-
-      $("photoInput").value = "";
-      $("photoInput").click();
-    });
+    $("recordBtn").addEventListener("click", startAttendanceCapture);
   }
 
   if ($("photoInput")) {
-    $("photoInput").addEventListener("change", async () => {
-      const file = $("photoInput").files && $("photoInput").files[0];
-
-      if (!file) {
-        setStatus("عکسی انتخاب نشد.");
-        return;
-      }
-
-      try {
-        setStatus("در حال آماده‌سازی عکس...");
-        currentPhoto = await compressImage(file);
-
-        if ($("photoPreview")) {
-          $("photoPreview").src = currentPhoto;
-          $("photoPreview").style.display = "block";
-        }
-
-        await createRecord("تردد");
-      } catch (error) {
-        setStatus("خطا در آماده‌سازی عکس: " + error.message);
-      }
-    });
+    $("photoInput").addEventListener("change", handlePhotoSelected);
   }
 
   if ($("syncBtn")) {
@@ -91,6 +58,62 @@ function bindEvents() {
 
   if ($("backupBtn")) {
     $("backupBtn").addEventListener("click", downloadBackup);
+  }
+}
+
+async function startAttendanceCapture() {
+  if (!$("photoInput")) {
+    setStatus("خطا: ورودی دوربین در صفحه پیدا نشد.");
+    return;
+  }
+
+  try {
+    await getProfile();
+  } catch (error) {
+    setStatus(error.message || "لطفاً ابتدا مشخصات پرسنلی را کامل کنید.");
+    return;
+  }
+
+  pendingLocation = null;
+
+  if (!isGeolocationUsable()) {
+    setStatus("GPS در دسترس نیست. سایت باید با HTTPS باز شود و مجوز Location فعال باشد.");
+  } else {
+    setStatus("در حال دریافت GPS قبل از باز شدن دوربین... لطفاً صبر کنید.");
+    pendingLocation = await getLocationWithWatch(GPS_WAIT_MS);
+
+    if (pendingLocation.latitude && pendingLocation.longitude) {
+      const accuracy = pendingLocation.accuracy ? ` دقت: ${Math.round(Number(pendingLocation.accuracy))} متر.` : "";
+      setStatus("GPS دریافت شد." + accuracy + " حالا عکس بگیرید.");
+    } else {
+      setStatus("GPS دریافت نشد. عکس بگیرید؛ بعد از عکس یک بار دیگر تلاش می‌شود.");
+    }
+  }
+
+  $("photoInput").value = "";
+  $("photoInput").click();
+}
+
+async function handlePhotoSelected() {
+  const file = $("photoInput").files && $("photoInput").files[0];
+
+  if (!file) {
+    setStatus("عکسی انتخاب نشد.");
+    return;
+  }
+
+  try {
+    setStatus("در حال آماده‌سازی عکس...");
+    currentPhoto = await compressImage(file);
+
+    if ($("photoPreview")) {
+      $("photoPreview").src = currentPhoto;
+      $("photoPreview").style.display = "block";
+    }
+
+    await createRecord("تردد");
+  } catch (error) {
+    setStatus("خطا در آماده‌سازی عکس: " + error.message);
   }
 }
 
@@ -164,17 +187,6 @@ function dbGetAll(storeName) {
   });
 }
 
-function dbDelete(storeName, key) {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, "readwrite");
-    const store = transaction.objectStore(storeName);
-    const request = store.delete(key);
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
 async function saveProfile() {
   const profile = {
     id: "main",
@@ -223,9 +235,13 @@ async function getProfile() {
 async function createRecord(type) {
   try {
     const profile = await getProfile();
-    
-    // اجرای موقعیت‌یابی با تایم‌اوت ۳۰ ثانیه‌ای هوشمند و شمارش معکوس زنده
-    const location = await getLocation();
+
+    let location = pendingLocation || emptyLocation("not_requested", "");
+
+    if (!location.latitude || !location.longitude) {
+      setStatus("در حال تلاش مجدد برای دریافت GPS بعد از عکس...");
+      location = await getLocationWithWatch(15000);
+    }
 
     const now = new Date();
     const record = {
@@ -234,10 +250,12 @@ async function createRecord(type) {
       lastName: profile.lastName,
       type: type,
       recordDate: getPersianDate(now),
-      recordTime: getTime(now),
-      latitude: location.latitude,
-      longitude: location.longitude,
-      accuracy: location.accuracy,
+      recordHour: getTime(now),
+      latitude: location.latitude || "",
+      longitude: location.longitude || "",
+      accuracy: location.accuracy || "",
+      locationStatus: location.status || "",
+      locationError: location.error || "",
       deviceTime: now.toISOString(),
       photo: currentPhoto || "",
       status: "pending",
@@ -247,8 +265,13 @@ async function createRecord(type) {
     await dbPut(STORE_RECORDS, record);
 
     currentPhoto = "";
+    pendingLocation = null;
 
-    setStatus("ثبت تردد با موفقیت ذخیره شد.");
+    if (record.latitude && record.longitude) {
+      setStatus("ثبت تردد با GPS ذخیره شد.");
+    } else {
+      setStatus("ثبت تردد ذخیره شد، اما GPS دریافت نشد. علت در گزارش ذخیره شد.");
+    }
 
     await refreshUi();
 
@@ -260,66 +283,132 @@ async function createRecord(type) {
   }
 }
 
-/**
- * دریافت موقعیت با الزام و شمارش معکوس ۳۰ ثانیه‌ای
- * اگر بعد از ۳۰ ثانیه موقعیت دریافت نشد، با فیلد خالی عبور می‌کند تا عکس ارسال شود.
- */
-function getLocation() {
+function isGeolocationUsable() {
+  if (!navigator.geolocation) return false;
+  if (window.isSecureContext === false) return false;
+  return true;
+}
+
+function getLocationWithWatch(waitMs) {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({ latitude: "", longitude: "", accuracy: "" });
+    if (!isGeolocationUsable()) {
+      resolve(emptyLocation("unavailable", "GPS موجود نیست یا سایت با HTTPS باز نشده است."));
       return;
     }
 
-    let secondsPassed = 0;
-    setStatus(`در حال بیدار کردن GPS و دریافت موقعیت (ثانیه ۰ از ۳۰)... لطفاً صبور باشید.`);
+    let done = false;
+    let bestLocation = null;
+    let lastError = "";
+    let watchId = null;
+    const startedAt = Date.now();
 
-    // ایجاد یک شمارش معکوس بصری برای کاربر روی صفحه
-    const interval = setInterval(() => {
-      secondsPassed++;
-      if (secondsPassed <= 30) {
-        setStatus(`در حال بیدار کردن GPS و دریافت موقعیت (ثانیه ${secondsPassed} از ۳۰)... لطفاً صبور باشید.`);
+    const timer = setInterval(() => {
+      const passed = Math.floor((Date.now() - startedAt) / 1000);
+      const total = Math.ceil(waitMs / 1000);
+
+      if (bestLocation && bestLocation.latitude && bestLocation.longitude) {
+        setStatus(`GPS پیدا شد. دقت تقریبی: ${Math.round(Number(bestLocation.accuracy || 0))} متر. ثانیه ${passed} از ${total}`);
       } else {
-        clearInterval(interval);
+        setStatus(`در حال دریافت GPS... ثانیه ${passed} از ${total}`);
       }
     }, 1000);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        clearInterval(interval);
-        resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy
-        });
-      },
-      (error) => {
-        clearInterval(interval);
-        console.warn("تلاش اول GPS ناموفق بود یا بیدار نشد. خطا:", error);
-        
-        // اگر خطایی رخ داد، یک بار دیگر در ثانیه باقی‌مانده به صورت سریع تلاش می‌کنیم
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            resolve({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: pos.coords.accuracy
-            });
-          },
-          () => {
-            // اگر بعد از ۳۰ ثانیه کلاً پیدا نشد، با موفقیت فیلد خالی برمی‌گرداند تا فرآیند ثبت متوقف نشود
-            resolve({ latitude: "", longitude: "", accuracy: "" });
-          },
-          { enableHighAccuracy: false, timeout: 4000 }
-        );
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 30000, // مهلت کل ۳۰ ثانیه
-        maximumAge: 0   // عدم استفاده از لوکیشن قدیمی و کش شده
+    const finish = (location) => {
+      if (done) return;
+      done = true;
+
+      clearInterval(timer);
+
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
       }
-    );
+
+      if (location && location.latitude && location.longitude) {
+        resolve(location);
+      } else {
+        resolve(emptyLocation("timeout", lastError || "GPS در زمان مشخص‌شده موقعیت را پیدا نکرد."));
+      }
+    };
+
+    const timeout = setTimeout(() => {
+      finish(bestLocation);
+    }, waitMs);
+
+    try {
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const location = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            status: "ok",
+            error: ""
+          };
+
+          bestLocation = chooseBetterLocation(bestLocation, location);
+
+          if (Number(location.accuracy || 999999) <= GOOD_ACCURACY_METERS) {
+            clearTimeout(timeout);
+            finish(location);
+          }
+        },
+        (error) => {
+          lastError = getGeolocationErrorMessage(error);
+
+          if (error && error.code === 1) {
+            clearTimeout(timeout);
+            finish(emptyLocation("permission_denied", lastError));
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: waitMs
+        }
+      );
+    } catch (error) {
+      clearTimeout(timeout);
+      finish(emptyLocation("exception", error.message || String(error)));
+    }
   });
+}
+
+function emptyLocation(status, error) {
+  return {
+    latitude: "",
+    longitude: "",
+    accuracy: "",
+    status: status || "",
+    error: error || ""
+  };
+}
+
+function chooseBetterLocation(current, next) {
+  if (!current) return next;
+  if (!next) return current;
+
+  const currentAccuracy = Number(current.accuracy || 999999);
+  const nextAccuracy = Number(next.accuracy || 999999);
+
+  return nextAccuracy <= currentAccuracy ? next : current;
+}
+
+function getGeolocationErrorMessage(error) {
+  if (!error) return "خطای نامشخص GPS.";
+
+  if (error.code === 1) {
+    return "مجوز GPS رد شده است. از تنظیمات مرورگر، Location را Allow کنید.";
+  }
+
+  if (error.code === 2) {
+    return "GPS موقعیت را پیدا نمی‌کند. Location گوشی را روشن کنید و فضای باز را امتحان کنید.";
+  }
+
+  if (error.code === 3) {
+    return "زمان دریافت GPS طولانی شد.";
+  }
+
+  return error.message || "خطا در دریافت GPS.";
 }
 
 async function syncPendingRecords() {
@@ -352,13 +441,14 @@ async function syncPendingRecords() {
         lastName: record.lastName || "",
         type: record.type || "تردد",
         recordDate: record.recordDate || "",
-        recordTime: record.recordTime || "",
+        recordHour: record.recordHour || record.recordTime || "",
         latitude: record.latitude || "",
         longitude: record.longitude || "",
         accuracy: record.accuracy || "",
+        locationStatus: record.locationStatus || "",
+        locationError: record.locationError || "",
         deviceTime: record.deviceTime || "",
         photo: record.photo || "",
-        status: "sent",
         createdAt: record.createdAt || ""
       };
 
@@ -376,6 +466,7 @@ async function syncPendingRecords() {
       if (result && result.ok) {
         record.status = "sent";
         record.sentAt = new Date().toISOString();
+        record.error = "";
         await dbPut(STORE_RECORDS, record);
 
         if (result.message) {
@@ -433,13 +524,24 @@ function renderRecords(records) {
             ? "ارسال ناموفق"
             : "در انتظار ارسال";
 
+      const gpsText =
+        record.latitude && record.longitude
+          ? `${escapeHtml(record.latitude)}, ${escapeHtml(record.longitude)}`
+          : "ندارد";
+
+      const errorText = record.locationError
+        ? `<div>خطای GPS: ${escapeHtml(record.locationError)}</div>`
+        : "";
+
       return `
         <div class="record-item">
           <strong>${escapeHtml(record.firstName || "")} ${escapeHtml(record.lastName || "")}</strong>
           <div>شماره پرسنلی: ${escapeHtml(record.personnelCode || "")}</div>
           <div>تاریخ: ${escapeHtml(record.recordDate || "")}</div>
-          <div>ساعت: ${escapeHtml(record.recordTime || "")}</div>
+          <div>ساعت: ${escapeHtml(record.recordHour || record.recordTime || "")}</div>
+          <div>GPS: ${gpsText}</div>
           <div>وضعیت: ${statusText}</div>
+          ${errorText}
         </div>
       `;
     })

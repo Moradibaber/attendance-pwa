@@ -73,6 +73,13 @@ async function startAttendanceCapture() {
     $("photoInput").value = "";
   }
 
+  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+
+  // باز شدن مستقیم دوربین (ضروری برای iPhone)
+  $("photoInput")?.click();
+
+}
+
   if (!isGeolocationUsable()) {
     setStatus(
       "GPS در دسترس نیست.\n" +
@@ -148,15 +155,7 @@ async function handlePhotoSelected() {
 
   try {
 
-    if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-      setStatus(
-        "GPS معتبر نیست.\n" +
-        "لطفاً دوباره دکمه ثبت تردد را بزنید."
-      );
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    setStatus("در حال آماده‌سازی عکس...");
 
     currentPhoto = await compressImage(file);
 
@@ -165,14 +164,49 @@ async function handlePhotoSelected() {
       $("photoPreview").style.display = "block";
     }
 
+    if (!isGeolocationUsable()) {
+      setStatus("GPS در دسترس نیست. لطفاً Location گوشی را روشن کنید.");
+      return;
+    }
+
+    const permission = await checkLocationPermission();
+
+    if (permission === "denied") {
+      setStatus(
+        "دسترسی Location رد شده است.\n" +
+        "لطفاً Location را برای این سایت فعال کنید."
+      );
+      return;
+    }
+
+    setStatus("در حال دریافت GPS... لطفاً صبر کنید.");
+
+    pendingLocation = await getLocationWithWatch(GPS_WAIT_MS);
+
+    if (!hasValidLocation(pendingLocation)) {
+
+      setStatus("GPS دریافت نشد. تلاش مجدد...");
+
+      pendingLocation = await getLocationWithWatch(GPS_RETRY_MS);
+
+    }
+
+    if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
+      setStatus("GPS دریافت نشد. لطفاً Location گوشی را روشن کنید.");
+      return;
+    }
+
     await createRecord("تردد");
 
   } catch (err) {
+
     console.error(err);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
+    setStatus("خطا در ثبت تردد");
+
   }
 
 }
+
 
 function openDb() {
 

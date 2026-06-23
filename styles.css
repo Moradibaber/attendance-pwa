@@ -139,23 +139,24 @@ button {
   min-height: 18px;
 }
 
-/* ردیف عکس */
 .photo-row {
+  display: flex;
+  justify-content: center;
   margin-top: 6px;
   margin-bottom: 4px;
 }
 
-/* عکس افقی */
 .preview {
   display: block;
-  max-width: 220px;
-  max-height: 140px;
-  width: auto;
-  height: auto;
+  width: 220px;
+  height: 130px;
   object-fit: cover;
-  margin: 6px auto;
+  object-position: center;
   border-radius: 12px;
+  margin: 0 auto;
+  background: #f1f5f9;
 }
+
 
 /* آمار */
 .stats {

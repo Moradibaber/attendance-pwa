@@ -52,12 +52,14 @@ function bindEvents() {
 
 }
 
-async function startAttendanceCapture() {
+function startAttendanceCapture() {
 
-  try {
-    await getProfile();
-  } catch (error) {
-    setStatus(error.message);
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
+
+  if (!personnelCode || !firstName || !lastName) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
     return;
   }
 
@@ -69,18 +71,16 @@ async function startAttendanceCapture() {
     $("photoPreview").style.display = "none";
   }
 
-  if ($("photoInput")) {
-    $("photoInput").value = "";
-  }
-
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-
   const photoInput = $("photoInput");
 
   if (!photoInput) {
     setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
     return;
   }
+
+  photoInput.value = "";
+
+  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
 
   photoInput.click();
 
@@ -96,6 +96,8 @@ async function handlePhotoSelected() {
   }
 
   try {
+
+    await saveProfileSilent();
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
 
@@ -114,17 +116,7 @@ async function handlePhotoSelected() {
       return;
     }
 
-    const permission = await checkLocationPermission();
-
-    if (permission === "denied") {
-      setStatus(
-        "دسترسی Location قبلاً رد شده است.\n" +
-        "لطفاً از تنظیمات گوشی یا مرورگر، دسترسی Location را برای این سایت فعال کنید."
-      );
-      return;
-    }
-
-    setStatus("در حال دریافت GPS... لطفاً چند لحظه صبر کنید و صفحه را نبندید.");
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
 
     pendingLocation = await getLocationIOSFriendly();
 
@@ -133,7 +125,7 @@ async function handlePhotoSelected() {
       if (pendingLocation?.status === "denied") {
         setStatus(
           "دسترسی GPS رد شد.\n" +
-          "تردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید."
+          "تردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
         );
         return;
       }
@@ -251,19 +243,14 @@ function dbGetAll(store) {
 
 async function saveProfile() {
 
-  const profile = {
-    id: "main",
-    personnelCode: $("personnelCode")?.value.trim(),
-    firstName: $("firstName")?.value.trim(),
-    lastName: $("lastName")?.value.trim()
-  };
+  const profile = getProfileFromInputs();
 
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
     setStatus("اطلاعات پرسنلی کامل نیست.");
     return;
   }
 
-  await dbPut(STORE_PROFILE, profile);
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
 
   const profileStatus = $("profileStatus");
 
@@ -283,6 +270,18 @@ async function saveProfile() {
 
 }
 
+async function saveProfileSilent() {
+
+  const profile = getProfileFromInputs();
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    throw new Error("مشخصات پرسنلی کامل نیست.");
+  }
+
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
+
+}
+
 async function loadProfile() {
 
   const p = await dbGet(STORE_PROFILE, "main");
@@ -294,14 +293,26 @@ async function loadProfile() {
 
 }
 
+function getProfileFromInputs() {
+
+  return {
+    personnelCode: $("personnelCode")?.value.trim() || "",
+    firstName: $("firstName")?.value.trim() || "",
+    lastName: $("lastName")?.value.trim() || ""
+  };
+
+}
+
 async function getProfile() {
 
   const saved = await dbGet(STORE_PROFILE, "main");
 
+  const inputProfile = getProfileFromInputs();
+
   const profile = {
-    personnelCode: $("personnelCode")?.value.trim() || saved?.personnelCode || "",
-    firstName: $("firstName")?.value.trim() || saved?.firstName || "",
-    lastName: $("lastName")?.value.trim() || saved?.lastName || ""
+    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
+    firstName: inputProfile.firstName || saved?.firstName || "",
+    lastName: inputProfile.lastName || saved?.lastName || ""
   };
 
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
@@ -398,63 +409,57 @@ async function getLocationIOSFriendly() {
     return emptyLocation("unavailable", "GPS در دسترس نیست");
   }
 
-  const permission = await checkLocationPermission();
-
-  if (permission === "denied") {
-    return emptyLocation("denied", "دسترسی GPS رد شده است");
-  }
-
   let firstLocation = await getCurrentPositionSafe({
     enableHighAccuracy: true,
     maximumAge: 0,
-    timeout: 20000
+    timeout: 25000
   });
 
   if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) {
     return firstLocation;
   }
 
-  if (!hasValidLocation(firstLocation)) {
+  if (firstLocation?.status === "denied") {
+    return firstLocation;
+  }
 
-    const lowAccuracyLocation = await getCurrentPositionSafe({
-      enableHighAccuracy: false,
-      maximumAge: 0,
-      timeout: 15000
-    });
+  let secondLocation = await getCurrentPositionSafe({
+    enableHighAccuracy: false,
+    maximumAge: 0,
+    timeout: 15000
+  });
 
-    if (hasValidLocation(lowAccuracyLocation)) {
-      firstLocation = chooseBetterLocation(firstLocation, lowAccuracyLocation);
-    }
+  if (secondLocation?.status === "denied") {
+    return secondLocation;
+  }
 
+  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
+
+  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) {
+    return bestLocation;
   }
 
   const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
 
-  if (hasValidLocation(firstLocation) && hasValidLocation(watchedLocation)) {
-    return chooseBetterLocation(firstLocation, watchedLocation);
-  }
-
-  if (hasValidLocation(firstLocation)) {
-    return firstLocation;
-  }
-
-  if (hasValidLocation(watchedLocation)) {
+  if (watchedLocation?.status === "denied") {
     return watchedLocation;
   }
 
-  if (firstLocation?.status === "denied" || watchedLocation?.status === "denied") {
-    return emptyLocation("denied", "دسترسی GPS رد شده است");
+  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
+
+  if (hasValidLocation(bestLocation)) {
+    return bestLocation;
   }
 
-  if (firstLocation?.status === "unavailable" || watchedLocation?.status === "unavailable") {
+  if (firstLocation?.status === "unavailable" || secondLocation?.status === "unavailable" || watchedLocation?.status === "unavailable") {
     return emptyLocation("unavailable", "موقعیت مکانی در دسترس نیست");
   }
 
-  if (firstLocation?.status === "timeout" || watchedLocation?.status === "timeout") {
+  if (firstLocation?.status === "timeout" || secondLocation?.status === "timeout" || watchedLocation?.status === "timeout") {
     return emptyLocation("timeout", "زمان دریافت GPS تمام شد");
   }
 
-  return watchedLocation || firstLocation || emptyLocation("timeout", "GPS دریافت نشد");
+  return emptyLocation("timeout", "GPS دریافت نشد");
 
 }
 
@@ -486,7 +491,7 @@ function getCurrentPositionSafe(options) {
 
     timeoutId = setTimeout(() => {
       finish(emptyLocation("timeout", "زمان دریافت GPS تمام شد"));
-    }, (options.timeout || 20000) + 2000);
+    }, (options.timeout || 20000) + 3000);
 
     try {
 
@@ -603,7 +608,7 @@ function getLocationWithWatch(waitMs) {
 
       timeoutId = setTimeout(() => {
         finish(best || emptyLocation("timeout", "GPS دریافت نشد"));
-      }, waitMs + 2000);
+      }, waitMs + 3000);
 
     } catch (error) {
 

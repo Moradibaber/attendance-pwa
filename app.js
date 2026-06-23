@@ -13,7 +13,6 @@ const GPS_REQUIRED = true;
 let db = null;
 let currentPhoto = "";
 let pendingLocation = null;
-let pendingLocationPromise = null;
 let syncRunning = false;
 
 const $ = (id) => document.getElementById(id);
@@ -64,12 +63,21 @@ async function startAttendanceCapture() {
 
   currentPhoto = "";
   pendingLocation = null;
-  pendingLocationPromise = null;
 
-  $("photoInput").value = "";
+  if ($("photoPreview")) {
+    $("photoPreview").removeAttribute("src");
+    $("photoPreview").style.display = "none";
+  }
+
+  if ($("photoInput")) {
+    $("photoInput").value = "";
+  }
 
   if (!isGeolocationUsable()) {
-    setStatus("GPS در دسترس نیست. برای ثبت تردد، GPS الزامی است.");
+    setStatus(
+      "GPS در دسترس نیست.\n" +
+      "برای ثبت تردد، سایت باید با HTTPS باز شود و Location گوشی فعال باشد."
+    );
     return;
   }
 
@@ -83,39 +91,15 @@ async function startAttendanceCapture() {
     return;
   }
 
-  setStatus("دوربین باز می‌شود...");
+  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
 
-  $("photoInput").click();
-
-  setTimeout(async () => {
-
-    if (!isGeolocationUsable()) {
-      setStatus("GPS در دسترس نیست. برای ثبت تردد، GPS الزامی است.");
-      return;
-    }
-
-    const latestPermission = await checkLocationPermission();
-
-    if (latestPermission === "denied") {
-      setStatus(
-        "دسترسی GPS رد شده است.\n" +
-        "برای ثبت تردد، Location را از تنظیمات مرورگر فعال کنید."
-      );
-      pendingLocation = emptyLocation("denied", "دسترسی GPS رد شده است");
-      pendingLocationPromise = Promise.resolve(pendingLocation);
-      return;
-    }
-
-    setStatus("در حال دریافت GPS...");
-    pendingLocationPromise = getLocationWithWatch(GPS_WAIT_MS);
-
-  }, 500);
+  $("photoInput")?.click();
 
 }
 
 async function handlePhotoSelected() {
 
-  const file = $("photoInput").files?.[0];
+  const file = $("photoInput")?.files?.[0];
 
   if (!file) {
     setStatus("عکسی انتخاب نشد.");
@@ -132,23 +116,40 @@ async function handlePhotoSelected() {
       $("photoPreview").style.display = "block";
     }
 
-    if (pendingLocationPromise) {
-      pendingLocation = await pendingLocationPromise;
+    if (!isGeolocationUsable()) {
+      setStatus(
+        "عکس آماده شد، اما GPS در دسترس نیست.\n" +
+        "تردد ذخیره نشد. لطفاً Location را فعال کنید و سایت را با HTTPS باز کنید."
+      );
+      return;
     }
 
-    if (!hasValidLocation(pendingLocation) && isGeolocationUsable()) {
+    const permission = await checkLocationPermission();
 
-      const permission = await checkLocationPermission();
+    if (permission === "denied") {
+      setStatus(
+        "عکس آماده شد، اما دسترسی Location رد شده است.\n" +
+        "تردد ذخیره نشد. لطفاً Location را از تنظیمات مرورگر یا گوشی فعال کنید."
+      );
+      return;
+    }
 
-      if (permission === "denied") {
+    setStatus("در حال دریافت GPS... لطفاً صفحه را نبندید.");
+
+    pendingLocation = await getLocationWithWatch(GPS_WAIT_MS);
+
+    if (!hasValidLocation(pendingLocation)) {
+
+      if (pendingLocation?.status === "denied") {
         setStatus(
-          "عکس آماده شد، اما GPS ثبت نشد چون دسترسی Location رد شده است.\n" +
-          "تردد ذخیره نشد. لطفاً Location را فعال کنید و دوباره تلاش کنید."
+          "دسترسی GPS رد شد.\n" +
+          "تردد ذخیره نشد. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
         );
         return;
       }
 
-      setStatus("در حال تلاش مجدد برای GPS...");
+      setStatus("GPS دریافت نشد. در حال تلاش مجدد...");
+
       pendingLocation = await getLocationWithWatch(GPS_RETRY_MS);
 
     }
@@ -165,7 +166,7 @@ async function handlePhotoSelected() {
 
   } catch (err) {
     console.error(err);
-    setStatus("خطا در پردازش عکس");
+    setStatus("خطا در پردازش عکس یا دریافت GPS");
   }
 
 }
@@ -403,6 +404,7 @@ function getLocationWithWatch(waitMs) {
     let done = false;
     let best = null;
     let watchId = null;
+    let timeoutId = null;
 
     const finish = loc => {
 
@@ -411,6 +413,10 @@ function getLocationWithWatch(waitMs) {
 
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
+      }
+
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
       }
 
       if (hasValidLocation(loc)) {
@@ -423,57 +429,65 @@ function getLocationWithWatch(waitMs) {
 
     };
 
-    watchId = navigator.geolocation.watchPosition(
+    try {
 
-      pos => {
+      watchId = navigator.geolocation.watchPosition(
 
-        const loc = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          status: "ok"
-        };
+        pos => {
 
-        best = chooseBetterLocation(best, loc);
+          const loc = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            status: "ok"
+          };
 
-        if (loc.accuracy <= GOOD_ACCURACY_METERS) {
-          finish(loc);
+          best = chooseBetterLocation(best, loc);
+
+          if (loc.accuracy <= GOOD_ACCURACY_METERS) {
+            finish(loc);
+          }
+
+        },
+
+        err => {
+
+          if (err.code === 1) {
+            finish(emptyLocation("denied", "کاربر دسترسی GPS را رد کرده است"));
+            return;
+          }
+
+          if (err.code === 2) {
+            finish(best || emptyLocation("unavailable", "موقعیت مکانی در دسترس نیست"));
+            return;
+          }
+
+          if (err.code === 3) {
+            finish(best || emptyLocation("timeout", "زمان دریافت GPS تمام شد"));
+            return;
+          }
+
+          finish(best || emptyLocation("error", "خطا در دریافت GPS"));
+
+        },
+
+        {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: waitMs
         }
 
-      },
+      );
 
-      err => {
+      timeoutId = setTimeout(() => {
+        finish(best || emptyLocation("timeout", "GPS دریافت نشد"));
+      }, waitMs + 1000);
 
-        if (err.code === 1) {
-          finish(emptyLocation("denied", "کاربر دسترسی GPS را رد کرده است"));
-          return;
-        }
+    } catch (error) {
 
-        if (err.code === 2) {
-          finish(emptyLocation("unavailable", "موقعیت مکانی در دسترس نیست"));
-          return;
-        }
+      finish(emptyLocation("error", "خطا در شروع GPS"));
 
-        if (err.code === 3) {
-          finish(best || emptyLocation("timeout", "زمان دریافت GPS تمام شد"));
-          return;
-        }
-
-        finish(best || emptyLocation("error", "خطا در دریافت GPS"));
-
-      },
-
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: waitMs
-      }
-
-    );
-
-    setTimeout(() => {
-      finish(best || emptyLocation("timeout", "GPS دریافت نشد"));
-    }, waitMs);
+    }
 
   });
 

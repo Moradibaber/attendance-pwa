@@ -95,7 +95,7 @@ async function handlePhotoSelected() {
 
   try {
 
-    setStatus("در حال آماده سازی عکس،صب.ر باشید ...");
+    setStatus("در حال آماده سازی عکس،صبور باشید ...");
     currentPhoto = await compressImage(file);
 
     if ($("photoPreview")) {

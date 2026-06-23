@@ -299,9 +299,9 @@ async function createRecord(type){
   await dbPut(STORE_RECORDS,record);
 
   if(loc.latitude){
-    setStatus("تردد با GPS ذخیره شد.");
+    setStatus("تردد با موفقیت ذخیره شد.");
   }else{
-    setStatus("تردد ذخیره شد (بدون GPS).");
+    setStatus("تردد با مشکل ذخیره شد-با منابع انسانی تماس بگیرید");
   }
 
   await refreshUi();

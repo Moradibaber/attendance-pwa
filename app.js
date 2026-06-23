@@ -5,8 +5,8 @@ const STORE_PROFILE = "profile";
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
 
-const GPS_WAIT_MS = 60000;
-const GPS_RETRY_MS = 20000;
+const GPS_WAIT_MS = 90000;
+const GPS_RETRY_MS = 30000;
 const GOOD_ACCURACY_METERS = 1000;
 
 let db = null;

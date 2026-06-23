@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v8"; 
+const CACHE_NAME = "attendance-pwa-v7"; 
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 self.addEventListener("install", (event) => {

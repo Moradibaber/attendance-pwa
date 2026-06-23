@@ -355,7 +355,7 @@ async function createRecord(type) {
 
   await dbPut(STORE_RECORDS, record);
 
-  setStatus("تردد با موفقیت همراه با GPS ذخیره شد.");
+  setStatus("تردد با GPS ذخیره شد.");
 
   await refreshUi();
 

@@ -88,6 +88,7 @@ button {
   margin-top: 4px;
   font: inherit;
   text-align: center;
+  font-color:red;
 }
 
 input {

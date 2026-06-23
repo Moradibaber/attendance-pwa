@@ -21,6 +21,10 @@ body {
   color: var(--text);
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 .app {
   width: min(760px, 100%);
   margin: 0 auto;
@@ -84,7 +88,6 @@ button {
   margin-top: 4px;
   font: inherit;
   text-align: center;
-  font-color:red;
 }
 
 input {
@@ -157,7 +160,6 @@ button {
   margin: 0 auto;
   background: #f1f5f9;
 }
-
 
 /* آمار */
 .stats {
@@ -263,6 +265,199 @@ button {
   margin-bottom: 0;
 }
 
+/* ============================= */
+/* راهنمای نصب و ثبت تردد */
+/* ============================= */
+
+.guide-card {
+  background: linear-gradient(135deg, #e0f2fe, #ccfbf1, #fef3c7);
+  border: 1px solid rgba(15, 118, 110, 0.25);
+  padding: 8px;
+}
+
+.guide-button {
+  background: linear-gradient(135deg, #2563eb, #0f766e);
+  color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 15px;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.guide-button:active {
+  transform: scale(0.98);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
+}
+
+.guide-button:hover {
+  filter: brightness(1.04);
+}
+
+.guide-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 9999;
+  padding: 12px;
+}
+
+.guide-modal.show {
+  display: block;
+}
+
+.guide-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.guide-box {
+  position: relative;
+  width: min(720px, 100%);
+  max-height: 92vh;
+  margin: 4vh auto 0;
+  background: #ffffff;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  animation: guidePop 0.18s ease-out;
+}
+
+@keyframes guidePop {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.guide-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6, #2563eb);
+  color: #ffffff;
+  text-align: right;
+}
+
+.guide-header h2 {
+  margin: 0 0 4px;
+  font-size: 19px;
+}
+
+.guide-header p {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.95;
+}
+
+.guide-close {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-size: 28px;
+  line-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.guide-close:active {
+  transform: scale(0.95);
+}
+
+.guide-content {
+  max-height: calc(92vh - 150px);
+  overflow-y: auto;
+  padding: 12px;
+  background: linear-gradient(180deg, #f8fafc, #ffffff);
+  text-align: right;
+}
+
+.guide-section {
+  border-radius: 16px;
+  padding: 12px;
+  margin-bottom: 10px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+}
+
+.guide-section h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.guide-section ol,
+.guide-section ul {
+  margin: 0;
+  padding-right: 20px;
+}
+
+.guide-section li {
+  margin: 7px 0;
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.guide-section strong {
+  color: #0f766e;
+}
+
+.guide-section.android {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border-color: #86efac;
+}
+
+.guide-section.ios {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-color: #93c5fd;
+}
+
+.guide-section.gps {
+  background: linear-gradient(135deg, #fefce8, #fef3c7);
+  border-color: #facc15;
+}
+
+.guide-section.warning-guide {
+  background: linear-gradient(135deg, #fff7ed, #ffedd5);
+  border-color: #fb923c;
+}
+
+.guide-section.editable-note {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border-color: #c4b5fd;
+}
+
+.guide-footer {
+  padding: 10px 12px 12px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+}
+
+.guide-ok {
+  background: linear-gradient(135deg, #16a34a, #0f766e);
+  color: #ffffff;
+  border-radius: 14px;
+  padding: 11px;
+  box-shadow: 0 5px 14px rgba(22, 163, 74, 0.22);
+}
+
+.guide-ok:active {
+  transform: scale(0.98);
+}
+
 @media (max-width: 480px) {
   .grid2 {
     grid-template-columns: 1fr;
@@ -297,5 +492,45 @@ button {
 
   .stats span {
     font-size: 18px;
+  }
+
+  .guide-modal {
+    padding: 8px;
+  }
+
+  .guide-box {
+    max-height: 94vh;
+    margin-top: 3vh;
+    border-radius: 18px;
+  }
+
+  .guide-header {
+    padding: 12px;
+  }
+
+  .guide-header h2 {
+    font-size: 17px;
+  }
+
+  .guide-header p {
+    font-size: 12px;
+  }
+
+  .guide-content {
+    max-height: calc(94vh - 145px);
+    padding: 10px;
+  }
+
+  .guide-section {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .guide-section h3 {
+    font-size: 14px;
+  }
+
+  .guide-section li {
+    font-size: 13px;
   }
 }

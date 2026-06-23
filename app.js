@@ -587,7 +587,7 @@ function compressImage(file){
 
         const canvas=document.createElement("canvas");
 
-        const MAX=220;
+        const MAX=400;
 
         let w=img.width;
         let h=img.height;

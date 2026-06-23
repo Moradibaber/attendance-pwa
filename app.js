@@ -198,26 +198,36 @@ function dbGetAll(store){
 
 }
 
-async function saveProfile(){
-
-  const profile={
-    id:"main",
-    personnelCode:$("personnelCode")?.value.trim(),
-    firstName:$("firstName")?.value.trim(),
-    lastName:$("lastName")?.value.trim()
+async function saveProfile() {
+  const profile = {
+    id: "main",
+    personnelCode: $("personnelCode")?.value.trim(),
+    firstName: $("firstName")?.value.trim(),
+    lastName: $("lastName")?.value.trim()
   };
 
-  if(!profile.personnelCode||!profile.firstName||!profile.lastName){
-
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
     setStatus("اطلاعات پرسنلی کامل نیست.");
     return;
-
   }
 
-  await dbPut(STORE_PROFILE,profile);
+  await dbPut(STORE_PROFILE, profile);
 
-  setStatus("مشخصات ذخیره شد.");
+  // --- بخش جدید برای نمایش پیام موقت ---
+  const profileStatus = document.getElementById("profileStatus");
+  if (profileStatus) {
+    profileStatus.textContent = "مشخصات با موفقیت ثبت شد ✅";
+    profileStatus.className = "status online small-status";
 
+    // بعد از 3000 میلی‌ثانیه (3 ثانیه) پیام پاک شود
+    setTimeout(() => {
+      profileStatus.textContent = "";
+      profileStatus.className = "status small-status";
+    }, 3000);
+  } else {
+    // اگر المنت مخصوص را در HTML ندارید، از همان تابع عمومی استفاده می‌کند
+    setStatus("مشخصات با موفقیت ثبت شد.");
+  }
 }
 
 async function loadProfile(){

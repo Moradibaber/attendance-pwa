@@ -616,7 +616,7 @@ function compressImage(file){
 
           r.readAsDataURL(blob);
 
-        },"image/jpeg",0.25);
+        },"image/jpeg",0.7);
 
       };
 

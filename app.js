@@ -125,7 +125,7 @@ async function handlePhotoSelected() {
       if (pendingLocation?.status === "denied") {
         setStatus(
           "دسترسی GPS رد شد.\n" +
-          "تردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
+          "تردد ذخیره نمی‌شود. لطفاً Location ، را برای این سایت مجاز کنید و دوباره تلاش کنید ادمین سیستم متوجه خاموش شدن جی پی اس میشود"
         );
         return;
       }

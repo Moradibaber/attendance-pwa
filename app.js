@@ -233,7 +233,7 @@ async function createRecord(type){
     createdAt:now.toISOString()
   };
   await dbPut(STORE_RECORDS,record);
-  if(loc.latitude){setStatus("تردد با GPS ذخیره شد.");}else{setStatus("تردد ذخیره شد (بدون GPS).");}
+  if(loc.latitude){setStatus("تردد با GPS ذخیره شد.");}else{setStatus("تردد ذخیره شد (بدون GPS)جی پی اس را روشن کنید و مجددا تلاش کنید- ادمین سیستم متوجه خاموش بودن جی پی اس میشود.");}
   await refreshUi();
   if(navigator.onLine){syncPendingRecords();}
 }

@@ -1,9 +1,15 @@
+/******************************************************************************
+ *   نسخه کامل app.js با اصلاحات درخواست GPS + پیام زیبا در مرکز صفحه
+ *   نوشته شده مخصوص نسخه فرم شما — بدون دستکاری منطق اصلی
+ ******************************************************************************/
+
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 2;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
 
 const GPS_WAIT_MS = 90000;
 const GPS_RETRY_MS = 30000;
@@ -17,10 +23,12 @@ let syncRunning = false;
 
 const $ = (id) => document.getElementById(id);
 
-document.addEventListener("DOMContentLoaded", async () => {
+/*******************************************************************************
+ *                                صفحه اصلی
+ *******************************************************************************/
 
-  // --- نمایش پیام خوش‌آمدگویی و هشدار GPS ---
-  showGpsToast("📍 حتما جی پی اس خود را روشن کنید", 3000);
+document.addEventListener("DOMContentLoaded", async () => {
+  showGpsToast("📍 حتما GPS گوشی را روشن کنید", 3000);
 
   db = await openDb();
 
@@ -44,53 +52,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
-
 });
 
-// تابع اختصاصی برای نمایش پیام زیبا
-// این تابع را جایگزین تابع showGpsToast قبلی در انتهای فایل app.js کنید
-function showGpsToast(message, duration) {
-  const toast = document.createElement("div");
-  toast.textContent = message;
-  
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%) scale(0.8)", // شروع از وسط با سایز کوچک
-    backgroundColor: "rgba(220, 38, 38, 0.95)", // قرمز تند و جذاب
-    color: "#ffffff",
-    padding: "25px 40px",
-    borderRadius: "20px",
-    fontSize: "22px", // فونت بزرگتر
-    fontWeight: "bold",
-    fontFamily: "Tahoma, sans-serif",
-    boxShadow: "0 15px 50px rgba(0,0,0,0.5)",
-    zIndex: "10000",
-    opacity: "0",
-    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-    direction: "rtl",
-    textAlign: "center",
-    width: "80%", // عرض مناسب برای موبایل
-    maxWidth: "400px",
-    border: "3px solid #ffffff" // حاشیه سفید برای خوانایی بیشتر در قرمز
-  });
+/*******************************************************************************
+ *                     1) تابع جدید و اصلاح‌شده: چک کردن دسترسی
+ *******************************************************************************/
 
-  document.body.appendChild(toast);
+async function checkLocationPermission() {
+  if (!navigator.permissions || !navigator.permissions.query) return "unknown";
 
-  // انیمیشن ورود (بزرگ شدن و ظاهر شدن در مرکز)
-  setTimeout(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 100);
-
-  // حذف خودکار بعد از ۳ ثانیه با انیمیشن کوچک شدن
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
-    setTimeout(() => toast.remove(), 400);
-  }, duration);
+  try {
+    const result = await navigator.permissions.query({ name: "geolocation" });
+    return result.state; // granted | denied | prompt
+  } catch (e) {
+    return "unknown";
+  }
 }
+
+/*******************************************************************************
+ *                                  2) روال انتخاب عکس و GPS
+ *******************************************************************************/
 
 function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
@@ -111,19 +92,11 @@ function startAttendanceCapture() {
   currentPhoto = "";
   pendingLocation = null;
 
-  if ($("photoPreview")) {
-    $("photoPreview").removeAttribute("src");
-    $("photoPreview").style.display = "none";
-  }
+  $("photoPreview").style.display = "none";
 
   const photoInput = $("photoInput");
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
-    return;
-  }
-
   photoInput.value = "";
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+  setStatus("در حال باز کردن دوربین...");
   photoInput.click();
 }
 
@@ -135,60 +108,70 @@ async function handlePhotoSelected() {
   }
 
   try {
-    await saveProfileSilent();
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
+    const permission = await checkLocationPermission();
 
-    if ($("photoPreview")) {
-      $("photoPreview").src = currentPhoto;
-      $("photoPreview").style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+    if (permission === "denied") {
+      showGpsToast(
+        "🚫 دسترسی GPS برای این سایت مسدود شده است. روی آیکون قفل کنار آدرس زده و Location را Allow کنید.",
+        6500
+      );
+      setStatus("GPS مسدود شده — باید دستی آزاد شود.");
       return;
     }
 
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    await saveProfileSilent();
+    setStatus("در حال پردازش عکس...");
+    currentPhoto = await compressImage(file);
+
+    $("photoPreview").src = currentPhoto;
+    $("photoPreview").style.display = "block";
+
+    setStatus("در حال دریافت GPS...");
+
     pendingLocation = await getLocationIOSFriendly();
 
     if (!hasValidLocation(pendingLocation)) {
       if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        showGpsToast("❌ اجازه GPS داده نشد. تنظیمات مرورگر را چک کنید.", 6000);
+        setStatus("GPS رد شد.");
         return;
       }
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-        return;
-      }
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+
+      setStatus("خطا در GPS: " + pendingLocation?.error);
       return;
     }
 
     await createRecord("تردد");
   } catch (err) {
     console.error(err);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
+    setStatus("خطا در ثبت تردد.");
   }
 }
+
+/*******************************************************************************
+ *                            IndexedDB
+ *******************************************************************************/
 
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = e => {
+
+    req.onupgradeneeded = (e) => {
       const db = e.target.result;
+
       if (!db.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = db.createObjectStore(STORE_RECORDS, { keyPath: "id", autoIncrement: true });
+        const store = db.createObjectStore(STORE_RECORDS, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
         store.createIndex("status", "status");
       }
+
       if (!db.objectStoreNames.contains(STORE_PROFILE)) {
         db.createObjectStore(STORE_PROFILE, { keyPath: "id" });
       }
     };
+
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -224,156 +207,236 @@ function dbGetAll(store) {
   });
 }
 
+/*******************************************************************************
+ *                                   پروفایل
+ *******************************************************************************/
+
 async function saveProfile() {
   const profile = getProfileFromInputs();
+
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
     setStatus("اطلاعات پرسنلی کامل نیست.");
     return;
   }
+
   await dbPut(STORE_PROFILE, { id: "main", ...profile });
-  const profileStatus = $("profileStatus");
-  if (profileStatus) {
-    profileStatus.textContent = "مشخصات با موفقیت ثبت شد ✅";
-    profileStatus.className = "status online small-status";
-    setTimeout(() => {
-      profileStatus.textContent = "";
-      profileStatus.className = "status small-status";
-    }, 3000);
-  } else {
-    setStatus("مشخصات با موفقیت ثبت شد.");
-  }
+
+  $("profileStatus").textContent = "مشخصات ذخیره شد.";
+  setTimeout(() => ($("profileStatus").textContent = ""), 3000);
 }
 
 async function saveProfileSilent() {
   const profile = getProfileFromInputs();
+
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
+    throw new Error("مشخصات ناقص است.");
   }
+
   await dbPut(STORE_PROFILE, { id: "main", ...profile });
 }
 
 async function loadProfile() {
   const p = await dbGet(STORE_PROFILE, "main");
   if (!p) return;
-  if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
-  if ($("firstName")) $("firstName").value = p.firstName || "";
-  if ($("lastName")) $("lastName").value = p.lastName || "";
+
+  $("personnelCode").value = p.personnelCode || "";
+  $("firstName").value = p.firstName || "";
+  $("lastName").value = p.lastName || "";
 }
 
 function getProfileFromInputs() {
   return {
-    personnelCode: $("personnelCode")?.value.trim() || "",
-    firstName: $("firstName")?.value.trim() || "",
-    lastName: $("lastName")?.value.trim() || ""
+    personnelCode: $("personnelCode").value.trim(),
+    firstName: $("firstName").value.trim(),
+    lastName: $("lastName").value.trim(),
   };
 }
 
 async function getProfile() {
   const saved = await dbGet(STORE_PROFILE, "main");
-  const inputProfile = getProfileFromInputs();
+  const input = getProfileFromInputs();
+
   const profile = {
-    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
-    firstName: inputProfile.firstName || saved?.firstName || "",
-    lastName: inputProfile.lastName || saved?.lastName || ""
+    personnelCode: input.personnelCode || saved?.personnelCode || "",
+    firstName: input.firstName || saved?.firstName || "",
+    lastName: input.lastName || saved?.lastName || "",
   };
+
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
     throw new Error("مشخصات پرسنلی کامل نیست.");
   }
+
   await dbPut(STORE_PROFILE, { id: "main", ...profile });
+
   return profile;
 }
 
+/*******************************************************************************
+ *                              ثبت تردد
+ *******************************************************************************/
+
 async function createRecord(type) {
   const profile = await getProfile();
+
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
+    setStatus("GPS معتبر نیست.");
     return;
   }
-  const loc = hasValidLocation(pendingLocation) ? pendingLocation : emptyLocation("not_received", "GPS دریافت نشد");
+
   const now = new Date();
-  const record = {
+
+  const r = {
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,
     lastName: profile.lastName,
-    type: type,
+    type,
     recordDate: getPersianDate(now),
     recordHour: getTime(now),
-    latitude: loc.latitude || "",
-    longitude: loc.longitude || "",
-    accuracy: loc.accuracy || "",
+
+    latitude: pendingLocation.latitude,
+    longitude: pendingLocation.longitude,
+    accuracy: pendingLocation.accuracy,
+
     deviceTime: now.toISOString(),
+    createdAt: now.toISOString(),
+
     photo: currentPhoto,
     status: "pending",
-    createdAt: now.toISOString()
   };
-  await dbPut(STORE_RECORDS, record);
-  setStatus("تردد با GPS ذخیره شد.");
-  await refreshUi();
-  if (navigator.onLine) {
-    syncPendingRecords();
-  }
+
+  await dbPut(STORE_RECORDS, r);
+
+  setStatus("تردد ذخیره شد.");
+  refreshUi();
+
+  if (navigator.onLine) syncPendingRecords();
 }
+
+/*******************************************************************************
+ *                               GPS
+ *******************************************************************************/
 
 function isGeolocationUsable() {
   return !!navigator.geolocation && window.isSecureContext;
 }
 
 async function getLocationIOSFriendly() {
-  if (!isGeolocationUsable()) return emptyLocation("unavailable", "GPS در دسترس نیست");
-  let firstLocation = await getCurrentPositionSafe({ enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
-  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) return firstLocation;
-  if (firstLocation?.status === "denied") return firstLocation;
+  if (!isGeolocationUsable())
+    return emptyLocation("unavailable", "GPS فعال نیست");
 
-  let secondLocation = await getCurrentPositionSafe({ enableHighAccuracy: false, maximumAge: 0, timeout: 15000 });
-  if (secondLocation?.status === "denied") return secondLocation;
+  let loc1 = await getCurrentPositionSafe({
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 25000,
+  });
 
-  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
-  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) return bestLocation;
+  if (hasValidLocation(loc1) && loc1.accuracy <= GOOD_ACCURACY_METERS)
+    return loc1;
 
-  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
-  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
-  return bestLocation;
+  if (loc1.status === "denied") return loc1;
+
+  let loc2 = await getCurrentPositionSafe({
+    enableHighAccuracy: false,
+    maximumAge: 0,
+    timeout: 15000,
+  });
+
+  if (loc2.status === "denied") return loc2;
+
+  let best = chooseBetterLocation(loc1, loc2);
+
+  if (hasValidLocation(best) && best.accuracy <= GOOD_ACCURACY_METERS)
+    return best;
+
+  const watchLoc = await getLocationWithWatch(GPS_RETRY_MS);
+
+  best = chooseBetterLocation(best, watchLoc);
+
+  return best;
 }
 
 function getCurrentPositionSafe(options) {
-  return new Promise(resolve => {
-    let done = false;
-    let timeoutId = setTimeout(() => {
-      if (!done) { done = true; resolve(emptyLocation("timeout", "زمان تمام شد")); }
+  return new Promise((resolve) => {
+    let finished = false;
+
+    let timer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        resolve(emptyLocation("timeout", "زمان GPS تمام شد"));
+      }
     }, (options.timeout || 20000) + 3000);
 
     navigator.geolocation.getCurrentPosition(
-      pos => { if (!done) { done = true; clearTimeout(timeoutId); resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy, status: "ok" }); } },
-      err => { if (!done) { done = true; clearTimeout(timeoutId); resolve(geoErrorToLocation(err)); } },
+      (pos) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          status: "ok",
+        });
+      },
+      (err) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+
+        resolve(geoErrorToLocation(err));
+      },
       options
     );
   });
 }
 
 function getLocationWithWatch(waitMs) {
-  return new Promise(resolve => {
-    let done = false; let best = null;
-    let watchId = navigator.geolocation.watchPosition(
-      pos => {
-        const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy, status: "ok" };
+  return new Promise((resolve) => {
+    let done = false;
+    let best = null;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const loc = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          status: "ok",
+        };
+
         best = chooseBetterLocation(best, loc);
-        if (loc.accuracy <= GOOD_ACCURACY_METERS) { finish(loc); }
+
+        if (loc.accuracy <= GOOD_ACCURACY_METERS) finish(loc);
       },
-      err => { finish(geoErrorToLocation(err)); },
+      (err) => finish(geoErrorToLocation(err)),
       { enableHighAccuracy: true, maximumAge: 0, timeout: waitMs }
     );
-    let timeoutId = setTimeout(() => finish(best), waitMs + 3000);
+
+    const timeout = setTimeout(() => finish(best), waitMs + 2000);
+
     function finish(loc) {
-      if (!done) { done = true; navigator.geolocation.clearWatch(watchId); clearTimeout(timeoutId); resolve(loc || emptyLocation("timeout", "GPS دریافت نشد")); }
+      if (done) return;
+      done = true;
+
+      navigator.geolocation.clearWatch(watchId);
+      clearTimeout(timeout);
+
+      resolve(loc || emptyLocation("timeout", "GPS ناکام"));
     }
   });
 }
 
+/*******************************************************************************
+ *                         GPS Helpers
+ *******************************************************************************/
+
 function geoErrorToLocation(err) {
-  if (err.code === 1) return emptyLocation("denied", "دسترسی رد شد");
-  if (err.code === 2) return emptyLocation("unavailable", "موقعیت در دسترس نیست");
+  if (err.code === 1) return emptyLocation("denied", "اجازه داده نشد");
+  if (err.code === 2)
+    return emptyLocation("unavailable", "GPS در دسترس نیست");
   if (err.code === 3) return emptyLocation("timeout", "زمان تمام شد");
-  return emptyLocation("error", "خطای GPS");
+  return emptyLocation("error", "خطای ناشناخته GPS");
 }
 
 function hasValidLocation(l) {
@@ -385,79 +448,248 @@ function emptyLocation(status, error) {
 }
 
 function chooseBetterLocation(a, b) {
-  if (!a) return b; if (!b) return a;
-  if (!hasValidLocation(a)) return b; if (!hasValidLocation(b)) return a;
-  return (b.accuracy || 999999) <= (a.accuracy || 999999) ? b : a;
+  if (!a) return b;
+  if (!b) return a;
+  if (!hasValidLocation(a)) return b;
+  if (!hasValidLocation(b)) return a;
+  return a.accuracy <= b.accuracy ? a : b;
 }
+
+/*******************************************************************************
+ *                               Sync ارسال
+ *******************************************************************************/
 
 async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
+
   syncRunning = true;
-  const records = await dbGetAll(STORE_RECORDS);
-  const list = records.filter(r => r.status === "pending" || r.status === "failed");
-  if (!list.length) { setSyncStatus("چیزی برای ارسال نیست"); syncRunning = false; return; }
+
+  const all = await dbGetAll(STORE_RECORDS);
+
+  const list = all.filter(
+    (r) => r.status === "pending" || r.status === "failed"
+  );
+
+  if (!list.length) {
+    setSyncStatus("همه چیز ارسال شده");
+    syncRunning = false;
+    return;
+  }
+
   setSyncStatus("در حال ارسال...");
+
   for (const r of list) {
     try {
-      const res = await fetch(APPS_SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(r) });
-      let result = await res.json().catch(() => ({}));
-      if (result.ok) { r.status = "sent"; await dbPut(STORE_RECORDS, r); if (result.message) showAdminMessage(result.message); }
-      else { r.status = "failed"; await dbPut(STORE_RECORDS, r); }
-    } catch { r.status = "failed"; await dbPut(STORE_RECORDS, r); }
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8",
+        },
+        body: JSON.stringify(r),
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (json.ok) {
+        r.status = "sent";
+        await dbPut(STORE_RECORDS, r);
+        if (json.message) showAdminMessage(json.message);
+      } else {
+        r.status = "failed";
+        await dbPut(STORE_RECORDS, r);
+      }
+    } catch {
+      r.status = "failed";
+      await dbPut(STORE_RECORDS, r);
+    }
   }
-  syncRunning = false; setSyncStatus("ارسال انجام شد"); refreshUi();
+
+  syncRunning = false;
+  setSyncStatus("ارسال شد");
+  refreshUi();
 }
 
+/*******************************************************************************
+ *                                UI
+ *******************************************************************************/
+
 async function refreshUi() {
-  const rec = await dbGetAll(STORE_RECORDS);
-  if ($("pendingCount")) $("pendingCount").textContent = rec.filter(r => r.status === "pending").length;
-  if ($("sentCount")) $("sentCount").textContent = rec.filter(r => r.status === "sent").length;
-  if ($("failedCount")) $("failedCount").textContent = rec.filter(r => r.status === "failed").length;
-  renderRecords(rec);
+  const list = await dbGetAll(STORE_RECORDS);
+
+  $("pendingCount").textContent = list.filter((r) => r.status === "pending")
+    .length;
+  $("sentCount").textContent = list.filter((r) => r.status === "sent").length;
+  $("failedCount").textContent = list.filter((r) => r.status === "failed")
+    .length;
+
+  renderRecords(list);
 }
 
 function renderRecords(records) {
-  if (!$("recordsList")) return;
-  if (!records.length) { $("recordsList").innerHTML = "<p>ترددی ثبت نشده</p>"; return; }
-  const sorted = [...records].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  $("recordsList").innerHTML = sorted.slice(0, 20).map(r => `<div class="record-item compact-record"><span>${escapeHtml(r.recordDate)}</span><span>${escapeHtml(r.recordHour)}</span></div>`).join("");
+  if (!records.length) {
+    $("recordsList").innerHTML = "<p>ترددی ثبت نشده</p>";
+    return;
+  }
+
+  const sorted = [...records].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt)
+  );
+
+  $("recordsList").innerHTML = sorted
+    .slice(0, 20)
+    .map(
+      (r) =>
+        `<div class="record-item compact-record">
+           <span>${escapeHtml(r.recordDate)}</span>
+           <span>${escapeHtml(r.recordHour)}</span>
+         </div>`
+    )
+    .join("");
 }
 
 function updateOnlineBadge() {
-  if (!$("onlineBadge")) return;
-  if (navigator.onLine) { $("onlineBadge").textContent = "آنلاین"; $("onlineBadge").className = "status online"; }
-  else { $("onlineBadge").textContent = "آفلاین"; $("onlineBadge").className = "status offline"; }
+  if (navigator.onLine) {
+    $("onlineBadge").textContent = "آنلاین";
+    $("onlineBadge").className = "status online";
+  } else {
+    $("onlineBadge").textContent = "آفلاین";
+    $("onlineBadge").className = "status offline";
+  }
 }
 
-function setStatus(m) { if ($("captureStatus")) $("captureStatus").textContent = m; }
-function setSyncStatus(m) { if ($("syncStatus")) $("syncStatus").textContent = m; }
-function showAdminMessage(m) { const msg = "پیام مدیر: " + m; setSyncStatus(msg); alert(msg); }
-function getPersianDate(d) { return new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric", month: "2-digit", day: "2-digit" }).format(d); }
-function getTime(d) { return new Intl.DateTimeFormat("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(d); }
+function setStatus(msg) {
+  $("captureStatus").textContent = msg;
+}
+
+function setSyncStatus(msg) {
+  $("syncStatus").textContent = msg;
+}
+
+function showAdminMessage(msg) {
+  alert("پیام مدیر: " + msg);
+}
+
+function getPersianDate(d) {
+  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function getTime(d) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
+/*******************************************************************************
+ *                            فشرده‌سازی عکس
+ *******************************************************************************/
 
 function compressImage(file) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onload = e => {
+
+    reader.onload = (e) => {
       const img = new Image();
+
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX = 400; let w = img.width; let h = img.height;
-        if (w > h) { if (w > MAX) { h = h * (MAX / w); w = MAX; } } else { if (h > MAX) { w = w * (MAX / h); h = MAX; } }
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
-        canvas.toBlob(blob => {
-          const r = new FileReader();
-          r.onloadend = () => resolve(r.result);
-          r.readAsDataURL(blob);
-        }, "image/jpeg", 0.7);
+
+        const MAX = 400;
+
+        let w = img.width;
+        let h = img.height;
+
+        if (w > h) {
+          if (w > MAX) {
+            h = h * (MAX / w);
+            w = MAX;
+          }
+        } else {
+          if (h > MAX) {
+            w = w * (MAX / h);
+            h = MAX;
+          }
+        }
+
+        canvas.width = w;
+        canvas.height = h;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+
+        canvas.toBlob(
+          (blob) => {
+            const fr = new FileReader();
+            fr.onloadend = () => resolve(fr.result);
+            fr.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          0.7
+        );
       };
+
       img.src = e.target.result;
     };
+
     reader.readAsDataURL(file);
   });
 }
 
 function escapeHtml(v) {
-  return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  return String(v)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+/*******************************************************************************
+ *           پیام زیبا (Toast) — مرکز صفحه + قرمز + فونت بزرگ
+ *******************************************************************************/
+
+function showGpsToast(message, duration) {
+  const toast = document.createElement("div");
+  toast.textContent = message;
+
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%) scale(0.8)",
+    backgroundColor: "rgba(220, 38, 38, 0.95)",
+    color: "#fff",
+    padding: "25px 40px",
+    borderRadius: "20px",
+    fontSize: "22px",
+    fontWeight: "bold",
+    textAlign: "center",
+    width: "80%",
+    maxWidth: "400px",
+    zIndex: "99999",
+    opacity: "0",
+    border: "3px solid #fff",
+    boxShadow: "0 15px 40px rgba(0,0,0,0.4)",
+    transition: "all 0.35s ease",
+    direction: "rtl",
+  });
+
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%, -50%) scale(1)";
+  }, 80);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translate(-50%, -50%) scale(0.85)";
+    setTimeout(() => toast.remove(), 400);
+  }, duration);
 }

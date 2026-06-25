@@ -48,42 +48,46 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 // تابع اختصاصی برای نمایش پیام زیبا
+// این تابع را جایگزین تابع showGpsToast قبلی در انتهای فایل app.js کنید
 function showGpsToast(message, duration) {
   const toast = document.createElement("div");
   toast.textContent = message;
   
   Object.assign(toast.style, {
     position: "fixed",
-    top: "20px",
+    top: "50%",
     left: "50%",
-    transform: "translateX(-50%) translateY(-20px)",
-    backgroundColor: "rgba(15, 118, 110, 0.98)", 
+    transform: "translate(-50%, -50%) scale(0.8)", // شروع از وسط با سایز کوچک
+    backgroundColor: "rgba(220, 38, 38, 0.95)", // قرمز تند و جذاب
     color: "#ffffff",
-    padding: "14px 28px",
-    borderRadius: "12px",
-    fontSize: "15px",
+    padding: "25px 40px",
+    borderRadius: "20px",
+    fontSize: "22px", // فونت بزرگتر
     fontWeight: "bold",
     fontFamily: "Tahoma, sans-serif",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+    boxShadow: "0 15px 50px rgba(0,0,0,0.5)",
     zIndex: "10000",
     opacity: "0",
-    transition: "all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55)",
+    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
     direction: "rtl",
     textAlign: "center",
-    minWidth: "280px",
-    borderBottom: "4px solid #ff9800"
+    width: "80%", // عرض مناسب برای موبایل
+    maxWidth: "400px",
+    border: "3px solid #ffffff" // حاشیه سفید برای خوانایی بیشتر در قرمز
   });
 
   document.body.appendChild(toast);
 
+  // انیمیشن ورود (بزرگ شدن و ظاهر شدن در مرکز)
   setTimeout(() => {
     toast.style.opacity = "1";
-    toast.style.transform = "translateX(-50%) translateY(0)";
+    toast.style.transform = "translate(-50%, -50%) scale(1)";
   }, 100);
 
+  // حذف خودکار بعد از ۳ ثانیه با انیمیشن کوچک شدن
   setTimeout(() => {
     toast.style.opacity = "0";
-    toast.style.transform = "translateX(-50%) translateY(-20px)";
+    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
     setTimeout(() => toast.remove(), 400);
   }, duration);
 }

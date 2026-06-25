@@ -14,6 +14,7 @@ let db = null;
 let currentPhoto = "";
 let pendingLocation = null;
 let syncRunning = false;
+let syncTimer = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,21 +27,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadProfile();
   await refreshUi();
 
-  updateOnlineBadge();
-
-  if (navigator.onLine) {
-    syncPendingRecords();
-  }
-
-  window.addEventListener("online", () => {
-    updateOnlineBadge();
-    syncPendingRecords();
-  });
-
-  window.addEventListener("offline", updateOnlineBadge);
+  setupAutoSync();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    navigator.serviceWorker.register("sw.js").then(() => {
+      registerBackgroundSync();
+    }).catch(() => {});
   }
 });
 
@@ -100,6 +92,84 @@ function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
   $("recordBtn")?.addEventListener("click", startAttendanceCapture);
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
+}
+
+function setupAutoSync() {
+  updateOnlineBadge();
+
+  window.addEventListener("online", () => {
+    updateOnlineBadge();
+    scheduleSyncPendingRecords(500);
+    registerBackgroundSync();
+  });
+
+  window.addEventListener("offline", updateOnlineBadge);
+
+  window.addEventListener("focus", () => {
+    if (navigator.onLine) {
+      scheduleSyncPendingRecords(500);
+      registerBackgroundSync();
+    }
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && navigator.onLine) {
+      scheduleSyncPendingRecords(500);
+      registerBackgroundSync();
+    }
+  });
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", async (event) => {
+      if (!event.data) return;
+
+      if (event.data.type === "SYNC_COMPLETE") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار انجام شد");
+      }
+
+      if (event.data.type === "SYNC_FAILED") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار کامل نشد");
+      }
+    });
+  }
+
+  setInterval(() => {
+    if (navigator.onLine) {
+      scheduleSyncPendingRecords(0);
+      registerBackgroundSync();
+    }
+  }, 60000);
+
+  if (navigator.onLine) {
+    scheduleSyncPendingRecords(1000);
+    registerBackgroundSync();
+  }
+}
+
+function scheduleSyncPendingRecords(delay = 0) {
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+  }
+
+  syncTimer = setTimeout(() => {
+    syncPendingRecords();
+  }, delay);
+}
+
+async function registerBackgroundSync() {
+  if (!("serviceWorker" in navigator)) return;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+
+    if ("sync" in registration) {
+      await registration.sync.register("attendance-sync");
+    }
+  } catch {
+    // Background Sync ممکن است در بعضی مرورگرها فعال نباشد.
+  }
 }
 
 function startAttendanceCapture() {
@@ -368,7 +438,8 @@ async function createRecord(type) {
   await refreshUi();
 
   if (navigator.onLine) {
-    syncPendingRecords();
+    scheduleSyncPendingRecords(500);
+    registerBackgroundSync();
   }
 }
 
@@ -544,49 +615,52 @@ async function syncPendingRecords() {
 
   syncRunning = true;
 
-  const records = await dbGetAll(STORE_RECORDS);
-  const list = records.filter((r) => r.status === "pending" || r.status === "failed");
+  try {
+    const records = await dbGetAll(STORE_RECORDS);
+    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
 
-  if (!list.length) {
-    setSyncStatus("چیزی برای ارسال نیست");
-    syncRunning = false;
-    return;
-  }
+    if (!list.length) {
+      setSyncStatus("چیزی برای ارسال نیست");
+      syncRunning = false;
+      return;
+    }
 
-  setSyncStatus("در حال ارسال...");
+    setSyncStatus("در حال ارسال...");
 
-  for (const r of list) {
-    try {
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify(r)
-      });
+    for (const r of list) {
+      try {
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          },
+          body: JSON.stringify(r)
+        });
 
-      const result = await res.json().catch(() => ({}));
+        const result = await res.json().catch(() => ({}));
 
-      if (result.ok) {
-        r.status = "sent";
-        await dbPut(STORE_RECORDS, r);
+        if (result.ok) {
+          r.status = "sent";
+          await dbPut(STORE_RECORDS, r);
 
-        if (result.message) {
-          showAdminMessage(result.message);
+          if (result.message) {
+            showAdminMessage(result.message);
+          }
+        } else {
+          r.status = "failed";
+          await dbPut(STORE_RECORDS, r);
         }
-      } else {
+      } catch {
         r.status = "failed";
         await dbPut(STORE_RECORDS, r);
       }
-    } catch {
-      r.status = "failed";
-      await dbPut(STORE_RECORDS, r);
     }
-  }
 
-  syncRunning = false;
-  setSyncStatus("ارسال انجام شد");
-  refreshUi();
+    setSyncStatus("ارسال انجام شد");
+    await refreshUi();
+  } finally {
+    syncRunning = false;
+  }
 }
 
 async function refreshUi() {

@@ -414,6 +414,11 @@ async function createRecord(type) {
 
   const now = new Date();
 
+  let gpsTimestamp = "";
+  if (loc.timestamp) {
+    gpsTimestamp = new Date(loc.timestamp).toISOString();
+  }
+
   const record = {
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,
@@ -425,6 +430,7 @@ async function createRecord(type) {
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     deviceTime: now.toISOString(),
+    geoTimestamp: gpsTimestamp,
     photo: currentPhoto,
     status: "pending",
     createdAt: now.toISOString()
@@ -509,6 +515,7 @@ function getCurrentPositionSafe(options) {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
+            timestamp: pos.timestamp,
             status: "ok"
           });
         }
@@ -536,6 +543,7 @@ function getLocationWithWatch(waitMs) {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
           status: "ok"
         };
 

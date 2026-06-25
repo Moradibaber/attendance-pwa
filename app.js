@@ -461,39 +461,3 @@ function compressImage(file) {
 function escapeHtml(v) {
   return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
-function showSuccessToast(message, duration = 3000) {
-
-  const old = document.getElementById("success-toast");
-  if (old) old.remove();
-
-  const toast = document.createElement("div");
-  toast.id = "success-toast";
-  toast.innerText = message;
-
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%,-50%)",
-    background: "#16a34a",
-    color: "#fff",
-    padding: "20px 26px",
-    borderRadius: "16px",
-    fontSize: "18px",
-    fontWeight: "bold",
-    textAlign: "center",
-    zIndex: "99999",
-    boxShadow: "0 15px 40px rgba(0,0,0,0.35)"
-  });
-
-  document.body.appendChild(toast);
-
-  setTimeout(() => {
-    toast.remove();
-  }, duration);
-}
-
-
-
-
-

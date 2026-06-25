@@ -128,19 +128,23 @@ async function handlePhotoSelected() {
 
     setStatus("در حال دریافت GPS...");
 
-    pendingLocation = await getLocationIOSFriendly();
+       pendingLocation = await getLocationIOSFriendly();
 
     if (!hasValidLocation(pendingLocation)) {
       if (pendingLocation?.status === "denied") {
-        showGpsToast("❌ اجازه GPS داده نشد. تنظیمات مرورگر را چک کنید.", 6000);
-        setStatus("GPS رد شد.");
+        showGpsToast("🚫 دسترسی GPS مسدود است. لطفاً از تنظیمات مرورگر آن را باز کنید.", 6000);
         return;
       }
 
-      setStatus("خطا در GPS: " + pendingLocation?.error);
+      // اینجا پیام دقیق را به کاربر نشان می‌دهیم
+      if (pendingLocation?.error.includes("GPS خاموش است")) {
+         showGpsToast("📍 GPS گوشی شما خاموش است یا سیگنال ندارد. آن را روشن کنید.", 5000);
+      }
+      
+      setStatus("خطا: " + pendingLocation?.error);
       return;
     }
-
+    
     await createRecord("تردد");
   } catch (err) {
     console.error(err);
@@ -432,12 +436,16 @@ function getLocationWithWatch(waitMs) {
  *******************************************************************************/
 
 function geoErrorToLocation(err) {
-  if (err.code === 1) return emptyLocation("denied", "اجازه داده نشد");
-  if (err.code === 2)
-    return emptyLocation("unavailable", "GPS در دسترس نیست");
-  if (err.code === 3) return emptyLocation("timeout", "زمان تمام شد");
-  return emptyLocation("error", "خطای ناشناخته GPS");
+  // اگر کاربر کلاً دسترسی را بلاک کرده باشد
+  if (err.code === 1) return emptyLocation("denied", "دسترسی مسدود شده است");
+  
+  // اگر GPS خاموش باشد یا سیگنال ضعیف باشد، معمولاً کد 3 یا 2 برمی‌گردد
+  if (err.code === 3 || err.code === 2) 
+    return emptyLocation("timeout", "GPS خاموش است یا سیگنال ضعیف است. لطفاً GPS را چک کنید.");
+    
+  return emptyLocation("error", "خطای GPS");
 }
+
 
 function hasValidLocation(l) {
   return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";

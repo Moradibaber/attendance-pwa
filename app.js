@@ -34,6 +34,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     db = await openDb();
 
     bindEvents();
+
+    recordBusy = false;
+    setRecordButtonLoading(false);
+
     await loadProfile();
     await refreshUi();
 
@@ -55,6 +59,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch (err) {
     console.error(err);
+    recordBusy = false;
+    setRecordButtonLoading(false);
     setStatus("خطا در راه‌اندازی برنامه.");
     showGpsToast("خطا در راه‌اندازی برنامه", 5000, "error");
   }
@@ -74,9 +80,19 @@ function setRecordButtonLoading(isLoading) {
   const btn = $("recordBtn");
   if (!btn) return;
 
-  btn.disabled = isLoading;
+  btn.disabled = !!isLoading;
   btn.style.opacity = isLoading ? "0.65" : "1";
   btn.style.cursor = isLoading ? "not-allowed" : "pointer";
+
+  if (isLoading) {
+    if (!btn.dataset.oldText) {
+      btn.dataset.oldText = btn.textContent || "ثبت تردد";
+    }
+    btn.textContent = "در حال ثبت...";
+  } else {
+    btn.textContent = btn.dataset.oldText || btn.textContent || "ثبت تردد";
+    delete btn.dataset.oldText;
+  }
 }
 
 /*******************************************************************************
@@ -93,6 +109,8 @@ function startAttendanceCapture() {
   if (!personnelCode || !firstName || !lastName) {
     setStatus("مشخصات پرسنلی کامل نیست.");
     showGpsToast("لطفاً مشخصات پرسنلی را کامل کنید", 4000, "error");
+    recordBusy = false;
+    setRecordButtonLoading(false);
     return;
   }
 
@@ -109,12 +127,23 @@ function startAttendanceCapture() {
   if (!photoInput) {
     setStatus("ورودی عکس پیدا نشد.");
     showGpsToast("خطا: ورودی عکس پیدا نشد", 4000, "error");
+    recordBusy = false;
+    setRecordButtonLoading(false);
     return;
   }
 
   photoInput.value = "";
   setStatus("در حال باز کردن دوربین...");
-  photoInput.click();
+
+  try {
+    photoInput.click();
+  } catch (err) {
+    console.error(err);
+    setStatus("دوربین باز نشد.");
+    showGpsToast("دوربین باز نشد. دوباره تلاش کنید.", 5000, "error");
+    recordBusy = false;
+    setRecordButtonLoading(false);
+  }
 }
 
 /*******************************************************************************
@@ -126,6 +155,8 @@ async function handlePhotoSelected() {
 
   if (!file) {
     setStatus("عکسی انتخاب نشد.");
+    recordBusy = false;
+    setRecordButtonLoading(false);
     return;
   }
 
@@ -475,7 +506,9 @@ function getCurrentPositionSafe(options) {
             accuracy: pos.coords.accuracy,
             status: "ok",
             error: "",
-            timestamp: pos.timestamp ? new Date(pos.timestamp).toISOString() : "",
+            timestamp: pos.timestamp
+              ? new Date(pos.timestamp).toISOString()
+              : "",
           });
         },
         (err) => {
@@ -533,7 +566,9 @@ function getLocationWithWatch(waitMs) {
             accuracy: pos.coords.accuracy,
             status: "ok",
             error: "",
-            timestamp: pos.timestamp ? new Date(pos.timestamp).toISOString() : "",
+            timestamp: pos.timestamp
+              ? new Date(pos.timestamp).toISOString()
+              : "",
           };
 
           best = chooseBetterLocation(best, loc);
@@ -759,9 +794,9 @@ function renderRecords(records) {
         : "";
 
       return `<div class="record-item compact-record">
-           <span>${escapeHtml(r.recordDate)}</span>
-           <span>${escapeHtml(r.recordHour)}${statusText}</span>
-         </div>`;
+        <span>${escapeHtml(r.recordDate)}</span>
+        <span>${escapeHtml(r.recordHour)}${statusText}</span>
+      </div>`;
     })
     .join("");
 }
@@ -844,11 +879,11 @@ function compressImage(file) {
           }
         }
 
-        canvas.width = w;
-        canvas.height = h;
+        canvas.width = Math.round(w);
+        canvas.height = Math.round(h);
 
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
         canvas.toBlob(
           (blob) => {
@@ -887,7 +922,7 @@ function escapeHtml(v) {
  * Toast زیبا
  ******************************************************************************/
 
-function showGpsToast(message, duration = 5000, type = "error") {
+function showGpsToast(message, duration = 50 type = "error") {
   const oldToast = document.getElementById("gps-toast");
   if (oldToast) oldToast.remove();
 
@@ -895,47 +930,4 @@ function showGpsToast(message, duration = 5000, type = "error") {
   toast.id = "gps-toast";
   toast.textContent = message;
 
-  const colors = {
-    info: "rgba(15, 118, 110, 0.96)",
-    success: "rgba(22, 163, 74, 0.96)",
-    error: "rgba(220, 38, 38, 0.96)",
-  };
-
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%) scale(0.85)",
-    backgroundColor: colors[type] || colors.error,
-    color: "#fff",
-    padding: "22px 28px",
-    borderRadius: "20px",
-    fontSize: "20px",
-    fontWeight: "bold",
-    lineHeight: "1.8",
-    textAlign: "center",
-    width: "82%",
-    maxWidth: "430px",
-    zIndex: "99999",
-    opacity: "0",
-    border: "2px solid rgba(255,255,255,0.9)",
-    boxShadow: "0 18px 45px rgba(0,0,0,0.35)",
-    transition: "all 0.35s ease",
-    direction: "rtl",
-    fontFamily: "inherit",
-  });
-
-  document.body.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 50);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translate(-50%, -50%) scale(0.9)";
-    setTimeout(() => {
-      if (toast.parentNode) toast.remove();
-    }, 400);
-  }, duration);
+  const colors = 

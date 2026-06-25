@@ -1,837 +1,465 @@
-const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 2;
-const STORE_RECORDS = "records";
-const STORE_PROFILE = "profile";
+/**
+ * Google Apps Script - Attendance Admin Panel, Monthly Report & Personal Messages
+ */
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
+const RECORDS_SHEET_NAME = "Records";
+const MESSAGES_SHEET_NAME = "Messages"; // نام تب پیام‌ها مطابق تصویر
 
-const GPS_WAIT_MS = 90000;
-const GPS_RETRY_MS = 30000;
-const GOOD_ACCURACY_METERS = 1000;
-const GPS_REQUIRED = true;
+const RECORD_HEADERS = [
+  "Timestamp",
+  "PersonnelCode",
+  "FirstName",
+  "LastName",
+  "RecordType",
+  "RecordDate",
+  "RecordHour",
+  "RecordTime",
+  "Latitude",
+  "Longitude",
+  "Accuracy",
+  "LocationStatus",
+  "LocationError",
+  "DeviceTime",
+  "GeoTimestamp",
+  "Photo",
+  "CreatedAt",
+  "Status"
+];
 
-let db = null;
-let currentPhoto = "";
-let pendingLocation = null;
-let syncRunning = false;
-let syncTimer = null;
-
-const $ = (id) => document.getElementById(id);
-
-document.addEventListener("DOMContentLoaded", async () => {
-  showGpsToast("📍 حتما جی پی اس خود را روشن کنید", 3000, "error");
-
-  db = await openDb();
-
-  bindEvents();
-  await loadProfile();
-  await refreshUi();
-
-  setupAutoSync();
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").then(() => {
-      registerBackgroundSync();
-    }).catch(() => {});
-  }
-});
-
-function showGpsToast(message, duration = 3000, type = "success") {
-  const oldToast = document.getElementById("gps-toast");
-  if (oldToast) oldToast.remove();
-
-  const toast = document.createElement("div");
-  toast.id = "gps-toast";
-  toast.textContent = message;
-
-  const isSuccess = type === "success";
-
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%) scale(0.8)",
-    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
-    color: "#ffffff",
-    padding: "25px 40px",
-    borderRadius: "20px",
-    fontSize: "22px",
-    fontWeight: "bold",
-    fontFamily: "Tahoma, sans-serif",
-    boxShadow: isSuccess
-      ? "0 15px 50px rgba(22, 163, 74, 0.45)"
-      : "0 15px 50px rgba(0, 0, 0, 0.5)",
-    zIndex: "10000",
-    opacity: "0",
-    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-    direction: "rtl",
-    textAlign: "center",
-    width: "80%",
-    maxWidth: "400px",
-    border: "3px solid #ffffff"
-  });
-
-  document.body.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 100);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
-
-    setTimeout(() => {
-      toast.remove();
-    }, 400);
-  }, duration);
+function doGet(e) {
+  return HtmlService.createTemplateFromFile("AdminPanel")
+    .evaluate()
+    .setTitle("پنل مدیریت تردد")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1");
 }
 
-function bindEvents() {
-  $("saveProfileBtn")?.addEventListener("click", saveProfile);
-  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
-  $("photoInput")?.addEventListener("change", handlePhotoSelected);
-}
+function doPost(e) {
+  try {
+    const payload = parsePayload(e);
+    const sheet = getRecordsSheet();
 
-function setupAutoSync() {
-  updateOnlineBadge();
+    const finalRecordTime =
+      payload.recordTime ||
+      payload.recordHour ||
+      extractTimeFromDeviceTime(payload.deviceTime) ||
+      "";
 
-  window.addEventListener("online", () => {
-    updateOnlineBadge();
-    scheduleSyncPendingRecords(500);
-    registerBackgroundSync();
-  });
+    const geoTimestamp =
+      payload.geoTimestamp ||
+      payload.locationTimestamp ||
+      payload.gpsTimestamp ||
+      "";
 
-  window.addEventListener("offline", updateOnlineBadge);
+    sheet.appendRow([
+      new Date(),
+      payload.personnelCode || "",
+      payload.firstName || "",
+      payload.lastName || "",
+      payload.type || "تردد",
+      payload.recordDate || "",
+      finalRecordTime,
+      finalRecordTime,
+      payload.latitude || "",
+      payload.longitude || "",
+      payload.accuracy || "",
+      payload.locationStatus || "",
+      payload.locationError || "",
+      payload.deviceTime || "",
+      geoTimestamp,
+      payload.photo || "",
+      payload.createdAt || "",
+      "sent"
+    ]);
 
-  window.addEventListener("focus", () => {
-    if (navigator.onLine) {
-      scheduleSyncPendingRecords(500);
-      registerBackgroundSync();
-    }
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && navigator.onLine) {
-      scheduleSyncPendingRecords(500);
-      registerBackgroundSync();
-    }
-  });
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.addEventListener("message", async (event) => {
-      if (!event.data) return;
-
-      if (event.data.type === "SYNC_COMPLETE") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار انجام شد");
-      }
-
-      if (event.data.type === "SYNC_FAILED") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار کامل نشد");
-      }
+    return jsonResponse({
+      ok: true,
+      message: "تردد با موفقیت در Google Sheet ثبت شد ✅"
+    });
+  } catch (error) {
+    return jsonResponse({
+      ok: false,
+      message: "خطا در ثبت تردد ❌",
+      error: error.message || String(error)
     });
   }
+}
 
-  setInterval(() => {
-    if (navigator.onLine) {
-      scheduleSyncPendingRecords(0);
-      registerBackgroundSync();
+function parsePayload(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    throw new Error("درخواست خالی است.");
+  }
+
+  return JSON.parse(e.postData.contents);
+}
+
+function getRecordsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(RECORDS_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(RECORDS_SHEET_NAME);
+  }
+
+  ensureHeaders(sheet);
+  return sheet;
+}
+
+function ensureHeaders(sheet) {
+  const lastColumn = Math.max(sheet.getLastColumn(), RECORD_HEADERS.length);
+  const currentHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+
+  let needsHeader = false;
+
+  for (let i = 0; i < RECORD_HEADERS.length; i++) {
+    if (currentHeaders[i] !== RECORD_HEADERS[i]) {
+      needsHeader = true;
+      break;
     }
-  }, 60000);
+  }
 
-  if (navigator.onLine) {
-    scheduleSyncPendingRecords(1000);
-    registerBackgroundSync();
+  if (needsHeader) {
+    sheet.getRange(1, 1, 1, RECORD_HEADERS.length).setValues([RECORD_HEADERS]);
   }
 }
 
-function scheduleSyncPendingRecords(delay = 0) {
-  if (syncTimer) {
-    clearTimeout(syncTimer);
-  }
-
-  syncTimer = setTimeout(() => {
-    syncPendingRecords();
-  }, delay);
+function jsonResponse(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
-async function registerBackgroundSync() {
-  if (!("serviceWorker" in navigator)) return;
+/**
+ * دریافت سوابق پرسنل و چک کردن پیام‌های فعال
+ */
+function getPersonnelRecords(personnelCode) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(RECORDS_SHEET_NAME);
 
-  try {
-    const registration = await navigator.serviceWorker.ready;
-
-    if ("sync" in registration) {
-      await registration.sync.register("attendance-sync");
-    }
-  } catch {
-    // Background Sync ممکن است در بعضی مرورگرها فعال نباشد.
-  }
-}
-
-function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    return;
+  if (!sheet) {
+    return { error: "شیت Records یافت نشد." };
   }
 
-  currentPhoto = "";
-  pendingLocation = null;
+  const personalMessage = getActiveMessageForPersonnel(personnelCode);
 
-  if ($("photoPreview")) {
-    $("photoPreview").removeAttribute("src");
-    $("photoPreview").style.display = "none";
-  }
+  const data = sheet.getDataRange().getValues();
 
-  const photoInput = $("photoInput");
-
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
-    return;
-  }
-
-  photoInput.value = "";
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-  photoInput.click();
-}
-
-async function handlePhotoSelected() {
-  const file = $("photoInput")?.files?.[0];
-
-  if (!file) {
-    setStatus("عکسی انتخاب نشد.");
-    return;
-  }
-
-  try {
-    await saveProfileSilent();
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
-
-    if ($("photoPreview")) {
-      $("photoPreview").src = currentPhoto;
-      $("photoPreview").style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
-      return;
-    }
-
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(pendingLocation)) {
-      if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
-        return;
-      }
-
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-        return;
-      }
-
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-      return;
-    }
-
-    await createRecord("تردد");
-  } catch (err) {
-    console.error(err);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
-  }
-}
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = (e) => {
-      const openedDb = e.target.result;
-
-      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = openedDb.createObjectStore(STORE_RECORDS, {
-          keyPath: "id",
-          autoIncrement: true
-        });
-
-        store.createIndex("status", "status");
-      }
-
-      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
-        openedDb.createObjectStore(STORE_PROFILE, {
-          keyPath: "id"
-        });
-      }
+  if (data.length < 2) {
+    return {
+      headers: ["PersonnelCode", "RecordDate", "RecordTime", "RecordType", "Status"],
+      rows: [],
+      message: personalMessage
     };
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbPut(store, value) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readwrite");
-    const st = tx.objectStore(store);
-    const req = st.put(value);
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbGet(store, key) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.get(key);
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbGetAll(store) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.getAll();
-
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function saveProfile() {
-  const profile = getProfileFromInputs();
-
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    setStatus("اطلاعات پرسنلی کامل نیست.");
-    return;
   }
 
-  await dbPut(STORE_PROFILE, {
-    id: "main",
-    ...profile
-  });
+  const headers = data[0];
+  const pIdx = headers.indexOf("PersonnelCode");
+  const dateIdx = headers.indexOf("RecordDate");
+  const hourIdx = headers.indexOf("RecordHour");
+  const timeIdx = headers.indexOf("RecordTime");
+  const typeIdx = headers.indexOf("RecordType");
+  const statusIdx = headers.indexOf("Status");
 
-  showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
-
-  const profileStatus = $("profileStatus");
-
-  if (profileStatus) {
-    profileStatus.textContent = "مشخصات با موفقیت ثبت شد ✅";
-    profileStatus.className = "status online small-status";
-
-    setTimeout(() => {
-      profileStatus.textContent = "";
-      profileStatus.className = "status small-status";
-    }, 3000);
-  } else {
-    setStatus("مشخصات با موفقیت ثبت شد.");
-  }
-}
-
-async function saveProfileSilent() {
-  const profile = getProfileFromInputs();
-
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
+  if (pIdx === -1) {
+    return { error: "ستون PersonnelCode یافت نشد." };
   }
 
-  await dbPut(STORE_PROFILE, {
-    id: "main",
-    ...profile
+  const filtered = data.slice(1).filter((row) => {
+    return String(row[pIdx]) === String(personnelCode);
   });
-}
 
-async function loadProfile() {
-  const p = await dbGet(STORE_PROFILE, "main");
+  filtered.sort((a, b) => {
+    const timeA = getRowTime(a, hourIdx, timeIdx);
+    const timeB = getRowTime(b, hourIdx, timeIdx);
+    const dateA = String(a[dateIdx] || "") + " " + String(timeA || "");
+    const dateB = String(b[dateIdx] || "") + " " + String(timeB || "");
+    return dateB.localeCompare(dateA);
+  });
 
-  if (!p) return;
-
-  if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
-  if ($("firstName")) $("firstName").value = p.firstName || "";
-  if ($("lastName")) $("lastName").value = p.lastName || "";
-}
-
-function getProfileFromInputs() {
   return {
-    personnelCode: $("personnelCode")?.value.trim() || "",
-    firstName: $("firstName")?.value.trim() || "",
-    lastName: $("lastName")?.value.trim() || ""
+    headers: ["PersonnelCode", "RecordDate", "RecordTime", "RecordType", "Status"],
+    rows: filtered.map((row) => {
+      const finalTime = getRowTime(row, hourIdx, timeIdx);
+
+      return [
+        row[pIdx] || "",
+        row[dateIdx] || "",
+        finalTime || "",
+        typeIdx !== -1 ? row[typeIdx] || "" : "",
+        statusIdx !== -1 ? row[statusIdx] || "" : ""
+      ];
+    }),
+    message: personalMessage
   };
 }
 
-async function getProfile() {
-  const saved = await dbGet(STORE_PROFILE, "main");
-  const inputProfile = getProfileFromInputs();
+/**
+ * پیدا کردن پیام فعال در شیت Messages
+ */
+function getActiveMessageForPersonnel(personnelCode) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const mSheet = ss.getSheetByName(MESSAGES_SHEET_NAME);
 
-  const profile = {
-    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
-    firstName: inputProfile.firstName || saved?.firstName || "",
-    lastName: inputProfile.lastName || saved?.lastName || ""
-  };
+  if (!mSheet) return null;
 
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
+  const data = mSheet.getDataRange().getValues();
+
+  if (data.length < 2) return null;
+
+  const headers = data[0];
+  const pIdx = headers.indexOf("PersonnelCode");
+  const msgIdx = headers.indexOf("Message");
+  const activeIdx = headers.indexOf("IsActive");
+
+  if (pIdx === -1 || msgIdx === -1 || activeIdx === -1) return null;
+
+  const searchCode = String(personnelCode).trim();
+
+  for (let i = 1; i < data.length; i++) {
+    const rowPCode = String(data[i][pIdx]).trim();
+    const isActive = data[i][activeIdx];
+
+    if (
+      rowPCode === searchCode &&
+      (isActive === true || String(isActive).toUpperCase() === "TRUE")
+    ) {
+      return data[i][msgIdx];
+    }
   }
 
-  await dbPut(STORE_PROFILE, {
-    id: "main",
-    ...profile
-  });
-
-  return profile;
+  return null;
 }
-async function createRecord(type) {
-  const profile = await getProfile();
 
-  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
+function buildMonthlyReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const recordsSheet = ss.getSheetByName(RECORDS_SHEET_NAME);
+
+  if (!recordsSheet) {
+    ui.alert("شیت Records یافت نشد.");
     return;
   }
 
-  // اگر لوکیشن معتبر نداریم، یک مقدار خالی می‌سازیم
-  const loc = hasValidLocation(pendingLocation)
-    ? pendingLocation
-    : emptyLocation("not_received", "GPS دریافت نشد");
+  const prompt = ui.prompt(
+    "گزارش ماهیانه",
+    "ماه مورد نظر را وارد کنید. مثال: ۱۴۰۵/۰۴ یا تیر ۱۴۰۵",
+    ui.ButtonSet.OK_CANCEL
+  );
 
-  const now = new Date();
+  if (prompt.getSelectedButton() !== ui.Button.OK) return;
 
-  // استخراج دقیق ساعت ماهواره
-  // اگر loc.timestamp موجود باشد، آن را به فرمت ISO تبدیل می‌کنیم
-  // در غیر این صورت مقدار null یا رشته خالی می‌گذاریم
-  let gpsTimestamp = null;
-  if (loc.timestamp && loc.timestamp > 0) {
-    gpsTimestamp = new Date(loc.timestamp).toISOString();
-  }
+  const selectedMonthRaw = String(prompt.getResponseText() || "").trim();
+  const selectedMonth = normalizeMonthInput(selectedMonthRaw);
 
-  const record = {
-    personnelCode: profile.personnelCode,
-    firstName: profile.firstName,
-    lastName: profile.lastName,
-    type: type,
-    recordDate: getPersianDate(now),
-    recordHour: getTime(now),
-    latitude: loc.latitude || "",
-    longitude: loc.longitude || "",
-    accuracy: loc.accuracy || "",
-    deviceTime: now.toISOString(), // ساعت گوشی (قابل تغییر توسط کاربر)
-    geoTimestamp: gpsTimestamp,    // ساعت ماهواره (غیرقابل تغییر)
-    photo: currentPhoto,
-    status: "pending",
-    createdAt: now.toISOString()
-  };
-
-  await dbPut(STORE_RECORDS, record);
-
-  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-
-  setStatus("تردد با GPS ذخیره شد.");
-  await refreshUi();
-
-  // شروع عملیات ارسال در پس‌زمینه
-  if (navigator.onLine) {
-    scheduleSyncPendingRecords(500);
-    registerBackgroundSync();
-  }
-}
-
-function isGeolocationUsable() {
-  return !!navigator.geolocation && window.isSecureContext;
-}
-
-async function getLocationIOSFriendly() {
-  if (!isGeolocationUsable()) {
-    return emptyLocation("unavailable", "GPS در دسترس نیست");
-  }
-
-  let firstLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 25000
-  });
-
-  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return firstLocation;
-  }
-
-  if (firstLocation?.status === "denied") {
-    return firstLocation;
-  }
-
-  let secondLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: false,
-    maximumAge: 0,
-    timeout: 15000
-  });
-
-  if (secondLocation?.status === "denied") {
-    return secondLocation;
-  }
-
-  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
-
-  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return bestLocation;
-  }
-
-  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
-  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
-
-  return bestLocation;
-}
-
-function getCurrentPositionSafe(options) {
-  return new Promise((resolve) => {
-    let done = false;
-
-    const timeoutId = setTimeout(() => {
-      if (!done) {
-        done = true;
-        resolve(emptyLocation("timeout", "زمان تمام شد"));
-      }
-    }, (options.timeout || 20000) + 3000);
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (!done) {
-          done = true;
-          clearTimeout(timeoutId);
-
-          resolve({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-            timestamp: pos.timestamp,
-            status: "ok"
-          });
-        }
-      },
-      (err) => {
-        if (!done) {
-          done = true;
-          clearTimeout(timeoutId);
-          resolve(geoErrorToLocation(err));
-        }
-      },
-      options
-    );
-  });
-}
-
-function getLocationWithWatch(waitMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    let best = null;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const loc = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-          status: "ok"
-        };
-
-        best = chooseBetterLocation(best, loc);
-
-        if (loc.accuracy <= GOOD_ACCURACY_METERS) {
-          finish(loc);
-        }
-      },
-      (err) => {
-        finish(geoErrorToLocation(err));
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: waitMs
-      }
-    );
-
-    const timeoutId = setTimeout(() => {
-      finish(best);
-    }, waitMs + 3000);
-
-    function finish(loc) {
-      if (!done) {
-        done = true;
-        navigator.geolocation.clearWatch(watchId);
-        clearTimeout(timeoutId);
-        resolve(loc || emptyLocation("timeout", "GPS دریافت نشد"));
-      }
-    }
-  });
-}
-
-function geoErrorToLocation(err) {
-  if (err.code === 1) {
-    return emptyLocation("denied", "دسترسی رد شد");
-  }
-
-  if (err.code === 2) {
-    return emptyLocation("unavailable", "موقعیت در دسترس نیست");
-  }
-
-  if (err.code === 3) {
-    return emptyLocation("timeout", "زمان تمام شد");
-  }
-
-  return emptyLocation("error", "خطای GPS");
-}
-
-function hasValidLocation(l) {
-  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
-}
-
-function emptyLocation(status, error) {
-  return {
-    latitude: "",
-    longitude: "",
-    accuracy: "",
-    status,
-    error
-  };
-}
-
-function chooseBetterLocation(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-
-  if (!hasValidLocation(a)) return b;
-  if (!hasValidLocation(b)) return a;
-
-  return (b.accuracy || 999999) <= (a.accuracy || 999999) ? b : a;
-}
-
-async function syncPendingRecords() {
-  if (syncRunning || !navigator.onLine) return;
-
-  syncRunning = true;
-
-  try {
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
-
-    if (!list.length) {
-      setSyncStatus("چیزی برای ارسال نیست");
-      syncRunning = false;
-      return;
-    }
-
-    setSyncStatus("در حال ارسال...");
-
-    for (const r of list) {
-      try {
-        const res = await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(r)
-        });
-
-        const result = await res.json().catch(() => ({}));
-
-        if (result.ok) {
-          r.status = "sent";
-          await dbPut(STORE_RECORDS, r);
-
-          if (result.message) {
-            showAdminMessage(result.message);
-          }
-        } else {
-          r.status = "failed";
-          await dbPut(STORE_RECORDS, r);
-        }
-      } catch {
-        r.status = "failed";
-        await dbPut(STORE_RECORDS, r);
-      }
-    }
-
-    setSyncStatus("ارسال انجام شد");
-    await refreshUi();
-  } finally {
-    syncRunning = false;
-  }
-}
-
-async function refreshUi() {
-  const rec = await dbGetAll(STORE_RECORDS);
-
-  if ($("pendingCount")) {
-    $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
-  }
-
-  if ($("sentCount")) {
-    $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
-  }
-
-  if ($("failedCount")) {
-    $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
-  }
-
-  renderRecords(rec);
-}
-
-function renderRecords(records) {
-  if (!$("recordsList")) return;
-
-  if (!records.length) {
-    $("recordsList").innerHTML = "<p>ترددی ثبت نشده</p>";
+  if (!selectedMonth) {
+    ui.alert("ماه وارد شده معتبر نیست. مثال درست: ۱۴۰۵/۰۴ یا تیر ۱۴۰۵");
     return;
   }
 
-  const sorted = [...records].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  let reportSheet = ss.getSheetByName("MonthlyReport");
 
-  $("recordsList").innerHTML = sorted
-    .slice(0, 20)
-    .map((r) => {
-      return `
-        <div class="record-item compact-record">
-          <span>${escapeHtml(r.recordDate)}</span>
-          <span>${escapeHtml(r.recordHour)}</span>
-        </div>
-      `;
-    })
-    .join("");
-}
+  if (!reportSheet) {
+    reportSheet = ss.insertSheet("MonthlyReport");
+  }
 
-function updateOnlineBadge() {
-  if (!$("onlineBadge")) return;
+  reportSheet.clear();
 
-  if (navigator.onLine) {
-    $("onlineBadge").textContent = "آنلاین";
-    $("onlineBadge").className = "status online";
+  const data = recordsSheet.getDataRange().getValues();
+
+  const reportHeaders = [
+    "شماره پرسنلی",
+    "نام",
+    "نام خانوادگی",
+    "ماه",
+    "تاریخ",
+    "اولین ورود",
+    "آخرین خروج",
+    "مدت حضور (دقیقه)",
+    "تعداد ثبت"
+  ];
+
+  reportSheet.getRange(1, 1, 1, reportHeaders.length).setValues([reportHeaders]);
+
+  if (data.length < 2) {
+    ui.alert("داده‌ای برای گزارش وجود ندارد.");
+    return;
+  }
+
+  const headers = data[0];
+  const pIdx = headers.indexOf("PersonnelCode");
+  const fNameIdx = headers.indexOf("FirstName");
+  const lNameIdx = headers.indexOf("LastName");
+  const dateIdx = headers.indexOf("RecordDate");
+  const hourIdx = headers.indexOf("RecordHour");
+  const timeIdx = headers.indexOf("RecordTime");
+
+  const grouped = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const pCode = row[pIdx];
+    const date = String(row[dateIdx] || "").trim();
+    const time = getRowTime(row, hourIdx, timeIdx);
+
+    if (!pCode || !date || !time) continue;
+
+    if (normalizeRecordDateToMonth(date) !== selectedMonth) continue;
+
+    const key = String(pCode) + "_" + date;
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        pCode,
+        fName: fNameIdx !== -1 ? row[fNameIdx] : "",
+        lName: lNameIdx !== -1 ? row[lNameIdx] : "",
+        date,
+        times: []
+      };
+    }
+
+    grouped[key].times.push(time);
+  }
+
+  const reportData = [reportHeaders];
+
+  Object.keys(grouped).forEach((key) => {
+    const group = grouped[key];
+
+    group.times.sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+
+    const firstIn = group.times[0];
+    const lastOut = group.times[group.times.length - 1];
+
+    const duration =
+      firstIn && lastOut && firstIn !== lastOut
+        ? calculateMinutes(firstIn, lastOut)
+        : 0;
+
+    reportData.push([
+      group.pCode,
+      group.fName,
+      group.lName,
+      selectedMonthRaw,
+      group.date,
+      firstIn,
+      lastOut,
+      duration,
+      group.times.length
+    ]);
+  });
+
+  if (reportData.length > 1) {
+    reportSheet.getRange(1, 1, reportData.length, reportData[0].length).setValues(reportData);
+    reportSheet.getRange(1, 1, 1, reportHeaders.length).setFontWeight("bold");
+    reportSheet.autoResizeColumns(1, reportHeaders.length);
+    ui.alert("گزارش با موفقیت ساخته شد ✅");
   } else {
-    $("onlineBadge").textContent = "آفلاین";
-    $("onlineBadge").className = "status offline";
+    ui.alert("داده‌ای یافت نشد.");
   }
 }
 
-function setStatus(m) {
-  if ($("captureStatus")) {
-    $("captureStatus").textContent = m;
+function getRowTime(row, hourIdx, timeIdx) {
+  const val =
+    hourIdx !== -1 && row[hourIdx]
+      ? row[hourIdx]
+      : timeIdx !== -1
+        ? row[timeIdx]
+        : "";
+
+  return normalizeTimeValue(val);
+}
+
+function normalizeTimeValue(value) {
+  if (!value) return "";
+
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value)) {
+    return (
+      pad2(value.getHours()) +
+      ":" +
+      pad2(value.getMinutes()) +
+      ":" +
+      pad2(value.getSeconds())
+    );
   }
+
+  const text = normalizeDigits(value).trim().replace(/[.：]/g, ":");
+  const match = text.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+
+  return match
+    ? pad2(match[1]) + ":" + pad2(match[2]) + ":" + (match[3] ? pad2(match[3]) : "00")
+    : text;
 }
 
-function setSyncStatus(m) {
-  if ($("syncStatus")) {
-    $("syncStatus").textContent = m;
+function extractTimeFromDeviceTime(value) {
+  const match = normalizeDigits(value).match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+
+  return match
+    ? pad2(match[1]) + ":" + pad2(match[2]) + ":" + (match[3] ? pad2(match[3]) : "00")
+    : "";
+}
+
+function normalizeDigits(value) {
+  return String(value || "")
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+}
+
+function pad2(v) {
+  return String(v).padStart(2, "0");
+}
+
+function normalizeMonthInput(v) {
+  const t = normalizeDigits(v).trim();
+
+  const pMonths = {
+    "فروردین": "01",
+    "اردیبهشت": "02",
+    "خرداد": "03",
+    "تیر": "04",
+    "مرداد": "05",
+    "شهریور": "06",
+    "مهر": "07",
+    "آبان": "08",
+    "آذر": "09",
+    "دی": "10",
+    "بهمن": "11",
+    "اسفند": "12"
+  };
+
+  for (const m in pMonths) {
+    if (t.includes(m)) {
+      const yr = t.match(/\d{4}/);
+      return yr ? yr[0] + "/" + pMonths[m] : "";
+    }
   }
+
+  const parts = t.replace(/[-.\\\s]/g, "/").split("/");
+
+  return parts.length >= 2 ? parts[0] + "/" + pad2(parts[1]) : "";
 }
 
-function showAdminMessage(m) {
-  const msg = "پیام مدیر: " + m;
-  setSyncStatus(msg);
-  alert(msg);
+function normalizeRecordDateToMonth(v) {
+  if (Object.prototype.toString.call(v) === "[object Date]") {
+    return v.getFullYear() + "/" + pad2(v.getMonth() + 1);
+  }
+
+  const parts = normalizeDigits(v).replace(/[-.\\\s]/g, "/").split("/");
+
+  return parts.length >= 2 ? parts[0] + "/" + pad2(parts[1]) : "";
 }
 
-function getPersianDate(d) {
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(d);
+function timeToMinutes(v) {
+  const p = normalizeTimeValue(v).split(":");
+
+  return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
 }
 
-function getTime(d) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(d);
+function calculateMinutes(s, e) {
+  return Math.max(0, timeToMinutes(e) - timeToMinutes(s));
 }
 
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      const img = new Image();
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX = 400;
-
-        let w = img.width;
-        let h = img.height;
-
-        if (w > h) {
-          if (w > MAX) {
-            h = h * (MAX / w);
-            w = MAX;
-          }
-        } else {
-          if (h > MAX) {
-            w = w * (MAX / h);
-            h = MAX;
-          }
-        }
-
-        canvas.width = w;
-        canvas.height = h;
-
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-
-        canvas.toBlob(
-          (blob) => {
-            const r = new FileReader();
-
-            r.onloadend = () => {
-              resolve(r.result);
-            };
-
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.7
-        );
-      };
-
-      img.onerror = () => {
-        reject(new Error("خطا در بارگذاری تصویر"));
-      };
-
-      img.src = e.target.result;
-    };
-
-    reader.onerror = () => {
-      reject(new Error("خطا در خواندن فایل تصویر"));
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
-
-function escapeHtml(v) {
-  return String(v)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("پنل تردد")
+    .addItem("ساخت گزارش ماهیانه", "buildMonthlyReport")
+    .addToUi();
 }

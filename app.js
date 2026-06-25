@@ -399,7 +399,6 @@ async function getProfile() {
 
   return profile;
 }
-
 async function createRecord(type) {
   const profile = await getProfile();
 
@@ -408,14 +407,18 @@ async function createRecord(type) {
     return;
   }
 
+  // اگر لوکیشن معتبر نداریم، یک مقدار خالی می‌سازیم
   const loc = hasValidLocation(pendingLocation)
     ? pendingLocation
     : emptyLocation("not_received", "GPS دریافت نشد");
 
   const now = new Date();
 
-  let gpsTimestamp = "";
-  if (loc.timestamp) {
+  // استخراج دقیق ساعت ماهواره
+  // اگر loc.timestamp موجود باشد، آن را به فرمت ISO تبدیل می‌کنیم
+  // در غیر این صورت مقدار null یا رشته خالی می‌گذاریم
+  let gpsTimestamp = null;
+  if (loc.timestamp && loc.timestamp > 0) {
     gpsTimestamp = new Date(loc.timestamp).toISOString();
   }
 
@@ -429,8 +432,8 @@ async function createRecord(type) {
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
-    deviceTime: now.toISOString(),
-    geoTimestamp: gpsTimestamp,
+    deviceTime: now.toISOString(), // ساعت گوشی (قابل تغییر توسط کاربر)
+    geoTimestamp: gpsTimestamp,    // ساعت ماهواره (غیرقابل تغییر)
     photo: currentPhoto,
     status: "pending",
     createdAt: now.toISOString()
@@ -443,6 +446,7 @@ async function createRecord(type) {
   setStatus("تردد با GPS ذخیره شد.");
   await refreshUi();
 
+  // شروع عملیات ارسال در پس‌زمینه
   if (navigator.onLine) {
     scheduleSyncPendingRecords(500);
     registerBackgroundSync();

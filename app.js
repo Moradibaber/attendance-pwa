@@ -3,7 +3,7 @@ const DB_VERSION = 2;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwauYapzFrFMcSbx_W_A874Rz-d2_xGUHQUD_gztPohPen4vZrroTSjH5tx-W4w3sbN/exec";
 
 const GPS_WAIT_MS = 90000;
 const GPS_RETRY_MS = 30000;

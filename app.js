@@ -819,7 +819,7 @@ function compressImage(file) {
     };
 
     reader.onerror = () => {
-      reject(new Error("خطا در خواندن فایل تصویر");
+      reject(new Error("خطا در خواندن فایل تصویر"));
     };
 
     reader.readAsDataURL(file);

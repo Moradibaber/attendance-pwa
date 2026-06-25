@@ -402,33 +402,45 @@ async function createRecord(type) {
       ? new Date(loc.timestamp).toISOString()
       : "";
 
+  const satelliteTime = geoTimestamp;
+
   const clientRecordId =
-    profile.personnelCode + "-" + now.getTime() + "-" + Math.random().toString(36).slice(2);
+    profile.personnelCode +
+    "-" +
+    now.getTime() +
+    "-" +
+    Math.random().toString(36).slice(2);
 
   const record = {
     clientRecordId: clientRecordId,
+
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,
     lastName: profile.lastName,
+
     type: type,
+    recordType: type,
+
     recordDate: getPersianDate(now),
     recordHour: getTime(now),
     recordTime: getTime(now),
+
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
+
     deviceTime: now.toISOString(),
 
     geoTimestamp: geoTimestamp,
     GeoTimestamp: geoTimestamp,
     locationTimestamp: geoTimestamp,
     gpsTimestamp: geoTimestamp,
-    satelliteTime: geoTimestamp,
-    satTime: geoTimestamp,
+    satelliteTime: satelliteTime,
+    satTime: satelliteTime,
 
-    photo: currentPhoto,
+    photo: currentPhoto || "",
     status: "pending",
     createdAt: now.toISOString()
   };
@@ -444,6 +456,7 @@ async function createRecord(type) {
     scheduleSyncPendingRecords(500);
   }
 }
+
 
 function isGeolocationUsable() {
   return !!navigator.geolocation && window.isSecureContext;

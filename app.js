@@ -159,17 +159,7 @@ function scheduleSyncPendingRecords(delay = 0) {
 }
 
 async function registerBackgroundSync() {
-  if (!("serviceWorker" in navigator)) return;
-
-  try {
-    const registration = await navigator.serviceWorker.ready;
-
-    if ("sync" in registration) {
-      await registration.sync.register("attendance-sync");
-    }
-  } catch {
-    // Background Sync may not be available in all browsers.
-  }
+  return;
 }
 
 function startAttendanceCapture() {
@@ -418,6 +408,8 @@ async function createRecord(type) {
     loc.timestamp && !isNaN(loc.timestamp)
       ? new Date(loc.timestamp).toISOString()
       : "";
+const clientRecordId =
+  profile.personnelCode + "-" + now.getTime() + "-" + Math.random().toString(36).slice(2);
 
   const record = {
     personnelCode: profile.personnelCode,
@@ -640,6 +632,14 @@ async function syncPendingRecords() {
     setSyncStatus("در حال ارسال...");
 
     for (const r of list) {
+      if (r.status === "sent" || r.status === "syncing") {
+        continue;
+      }
+
+      r.status = "syncing";
+      await dbPut(STORE_RECORDS, r);
+      await refreshUi();
+
       try {
         const res = await fetch(APPS_SCRIPT_URL, {
           method: "POST",

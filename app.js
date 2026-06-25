@@ -30,9 +30,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupAutoSync();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").then(() => {
-      registerBackgroundSync();
-    }).catch(() => {});
+    navigator.serviceWorker.register("sw.js").catch(() => {});
   }
 });
 
@@ -100,7 +98,6 @@ function setupAutoSync() {
   window.addEventListener("online", () => {
     updateOnlineBadge();
     scheduleSyncPendingRecords(500);
-    registerBackgroundSync();
   });
 
   window.addEventListener("offline", updateOnlineBadge);
@@ -108,14 +105,12 @@ function setupAutoSync() {
   window.addEventListener("focus", () => {
     if (navigator.onLine) {
       scheduleSyncPendingRecords(500);
-      registerBackgroundSync();
     }
   });
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && navigator.onLine) {
       scheduleSyncPendingRecords(500);
-      registerBackgroundSync();
     }
   });
 
@@ -138,13 +133,11 @@ function setupAutoSync() {
   setInterval(() => {
     if (navigator.onLine) {
       scheduleSyncPendingRecords(0);
-      registerBackgroundSync();
     }
   }, 60000);
 
   if (navigator.onLine) {
     scheduleSyncPendingRecords(1000);
-    registerBackgroundSync();
   }
 }
 
@@ -408,10 +401,12 @@ async function createRecord(type) {
     loc.timestamp && !isNaN(loc.timestamp)
       ? new Date(loc.timestamp).toISOString()
       : "";
-const clientRecordId =
-  profile.personnelCode + "-" + now.getTime() + "-" + Math.random().toString(36).slice(2);
+
+  const clientRecordId =
+    profile.personnelCode + "-" + now.getTime() + "-" + Math.random().toString(36).slice(2);
 
   const record = {
+    clientRecordId: clientRecordId,
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,
     lastName: profile.lastName,
@@ -425,7 +420,14 @@ const clientRecordId =
     locationStatus: loc.status || "",
     locationError: loc.error || "",
     deviceTime: now.toISOString(),
+
     geoTimestamp: geoTimestamp,
+    GeoTimestamp: geoTimestamp,
+    locationTimestamp: geoTimestamp,
+    gpsTimestamp: geoTimestamp,
+    satelliteTime: geoTimestamp,
+    satTime: geoTimestamp,
+
     photo: currentPhoto,
     status: "pending",
     createdAt: now.toISOString()
@@ -440,7 +442,6 @@ const clientRecordId =
 
   if (navigator.onLine) {
     scheduleSyncPendingRecords(500);
-    registerBackgroundSync();
   }
 }
 
@@ -511,7 +512,8 @@ function getCurrentPositionSafe(options) {
             longitude: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
             timestamp: pos.timestamp,
-            status: "ok"
+            status: "ok",
+            error: ""
           });
         }
       },
@@ -539,7 +541,8 @@ function getLocationWithWatch(waitMs) {
           longitude: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
           timestamp: pos.timestamp,
-          status: "ok"
+          status: "ok",
+          error: ""
         };
 
         best = chooseBetterLocation(best, loc);
@@ -599,8 +602,8 @@ function emptyLocation(status, error) {
     longitude: "",
     accuracy: "",
     timestamp: null,
-    status,
-    error
+    status: status,
+    error: error
   };
 }
 
@@ -625,7 +628,6 @@ async function syncPendingRecords() {
 
     if (!list.length) {
       setSyncStatus("چیزی برای ارسال نیست");
-      syncRunning = false;
       return;
     }
 
@@ -701,7 +703,9 @@ function renderRecords(records) {
     return;
   }
 
-  const sorted = [...records].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const sorted = [...records].sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  );
 
   $("recordsList").innerHTML = sorted
     .slice(0, 20)
@@ -802,6 +806,10 @@ function compressImage(file) {
 
             r.onloadend = () => {
               resolve(r.result);
+            };
+
+            r.onerror = () => {
+              reject(new Error("خطا در خواندن تصویر فشرده"));
             };
 
             r.readAsDataURL(blob);

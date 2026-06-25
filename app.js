@@ -1,6 +1,6 @@
 /******************************************************************************
  * app.js کامل و اصلاح‌شده
- * رفع مشکل تکرار کد، گیر کردن روی GPS، پیام واضح برای خاموش بودن Location
+ * ثبت GPS، ذخیره آفلاین، ارسال به Google Sheet، و ثبت وضعیت عادی/مشکوک
  ******************************************************************************/
 
 const DB_NAME = "attendance-pwa-db";
@@ -357,10 +357,14 @@ async function createRecord(type) {
     type,
     recordDate: getPersianDate(now),
     recordHour: getTime(now),
+    recordTime: getTime(now),
 
     latitude: pendingLocation.latitude,
     longitude: pendingLocation.longitude,
     accuracy: pendingLocation.accuracy,
+    locationStatus: pendingLocation.status || "",
+    locationError: pendingLocation.error || "",
+    geoTimestamp: pendingLocation.timestamp || "",
 
     deviceTime: now.toISOString(),
     createdAt: now.toISOString(),
@@ -471,6 +475,7 @@ function getCurrentPositionSafe(options) {
             accuracy: pos.coords.accuracy,
             status: "ok",
             error: "",
+            timestamp: pos.timestamp ? new Date(pos.timestamp).toISOString() : "",
           });
         },
         (err) => {
@@ -528,6 +533,7 @@ function getLocationWithWatch(waitMs) {
             accuracy: pos.coords.accuracy,
             status: "ok",
             error: "",
+            timestamp: pos.timestamp ? new Date(pos.timestamp).toISOString() : "",
           };
 
           best = chooseBetterLocation(best, loc);
@@ -624,6 +630,7 @@ function emptyLocation(status, error) {
     accuracy: "",
     status,
     error,
+    timestamp: "",
   };
 }
 
@@ -676,6 +683,8 @@ async function syncPendingRecords() {
 
         if (json.ok) {
           r.status = "sent";
+          r.attendanceStatus = json.attendanceStatus || "";
+          r.syncDelayMinutes = json.syncDelayMinutes ?? "";
           await dbPut(STORE_RECORDS, r);
 
           if (json.message) {
@@ -744,13 +753,16 @@ function renderRecords(records) {
 
   box.innerHTML = sorted
     .slice(0, 20)
-    .map(
-      (r) =>
-        `<div class="record-item compact-record">
+    .map((r) => {
+      const statusText = r.attendanceStatus
+        ? " - " + escapeHtml(r.attendanceStatus)
+        : "";
+
+      return `<div class="record-item compact-record">
            <span>${escapeHtml(r.recordDate)}</span>
-           <span>${escapeHtml(r.recordHour)}</span>
-         </div>`
-    )
+           <span>${escapeHtml(r.recordHour)}${statusText}</span>
+         </div>`;
+    })
     .join("");
 }
 
@@ -927,4 +939,3 @@ function showGpsToast(message, duration = 5000, type = "error") {
       if (toast.parentNode) toast.remove();
     }, 400);
   }, duration);
-}

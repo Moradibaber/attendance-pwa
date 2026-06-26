@@ -430,7 +430,7 @@ async function createRecord(type) {
   const submitDelayMs = Math.max(0, nowMs - clickMs);
   const offlineCreated = !navigator.onLine;
 
-  const sessionClockDriftMs = getSessionClockDriftMs();
+  const sessionClockDriftMs = ClockDriftMs();
   const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
 
   const risk = calculateClockRisk({
@@ -515,8 +515,12 @@ function createClientRecordId(personnelCode, baseMs) {
 
 function getSessionClockDriftMs() {
   const expectedNow = APP_SESSION_START_WALL_MS + (performance.now() - APP_SESSION_START_PERF_MS);
-  return Math.abs(Date.now() - expectedNow);
+  const drift = Math.abs(Date.now() - expectedNow);
+  
+  // گرد کردن به عدد صحیح برای جلوگیری از اعشارهای طولانی در گوگل شیت
+  return Math.round(drift);
 }
+
 
 async function getNetworkTimeDriftMs(deviceNowMs) {
   try {

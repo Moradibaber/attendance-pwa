@@ -10,11 +10,17 @@ const GPS_RETRY_MS = 30000;
 const GOOD_ACCURACY_METERS = 1000;
 const GPS_REQUIRED = true;
 
+const CLOCK_RISK_GPS_CLICK_DIFF_MS = 5 * 60 * 1000;
+const HIGH_GPS_WAIT_MS = 2 * 60 * 1000;
+
 let db = null;
 let currentPhoto = "";
 let pendingLocation = null;
 let syncRunning = false;
 let syncTimer = null;
+let captureStartedAtMs = 0;
+let photoSelectedAtMs = 0;
+let photoCompressedAtMs = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -165,6 +171,9 @@ function startAttendanceCapture() {
     return;
   }
 
+  captureStartedAtMs = Date.now();
+  photoSelectedAtMs = 0;
+  photoCompressedAtMs = 0;
   currentPhoto = "";
   pendingLocation = null;
 
@@ -194,10 +203,13 @@ async function handlePhotoSelected() {
   }
 
   try {
+    photoSelectedAtMs = Date.now();
+
     await saveProfileSilent();
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
 
     if ($("photoPreview")) {
       $("photoPreview").src = currentPhoto;
@@ -253,6 +265,18 @@ function openDb() {
         });
 
         store.createIndex("status", "status");
+        store.createIndex("clientRecordId", "clientRecordId", { unique: false });
+      } else {
+        const tx = e.target.transaction;
+        const store = tx.objectStore(STORE_RECORDS);
+
+        if (!store.indexNames.contains("status")) {
+          store.createIndex("status", "status");
+        }
+
+        if (!store.indexNames.contains("clientRecordId")) {
+          store.createIndex("clientRecordId", "clientRecordId", { unique: false });
+        }
       }
 
       if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
@@ -396,29 +420,44 @@ async function createRecord(type) {
     : emptyLocation("not_received", "GPS دریافت نشد");
 
   const now = new Date();
+  const nowMs = now.getTime();
 
-  const geoTimestamp =
-    loc.timestamp && !isNaN(loc.timestamp)
-      ? new Date(loc.timestamp).toISOString()
-      : "";
+  const clickMs = captureStartedAtMs || nowMs;
+  const photoMs = photoSelectedAtMs || "";
+  const photoCompressedMs = photoCompressedAtMs || "";
+  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
 
-  const satelliteTime = geoTimestamp;
+  const deviceTime = now.toISOString();
+  const deviceTimeAtClick = new Date(clickMs).toISOString();
+  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
+  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
+  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
+  const gpsTimestamp = deviceTimeAtGps;
 
-  const clientRecordId =
-    profile.personnelCode +
-    "-" +
-    now.getTime() +
-    "-" +
-    Math.random().toString(36).slice(2);
+  const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
+  const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
+  const submitDelayMs = Math.max(0, nowMs - clickMs);
+  const offlineCreated = !navigator.onLine;
+
+  const risk = calculateClockRisk({
+    clickMs,
+    gpsMs,
+    gpsWaitMs,
+    offlineCreated,
+    locationStatus: loc.status,
+    accuracy: loc.accuracy
+  });
+
+  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
 
   const record = {
-    clientRecordId: clientRecordId,
+    clientRecordId,
 
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,
     lastName: profile.lastName,
 
-    type: type,
+    type,
     recordType: type,
 
     recordDate: getPersianDate(now),
@@ -431,18 +470,30 @@ async function createRecord(type) {
     locationStatus: loc.status || "",
     locationError: loc.error || "",
 
-    deviceTime: now.toISOString(),
+    deviceTime,
+    deviceTimeAtClick,
+    deviceTimeAtPhoto,
+    deviceTimeAtPhotoCompressed,
+    deviceTimeAtGps,
 
-    geoTimestamp: geoTimestamp,
-    GeoTimestamp: geoTimestamp,
-    locationTimestamp: geoTimestamp,
-    gpsTimestamp: geoTimestamp,
-    satelliteTime: satelliteTime,
-    satTime: satelliteTime,
+    gpsTimestamp,
+    gpsWaitMs,
+    photoDelayMs,
+    submitDelayMs,
+
+    offlineCreated,
+    clockRisk: risk.clockRisk,
+    clockRiskReason: risk.clockRiskReason,
 
     photo: currentPhoto || "",
+
     status: "pending",
-    createdAt: now.toISOString()
+    createdAt: now.toISOString(),
+
+    lastSyncTryAt: "",
+    syncTryCount: 0,
+    syncedAt: "",
+    serverResponse: ""
   };
 
   await dbPut(STORE_RECORDS, record);
@@ -457,6 +508,58 @@ async function createRecord(type) {
   }
 }
 
+function createClientRecordId(personnelCode, baseMs) {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `${personnelCode}-${baseMs}-${randomPart}`;
+}
+
+function calculateClockRisk(data) {
+  const reasons = [];
+  let score = 0;
+
+  if (!data.gpsMs) {
+    score += 3;
+    reasons.push("زمان موقعیت مکانی دریافت نشده است");
+  }
+
+  if (data.gpsMs && Math.abs(data.gpsMs - data.clickMs) > CLOCK_RISK_GPS_CLICK_DIFF_MS) {
+    score += 3;
+    reasons.push("اختلاف زمان کلیک و زمان موقعیت مکانی زیاد است");
+  }
+
+  if (data.gpsWaitMs !== "" && Number(data.gpsWaitMs) > HIGH_GPS_WAIT_MS) {
+    score += 1;
+    reasons.push("زمان انتظار GPS زیاد است");
+  }
+
+  if (data.offlineCreated) {
+    score += 2;
+    reasons.push("رکورد در حالت آفلاین ایجاد شده است");
+  }
+
+  if (data.locationStatus !== "ok") {
+    score += 3;
+    reasons.push("وضعیت GPS معتبر نیست");
+  }
+
+  if (data.accuracy && Number(data.accuracy) > GOOD_ACCURACY_METERS) {
+    score += 1;
+    reasons.push("دقت GPS پایین است");
+  }
+
+  let clockRisk = "low";
+
+  if (score >= 5) {
+    clockRisk = "high";
+  } else if (score >= 2) {
+    clockRisk = "medium";
+  }
+
+  return {
+    clockRisk,
+    clockRiskReason: reasons.join(" | ")
+  };
+}
 
 function isGeolocationUsable() {
   return !!navigator.geolocation && window.isSecureContext;
@@ -467,7 +570,7 @@ async function getLocationIOSFriendly() {
     return emptyLocation("unavailable", "GPS در دسترس نیست");
   }
 
-  let firstLocation = await getCurrentPositionSafe({
+  const firstLocation = await getCurrentPositionSafe({
     enableHighAccuracy: true,
     maximumAge: 0,
     timeout: 25000
@@ -481,7 +584,7 @@ async function getLocationIOSFriendly() {
     return firstLocation;
   }
 
-  let secondLocation = await getCurrentPositionSafe({
+  const secondLocation = await getCurrentPositionSafe({
     enableHighAccuracy: false,
     maximumAge: 0,
     timeout: 15000
@@ -615,8 +718,8 @@ function emptyLocation(status, error) {
     longitude: "",
     accuracy: "",
     timestamp: null,
-    status: status,
-    error: error
+    status,
+    error
   };
 }
 
@@ -627,7 +730,7 @@ function chooseBetterLocation(a, b) {
   if (!hasValidLocation(a)) return b;
   if (!hasValidLocation(b)) return a;
 
-  return (b.accuracy || 999999) <= (a.accuracy || 999999) ? b : a;
+  return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
 }
 
 async function syncPendingRecords() {
@@ -652,33 +755,46 @@ async function syncPendingRecords() {
       }
 
       r.status = "syncing";
+      r.lastSyncTryAt = new Date().toISOString();
+      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
+
       await dbPut(STORE_RECORDS, r);
       await refreshUi();
 
       try {
+        const payload = buildServerPayload(r);
+
         const res = await fetch(APPS_SCRIPT_URL, {
           method: "POST",
           headers: {
             "Content-Type": "text/plain;charset=utf-8"
           },
-          body: JSON.stringify(r)
+          body: JSON.stringify(payload)
         });
 
         const result = await res.json().catch(() => ({}));
 
+        r.serverResponse = JSON.stringify(result || {});
+
         if (result.ok) {
           r.status = "sent";
-          await dbPut(STORE_RECORDS, r);
+          r.syncedAt = new Date().toISOString();
 
           if (result.message) {
             showAdminMessage(result.message);
           }
         } else {
           r.status = "failed";
-          await dbPut(STORE_RECORDS, r);
         }
-      } catch {
+
+        await dbPut(STORE_RECORDS, r);
+      } catch (err) {
         r.status = "failed";
+        r.serverResponse = JSON.stringify({
+          ok: false,
+          error: err?.message || "network_error"
+        });
+
         await dbPut(STORE_RECORDS, r);
       }
     }
@@ -688,6 +804,50 @@ async function syncPendingRecords() {
   } finally {
     syncRunning = false;
   }
+}
+
+function buildServerPayload(record) {
+  return {
+    clientRecordId: record.clientRecordId || "",
+
+    personnelCode: record.personnelCode || "",
+    firstName: record.firstName || "",
+    lastName: record.lastName || "",
+
+    type: record.type || record.recordType || "",
+    recordType: record.recordType || record.type || "",
+
+    recordDate: record.recordDate || "",
+    recordHour: record.recordHour || record.recordTime || "",
+    recordTime: record.recordTime || record.recordHour || "",
+
+    latitude: record.latitude || "",
+    longitude: record.longitude || "",
+    accuracy: record.accuracy || "",
+    locationStatus: record.locationStatus || "",
+    locationError: record.locationError || "",
+
+    deviceTime: record.deviceTime || "",
+    deviceTimeAtClick: record.deviceTimeAtClick || "",
+    deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
+    deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
+    deviceTimeAtGps: record.deviceTimeAtGps || "",
+
+    gpsTimestamp: record.gpsTimestamp || "",
+    gpsWaitMs: record.gpsWaitMs ?? "",
+    photoDelayMs: record.photoDelayMs ?? "",
+    submitDelayMs: record.submitDelayMs ?? "",
+
+    offlineCreated: !!record.offlineCreated,
+    clockRisk: record.clockRisk || "",
+    clockRiskReason: record.clockRiskReason || "",
+
+    photo: record.photo || "",
+
+    createdAt: record.createdAt || "",
+    lastSyncTryAt: record.lastSyncTryAt || "",
+    syncTryCount: Number(record.syncTryCount || 0)
+  };
 }
 
 async function refreshUi() {
@@ -723,10 +883,12 @@ function renderRecords(records) {
   $("recordsList").innerHTML = sorted
     .slice(0, 20)
     .map((r) => {
+      const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
+
       return `
         <div class="record-item compact-record">
           <span>${escapeHtml(r.recordDate || "")}</span>
-          <span>${escapeHtml(r.recordHour || r.recordTime || "")}</span>
+          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${riskText}</span>
         </div>
       `;
     })

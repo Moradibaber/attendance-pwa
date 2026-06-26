@@ -549,73 +549,38 @@ function calculateClockRisk(data) {
   const reasons = [];
   let score = 0;
 
-  const sessionClockDriftMs =
-    typeof data.sessionClockDriftMs === "number"
-      ? data.sessionClockDriftMs
-      : Number(data.sessionClockDriftMs);
-
-  const networkClockDriftMs =
-    typeof data.networkClockDriftMs === "number"
-      ? data.networkClockDriftMs
-      : Number(data.networkClockDriftMs);
-
-  if (!isNaN(sessionClockDriftMs) && Math.abs(sessionClockDriftMs) > CLOCK_DRIFT_SESSION_LIMIT_MS) {
+  // ۱. بررسی دریفت در طول جلسه (اگر حین کار ساعت را عوض کند)
+  const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
+  if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
     score += 6;
+    reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
+  }
 
-    if (sessionClockDriftMs < 0) {
-      reasons.push("دستکاری ساعت گوشی: ساعت در همین جلسه عقب کشیده شده است");
-    } else {
-      reasons.push("دستکاری ساعت گوشی: ساعت در همین جلسه جلو کشیده شده است");
+  // ۲. مقایسه ساعت گوشی با ساعت واقعی GPS (مهم‌ترین بخش برای تصویر شما)
+  // اگر کاربر ساعت گوشی را از قبل عقب کشیده باشد، اینجا مچش باز می‌شود
+  if (data.gpsMs && data.clickMs) {
+    const gpsDiff = Math.abs(data.gpsMs - data.clickMs);
+    // اگر اختلاف ساعت گوشی و جی‌پی‌اس بیش از ۲ دقیقه باشد
+    if (gpsDiff > 2 * 60 * 1000) { 
+      score += 6;
+      reasons.push(`اختلاف با زمان واقعی جی‌پی‌اس (${Math.round(gpsDiff/60000)} دقیقه)`);
     }
   }
 
-  if (!isNaN(networkClockDriftMs) && networkClockDriftMs > CLOCK_DRIFT_NETWORK_LIMIT_MS) {
-    score += 4;
-    reasons.push("اختلاف زیاد ساعت گوشی با زمان شبکه");
-  }
-
-  if (!data.gpsMs) {
-    score += 3;
-    reasons.push("زمان موقعیت مکانی دریافت نشده است");
-  }
-
-  if (data.gpsMs && Math.abs(data.gpsMs - data.clickMs) > CLOCK_RISK_GPS_CLICK_DIFF_MS) {
-    score += 3;
-    reasons.push("اختلاف زمان کلیک و زمان موقعیت مکانی زیاد است");
-  }
-
-  if (data.gpsWaitMs !== "" && Number(data.gpsWaitMs) > HIGH_GPS_WAIT_MS) {
-    score += 1;
-    reasons.push("زمان انتظار GPS زیاد است");
-  }
-
-  if (data.photoDelayMs !== "" && Number(data.photoDelayMs) > 5 * 60 * 1000) {
-    score += 1;
-    reasons.push("تاخیر غیرعادی در انتخاب عکس");
-  }
-
-  if (data.submitDelayMs !== "" && Number(data.submitDelayMs) > 10 * 60 * 1000) {
-    score += 1;
-    reasons.push("تاخیر غیرعادی در ثبت نهایی");
-  }
-
+  // ۳. بررسی وضعیت آفلاین (تقلب معمولا در آفلاین رخ می‌دهد)
   if (data.offlineCreated) {
     score += 1;
-    reasons.push("رکورد در حالت آفلاین ایجاد شده است");
+    reasons.push("ثبت آفلاین");
   }
 
+  // ۴. بررسی وضعیت GPS
   if (data.locationStatus !== "ok") {
-    score += 3;
-    reasons.push("وضعیت GPS معتبر نیست");
+    score += 4;
+    reasons.push("GPS نامعتبر/خاموش");
   }
 
-  if (data.accuracy && Number(data.accuracy) > GOOD_ACCURACY_METERS) {
-    score += 1;
-    reasons.push("دقت GPS پایین است");
-  }
-
+  // تعیین سطح ریسک نهایی
   let clockRisk = "low";
-
   if (score >= 6) {
     clockRisk = "high";
   } else if (score >= 3) {

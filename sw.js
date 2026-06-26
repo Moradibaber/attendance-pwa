@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v47";
+const CACHE_NAME = "attendance-pwa-v48";
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 const DB_NAME = "attendance-pwa-db";

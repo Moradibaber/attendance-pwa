@@ -12,6 +12,11 @@ const GPS_REQUIRED = true;
 
 const CLOCK_RISK_GPS_CLICK_DIFF_MS = 5 * 60 * 1000;
 const HIGH_GPS_WAIT_MS = 2 * 60 * 1000;
+const CLOCK_DRIFT_SESSION_LIMIT_MS = 30 * 1000;
+const CLOCK_DRIFT_NETWORK_LIMIT_MS = 2 * 60 * 1000;
+
+const APP_SESSION_START_WALL_MS = Date.now();
+const APP_SESSION_START_PERF_MS = performance.now();
 
 let db = null;
 let currentPhoto = "";
@@ -85,10 +90,7 @@ function showGpsToast(message, duration = 3000, type = "success") {
   setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translate(-50%, -50%) scale(0.8)";
-
-    setTimeout(() => {
-      toast.remove();
-    }, 400);
+    setTimeout(() => toast.remove(), 400);
   }, duration);
 }
 
@@ -109,15 +111,11 @@ function setupAutoSync() {
   window.addEventListener("offline", updateOnlineBadge);
 
   window.addEventListener("focus", () => {
-    if (navigator.onLine) {
-      scheduleSyncPendingRecords(500);
-    }
+    if (navigator.onLine) scheduleSyncPendingRecords(500);
   });
 
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && navigator.onLine) {
-      scheduleSyncPendingRecords(500);
-    }
+    if (!document.hidden && navigator.onLine) scheduleSyncPendingRecords(500);
   });
 
   if ("serviceWorker" in navigator) {
@@ -137,20 +135,14 @@ function setupAutoSync() {
   }
 
   setInterval(() => {
-    if (navigator.onLine) {
-      scheduleSyncPendingRecords(0);
-    }
+    if (navigator.onLine) scheduleSyncPendingRecords(0);
   }, 60000);
 
-  if (navigator.onLine) {
-    scheduleSyncPendingRecords(1000);
-  }
+  if (navigator.onLine) scheduleSyncPendingRecords(1000);
 }
 
 function scheduleSyncPendingRecords(delay = 0) {
-  if (syncTimer) {
-    clearTimeout(syncTimer);
-  }
+  if (syncTimer) clearTimeout(syncTimer);
 
   syncTimer = setTimeout(() => {
     syncPendingRecords();
@@ -369,7 +361,6 @@ async function saveProfileSilent() {
 
 async function loadProfile() {
   const p = await dbGet(STORE_PROFILE, "main");
-
   if (!p) return;
 
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
@@ -439,13 +430,20 @@ async function createRecord(type) {
   const submitDelayMs = Math.max(0, nowMs - clickMs);
   const offlineCreated = !navigator.onLine;
 
+  const sessionClockDriftMs = getSessionClockDriftMs();
+  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+
   const risk = calculateClockRisk({
     clickMs,
     gpsMs,
     gpsWaitMs,
+    photoDelayMs,
+    submitDelayMs,
     offlineCreated,
     locationStatus: loc.status,
-    accuracy: loc.accuracy
+    accuracy: loc.accuracy,
+    sessionClockDriftMs,
+    networkClockDriftMs
   });
 
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
@@ -485,6 +483,9 @@ async function createRecord(type) {
     clockRisk: risk.clockRisk,
     clockRiskReason: risk.clockRiskReason,
 
+    sessionClockDriftMs,
+    networkClockDriftMs: networkClockDriftMs ?? "",
+
     photo: currentPhoto || "",
 
     status: "pending",
@@ -499,7 +500,6 @@ async function createRecord(type) {
   await dbPut(STORE_RECORDS, record);
 
   showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-
   setStatus("تردد با GPS ذخیره شد.");
   await refreshUi();
 
@@ -513,9 +513,49 @@ function createClientRecordId(personnelCode, baseMs) {
   return `${personnelCode}-${baseMs}-${randomPart}`;
 }
 
+function getSessionClockDriftMs() {
+  const expectedNow = APP_SESSION_START_WALL_MS + (performance.now() - APP_SESSION_START_PERF_MS);
+  return Math.abs(Date.now() - expectedNow);
+}
+
+async function getNetworkTimeDriftMs(deviceNowMs) {
+  try {
+    const controller = "AbortController" in window ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
+
+    const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
+      signal: controller ? controller.signal : undefined,
+      cache: "no-store"
+    });
+
+    if (timeoutId) clearTimeout(timeoutId);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data?.utc_datetime) return null;
+
+    const networkMs = new Date(data.utc_datetime).getTime();
+    if (!networkMs || isNaN(networkMs)) return null;
+
+    return Math.abs(networkMs - deviceNowMs);
+  } catch (e) {
+    return null;
+  }
+}
+
 function calculateClockRisk(data) {
   const reasons = [];
   let score = 0;
+
+  if (typeof data.sessionClockDriftMs === "number" && data.sessionClockDriftMs > CLOCK_DRIFT_SESSION_LIMIT_MS) {
+    score += 4;
+    reasons.push("تغییر مشکوک ساعت گوشی در همین جلسه");
+  }
+
+  if (typeof data.networkClockDriftMs === "number" && data.networkClockDriftMs > CLOCK_DRIFT_NETWORK_LIMIT_MS) {
+    score += 4;
+    reasons.push("اختلاف زیاد ساعت گوشی با زمان شبکه");
+  }
 
   if (!data.gpsMs) {
     score += 3;
@@ -532,8 +572,18 @@ function calculateClockRisk(data) {
     reasons.push("زمان انتظار GPS زیاد است");
   }
 
+  if (data.photoDelayMs !== "" && Number(data.photoDelayMs) > 5 * 60 * 1000) {
+    score += 1;
+    reasons.push("تاخیر غیرعادی در انتخاب عکس");
+  }
+
+  if (data.submitDelayMs !== "" && Number(data.submitDelayMs) > 10 * 60 * 1000) {
+    score += 1;
+    reasons.push("تاخیر غیرعادی در ثبت نهایی");
+  }
+
   if (data.offlineCreated) {
-    score += 2;
+    score += 1;
     reasons.push("رکورد در حالت آفلاین ایجاد شده است");
   }
 
@@ -549,9 +599,9 @@ function calculateClockRisk(data) {
 
   let clockRisk = "low";
 
-  if (score >= 5) {
+  if (score >= 6) {
     clockRisk = "high";
-  } else if (score >= 2) {
+  } else if (score >= 3) {
     clockRisk = "medium";
   }
 
@@ -750,9 +800,7 @@ async function syncPendingRecords() {
     setSyncStatus("در حال ارسال...");
 
     for (const r of list) {
-      if (r.status === "sent" || r.status === "syncing") {
-        continue;
-      }
+      if (r.status === "sent" || r.status === "syncing") continue;
 
       r.status = "syncing";
       r.lastSyncTryAt = new Date().toISOString();
@@ -841,6 +889,8 @@ function buildServerPayload(record) {
     offlineCreated: !!record.offlineCreated,
     clockRisk: record.clockRisk || "",
     clockRiskReason: record.clockRiskReason || "",
+    sessionClockDriftMs: record.sessionClockDriftMs ?? "",
+    networkClockDriftMs: record.networkClockDriftMs ?? "",
 
     photo: record.photo || "",
 

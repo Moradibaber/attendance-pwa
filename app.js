@@ -514,9 +514,35 @@ function createClientRecordId(personnelCode, baseMs) {
 }
 
 function getSessionClockDriftMs() {
-  const expectedNow = APP_SESSION_START_WALL_MS + (performance.now() - APP_SESSION_START_PERF_MS);
-  const drift = Math.abs(Date.now() - expectedNow);
-  return Math.round(drift);
+  // زمان واقعی سپری شده از ابتدای باز شدن اپلیکیشن (بدون وابستگی به ساعت گوشی)
+  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
+  
+  // زمان سپری شده بر اساس ساعت گوشی (که کاربر می‌تواند آن را عقب بکشد)
+  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
+  
+  // اختلاف این دو، مقدار دقیق دستکاری ساعت در حین باز بودن برنامه را نشان می‌دهد
+  // ما مقدار مطلق (Math.abs) را نمی‌گیریم تا بفهمیم عقب کشیده یا جلو
+  const drift = wallElapsedMs - realElapsedMs;
+  
+  return Math.round(drift); 
+}
+function calculateClockRisk(d) {
+  let score = 0;
+  let reasons = [];
+  
+  // اگر کاربر ساعت گوشی را بیش از 10 ثانیه جابجا کند
+  if (Math.abs(d.sessionClockDriftMs) > 10000) { 
+    score += 5; 
+    reasons.push("دستکاری ساعت (Clock Tampering)"); 
+  }
+  
+  if (d.offlineCreated) { score += 1; reasons.push("آفلاین"); }
+  
+  // سایر شروط...
+  return { 
+    clockRisk: score >= 4 ? "High" : score >= 2 ? "Medium" : "Low", 
+    clockRiskReason: reasons.join(" | ") 
+  };
 }
 
 async function getNetworkTimeDriftMs(deviceNowMs) {

@@ -12,7 +12,7 @@ const GPS_REQUIRED = true;
 
 const CLOCK_RISK_GPS_CLICK_DIFF_MS = 5 * 60 * 1000;
 const HIGH_GPS_WAIT_MS = 2 * 60 * 1000;
-const CLOCK_DRIFT_SESSION_LIMIT_MS = 30 * 1000;
+const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
 const CLOCK_DRIFT_NETWORK_LIMIT_MS = 2 * 60 * 1000;
 
 const APP_SESSION_START_WALL_MS = Date.now();
@@ -514,35 +514,10 @@ function createClientRecordId(personnelCode, baseMs) {
 }
 
 function getSessionClockDriftMs() {
-  // زمان واقعی سپری شده از ابتدای باز شدن اپلیکیشن (بدون وابستگی به ساعت گوشی)
   const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
-  
-  // زمان سپری شده بر اساس ساعت گوشی (که کاربر می‌تواند آن را عقب بکشد)
   const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
-  
-  // اختلاف این دو، مقدار دقیق دستکاری ساعت در حین باز بودن برنامه را نشان می‌دهد
-  // ما مقدار مطلق (Math.abs) را نمی‌گیریم تا بفهمیم عقب کشیده یا جلو
   const drift = wallElapsedMs - realElapsedMs;
-  
-  return Math.round(drift); 
-}
-function calculateClockRisk(d) {
-  let score = 0;
-  let reasons = [];
-  
-  // اگر کاربر ساعت گوشی را بیش از 10 ثانیه جابجا کند
-  if (Math.abs(d.sessionClockDriftMs) > 10000) { 
-    score += 5; 
-    reasons.push("دستکاری ساعت (Clock Tampering)"); 
-  }
-  
-  if (d.offlineCreated) { score += 1; reasons.push("آفلاین"); }
-  
-  // سایر شروط...
-  return { 
-    clockRisk: score >= 4 ? "High" : score >= 2 ? "Medium" : "Low", 
-    clockRiskReason: reasons.join(" | ") 
-  };
+  return Math.round(drift);
 }
 
 async function getNetworkTimeDriftMs(deviceNowMs) {
@@ -574,12 +549,27 @@ function calculateClockRisk(data) {
   const reasons = [];
   let score = 0;
 
-  if (typeof data.sessionClockDriftMs === "number" && data.sessionClockDriftMs > CLOCK_DRIFT_SESSION_LIMIT_MS) {
-    score += 4;
-    reasons.push("تغییر مشکوک ساعت گوشی در همین جلسه");
+  const sessionClockDriftMs =
+    typeof data.sessionClockDriftMs === "number"
+      ? data.sessionClockDriftMs
+      : Number(data.sessionClockDriftMs);
+
+  const networkClockDriftMs =
+    typeof data.networkClockDriftMs === "number"
+      ? data.networkClockDriftMs
+      : Number(data.networkClockDriftMs);
+
+  if (!isNaN(sessionClockDriftMs) && Math.abs(sessionClockDriftMs) > CLOCK_DRIFT_SESSION_LIMIT_MS) {
+    score += 6;
+
+    if (sessionClockDriftMs < 0) {
+      reasons.push("دستکاری ساعت گوشی: ساعت در همین جلسه عقب کشیده شده است");
+    } else {
+      reasons.push("دستکاری ساعت گوشی: ساعت در همین جلسه جلو کشیده شده است");
+    }
   }
 
-  if (typeof data.networkClockDriftMs === "number" && data.networkClockDriftMs > CLOCK_DRIFT_NETWORK_LIMIT_MS) {
+  if (!isNaN(networkClockDriftMs) && networkClockDriftMs > CLOCK_DRIFT_NETWORK_LIMIT_MS) {
     score += 4;
     reasons.push("اختلاف زیاد ساعت گوشی با زمان شبکه");
   }
@@ -634,7 +624,7 @@ function calculateClockRisk(data) {
 
   return {
     clockRisk,
-    clockRiskReason: reasons.join(" | ")
+    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
   };
 }
 

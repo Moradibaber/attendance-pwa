@@ -14,6 +14,7 @@ const CLOCK_RISK_GPS_CLICK_DIFF_MS = 5 * 60 * 1000;
 const HIGH_GPS_WAIT_MS = 2 * 60 * 1000;
 const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
 const CLOCK_DRIFT_NETWORK_LIMIT_MS = 2 * 60 * 1000;
+const GPS_TRUE_DIFF_LIMIT_MS = 2 * 60 * 1000;
 
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
@@ -423,7 +424,8 @@ async function createRecord(type) {
   const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
   const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
   const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
-  const gpsTimestamp = deviceTimeAtGps;
+  const gpsTimestamp = gpsMs ? String(gpsMs) : "";
+  const gpsTrueTimeDiffMs = gpsMs ? Math.round(gpsMs - clickMs) : "";
 
   const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
   const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
@@ -443,7 +445,8 @@ async function createRecord(type) {
     locationStatus: loc.status,
     accuracy: loc.accuracy,
     sessionClockDriftMs,
-    networkClockDriftMs
+    networkClockDriftMs,
+    gpsTrueTimeDiffMs
   });
 
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
@@ -475,6 +478,7 @@ async function createRecord(type) {
     deviceTimeAtGps,
 
     gpsTimestamp,
+    gpsTrueTimeDiffMs,
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
@@ -549,37 +553,39 @@ function calculateClockRisk(data) {
   const reasons = [];
   let score = 0;
 
-  // ۱. بررسی دریفت در طول جلسه (اگر حین کار ساعت را عوض کند)
   const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
   if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
     score += 6;
     reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
   }
 
-  // ۲. مقایسه ساعت گوشی با ساعت واقعی GPS (مهم‌ترین بخش برای تصویر شما)
-  // اگر کاربر ساعت گوشی را از قبل عقب کشیده باشد، اینجا مچش باز می‌شود
-  if (data.gpsMs && data.clickMs) {
-    const gpsDiff = Math.abs(data.gpsMs - data.clickMs);
-    // اگر اختلاف ساعت گوشی و جی‌پی‌اس بیش از ۲ دقیقه باشد
-    if (gpsDiff > 2 * 60 * 1000) { 
-      score += 6;
-      reasons.push(`اختلاف با زمان واقعی جی‌پی‌اس (${Math.round(gpsDiff/60000)} دقیقه)`);
-    }
+  const networkDrift = Math.abs(Number(data.networkClockDriftMs) || 0);
+  if (networkDrift > CLOCK_DRIFT_NETWORK_LIMIT_MS) {
+    score += 4;
+    reasons.push("اختلاف قابل توجه با ساعت شبکه");
   }
 
-  // ۳. بررسی وضعیت آفلاین (تقلب معمولا در آفلاین رخ می‌دهد)
-  if (data.offlineCreated) {
-    score += 1;
-    reasons.push("ثبت آفلاین");
+  const gpsTrueDiff = Math.abs(Number(data.gpsTrueTimeDiffMs) || 0);
+  if (gpsTrueDiff > GPS_TRUE_DIFF_LIMIT_MS) {
+    score += 6;
+    reasons.push(`اختلاف با زمان واقعی جی‌پی‌اس (${Math.round(gpsTrueDiff / 60000)} دقیقه)`);
   }
 
-  // ۴. بررسی وضعیت GPS
   if (data.locationStatus !== "ok") {
     score += 4;
     reasons.push("GPS نامعتبر/خاموش");
   }
 
-  // تعیین سطح ریسک نهایی
+  const accuracy = Number(data.accuracy);
+  if (isFinite(accuracy) && accuracy > GOOD_ACCURACY_METERS) {
+    score += 1;
+    reasons.push("دقت GPS پایین");
+  }
+
+  if (data.offlineCreated) {
+    reasons.push("ثبت آفلاین");
+  }
+
   let clockRisk = "low";
   if (score >= 6) {
     clockRisk = "high";
@@ -851,9 +857,9 @@ function buildServerPayload(record) {
     recordHour: record.recordHour || record.recordTime || "",
     recordTime: record.recordTime || record.recordHour || "",
 
-    latitude: record.latitude || "",
-    longitude: record.longitude || "",
-    accuracy: record.accuracy || "",
+    latitude: record.latitude ?? "",
+    longitude: record.longitude ?? "",
+    accuracy: record.accuracy ?? "",
     locationStatus: record.locationStatus || "",
     locationError: record.locationError || "",
 
@@ -864,6 +870,7 @@ function buildServerPayload(record) {
     deviceTimeAtGps: record.deviceTimeAtGps || "",
 
     gpsTimestamp: record.gpsTimestamp || "",
+    gpsTrueTimeDiffMs: record.gpsTrueTimeDiffMs ?? "",
     gpsWaitMs: record.gpsWaitMs ?? "",
     photoDelayMs: record.photoDelayMs ?? "",
     submitDelayMs: record.submitDelayMs ?? "",

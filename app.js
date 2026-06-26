@@ -430,7 +430,7 @@ async function createRecord(type) {
   const submitDelayMs = Math.max(0, nowMs - clickMs);
   const offlineCreated = !navigator.onLine;
 
-  const sessionClockDriftMs = ClockDriftMs();
+  const sessionClockDriftMs = getSessionClockDriftMs();
   const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
 
   const risk = calculateClockRisk({
@@ -516,11 +516,8 @@ function createClientRecordId(personnelCode, baseMs) {
 function getSessionClockDriftMs() {
   const expectedNow = APP_SESSION_START_WALL_MS + (performance.now() - APP_SESSION_START_PERF_MS);
   const drift = Math.abs(Date.now() - expectedNow);
-  
-  // گرد کردن به عدد صحیح برای جلوگیری از اعشارهای طولانی در گوگل شیت
   return Math.round(drift);
 }
-
 
 async function getNetworkTimeDriftMs(deviceNowMs) {
   try {
@@ -1044,7 +1041,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.7
+          0.3
         );
       };
 

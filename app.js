@@ -664,35 +664,28 @@ async function createRecord(type) {
 
   const record = {
     clientRecordId,
-
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,
     lastName: profile.lastName,
-
     type,
     recordType: type,
-
     recordDate: getPersianDate(now),
     recordHour: getTime(now),
     recordTime: getTime(now),
-
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
-
     deviceTime,
     deviceTimeAtClick,
     deviceTimeAtPhoto,
     deviceTimeAtPhotoCompressed,
     deviceTimeAtGps,
-
     gpsTimestamp,
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
-
     offlineCreated,
     createdOnline,
     connectionStatus,
@@ -701,23 +694,17 @@ async function createRecord(type) {
     lastConnectionBeforeUpload,
     uploadedAt,
     delayAfterFirstConnectionMs,
-
     clockRisk: risk.clockRisk,
     clockRiskReason: risk.clockRiskReason,
-
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
-
     attendancePolicy,
     policyVersion: Number(policyInfo.policyVersion || 0),
     policyFetchedAt: policyInfo.policyFetchedAt || "",
     policySource: policyInfo.policySource || "",
-
     photo: currentPhoto || "",
-
     status: "pending",
     createdAt: now.toISOString(),
-
     lastSyncTryAt: "",
     syncTryCount: 0,
     syncedAt: "",
@@ -1096,9 +1083,22 @@ async function syncPendingRecords() {
           r.syncedAt = sentIso;
           r.uploadedAt = sentIso;
 
-          if (result.message) {
-            const msg = String(result.message || "").trim();
-            if (msg) showAdminMessage(msg);
+          if (
+            result &&
+            result.message !== false &&
+            result.message !== null &&
+            result.message !== undefined
+          ) {
+            const msg = String(result.message).trim();
+            if (
+              msg &&
+              msg !== "false" &&
+              msg !== "null" &&
+              msg !== "undefined" &&
+              msg !== "0"
+            ) {
+              showAdminMessage(msg);
+            }
           }
         } else {
           r.status = "failed";
@@ -1131,35 +1131,28 @@ async function syncPendingRecords() {
 function buildServerPayload(record) {
   return {
     clientRecordId: record.clientRecordId || "",
-
     personnelCode: record.personnelCode || "",
     firstName: record.firstName || "",
     lastName: record.lastName || "",
-
     type: record.type || record.recordType || "",
     recordType: record.recordType || record.type || "",
-
     recordDate: record.recordDate || "",
     recordHour: record.recordHour || record.recordTime || "",
     recordTime: record.recordTime || record.recordHour || "",
-
     latitude: record.latitude || "",
     longitude: record.longitude || "",
     accuracy: record.accuracy || "",
     locationStatus: record.locationStatus || "",
     locationError: record.locationError || "",
-
     deviceTime: record.deviceTime || "",
     deviceTimeAtClick: record.deviceTimeAtClick || "",
     deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
     deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
     deviceTimeAtGps: record.deviceTimeAtGps || "",
-
     gpsTimestamp: record.gpsTimestamp || "",
     gpsWaitMs: record.gpsWaitMs ?? "",
     photoDelayMs: record.photoDelayMs ?? "",
     submitDelayMs: record.submitDelayMs ?? "",
-
     offlineCreated: !!record.offlineCreated,
     createdOnline: record.createdOnline === true,
     connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
@@ -1168,19 +1161,15 @@ function buildServerPayload(record) {
     lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
     uploadedAt: record.uploadedAt || "",
     delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
-
     clockRisk: record.clockRisk || "",
     clockRiskReason: record.clockRiskReason || "",
     sessionClockDriftMs: record.sessionClockDriftMs ?? "",
     networkClockDriftMs: record.networkClockDriftMs ?? "",
-
     attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
     policyVersion: Number(record.policyVersion || 0),
     policyFetchedAt: record.policyFetchedAt || "",
     policySource: record.policySource || "",
-
     photo: record.photo || "",
-
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0)
@@ -1262,8 +1251,18 @@ function setSyncStatus(m) {
 }
 
 function showAdminMessage(m) {
-  const msg = String(m || "").trim();
-  if (!msg) return;
+  const msg = String(m ?? "").trim();
+
+  if (
+    !msg ||
+    msg === "false" ||
+    msg === "null" ||
+    msg === "undefined" ||
+    msg === "0"
+  ) {
+    return;
+  }
+
   setSyncStatus("پیام مدیر: " + msg);
 }
 
@@ -1376,8 +1375,15 @@ async function fetchMessages() {
 
     const messages = Array.isArray(result.messages) ? result.messages : [];
     const cleaned = messages
-      .map((m) => String(m || "").trim())
-      .filter((m) => m);
+      .map((m) => String(m ?? "").trim())
+      .filter(
+        (m) =>
+          m &&
+          m !== "false" &&
+          m !== "null" &&
+          m !== "undefined" &&
+          m !== "0"
+      );
 
     if (!cleaned.length) return;
 

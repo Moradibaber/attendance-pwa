@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadProfile();
   await ensurePolicyLoadedAtStartup();
   await refreshUi();
+  await fetchMessages();
 
   setupAutoSync();
 
@@ -1117,6 +1118,8 @@ async function syncPendingRecords() {
 
     setSyncStatus("ارسال انجام شد");
     await refreshUi();
+    await fetchMessages();
+
   } finally {
     syncRunning = false;
   }
@@ -1343,6 +1346,40 @@ function compressImage(file) {
 
     reader.readAsDataURL(file);
   });
+}
+async function fetchMessages() {
+
+  if (!navigator.onLine) return;
+
+  try {
+
+    const profile = await getProfile().catch(() => null);
+    if (!profile?.personnelCode) return;
+
+    const url =
+      APPS_SCRIPT_URL +
+      "?action=getMessages&personnelCode=" +
+      encodeURIComponent(profile.personnelCode);
+
+    const res = await fetch(url, {
+      method: "GET",
+      cache: "no-store"
+    });
+
+    if (!res.ok) return;
+
+    const result = await res.json().catch(() => null);
+    if (!result || result.ok !== true) return;
+
+    if (Array.isArray(result.messages) && result.messages.length) {
+
+      const msg = result.messages.join(" | ");
+
+      showAdminMessage(msg);
+    }
+
+  } catch (e) {}
+
 }
 
 function escapeHtml(v) {

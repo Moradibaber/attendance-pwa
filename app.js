@@ -1252,22 +1252,10 @@ function setSyncStatus(m) {
 }
 
 function showAdminMessage(m) {
-  const msg = String(m ?? "").trim();
-
-  if (
-    !msg ||
-    msg === "false" ||
-    msg === "null" ||
-    msg === "undefined" ||
-    msg === "0" ||
-    msg === "تردد"
-  ) {
-    return;
-  }
-
-  setSyncStatus("پیام مدیر: " + msg);
+  const text = String(m ?? "").trim();
+  if (!text) return;
+  setSyncStatus("پیام مدیر: " + text);
 }
-
 function getPersianDate(d) {
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
     year: "numeric",

@@ -1347,12 +1347,11 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
-async function fetchMessages() {
 
+async function fetchMessages() {
   if (!navigator.onLine) return;
 
   try {
-
     const profile = await getProfile().catch(() => null);
     if (!profile?.personnelCode) return;
 
@@ -1372,14 +1371,10 @@ async function fetchMessages() {
     if (!result || result.ok !== true) return;
 
     if (Array.isArray(result.messages) && result.messages.length) {
-
       const msg = result.messages.join(" | ");
-
       showAdminMessage(msg);
     }
-
   } catch (e) {}
-
 }
 
 function escapeHtml(v) {

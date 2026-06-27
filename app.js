@@ -1242,19 +1242,12 @@ let lastAdminMessage = "";
 // }
 
 function showAdminMessage(m) {
-  // ۱. بررسی اینکه آیا پیام معتبر است یا نه
-  const trimmedMessage = (typeof m === 'string') ? m.trim() : "";
-
-  const syncStatusElement = $("syncStatus");
-  if (!syncStatusElement) return;
-
-  if (trimmedMessage.length > 0) {
-    // اگر پیام وجود دارد، آن را نمایش بده
-    syncStatusElement.textContent = "پیام مدیر: " + trimmedMessage;
-  } else {
-    // اگر پیام خالی است، کلاً عبارت "پیام مدیر" را حذف کن تا چیزی نمایش داده نشود
-    syncStatusElement.textContent = ""; 
+  // فقط و فقط اگر پیامی وجود داشت که "خالی" یا "undefined" نبود
+  if (m && String(m).trim() !== "" && m !== "undefined" && m !== "null") {
+    const msg = "پیام مدیر: " + m;
+    setSyncStatus(msg);
   }
+  // اگر پیامی نبود، هیچ تغییری در وضعیت (syncStatus) ایجاد نکن
 }
 
 

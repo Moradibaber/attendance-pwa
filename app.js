@@ -1,715 +1,1130 @@
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0f172a" />
-  <title>Attendance PWA</title>
+const DB_NAME = "attendance-pwa-db";
+const DB_VERSION = 2;
+const STORE_RECORDS = "records";
+const STORE_PROFILE = "profile";
 
-  <style>
-    :root{
-      --bg:#0b1220;
-      --card:#111a2e;
-      --card2:#0f172a;
-      --text:#e5e7eb;
-      --muted:#94a3b8;
-      --primary:#38bdf8;
-      --success:#22c55e;
-      --warning:#f59e0b;
-      --danger:#ef4444;
-      --border:rgba(148,163,184,.18);
-      --shadow:0 10px 30px rgba(0,0,0,.25);
-      --radius:18px;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family:Tahoma, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background:linear-gradient(180deg, #08101d, #0b1220 45%, #0f172a);
-      color:var(--text);
-    }
-    .app{
-      max-width:980px;
-      margin:0 auto;
-      padding:16px;
-    }
-    .topbar, .card{
-      background:rgba(17,26,46,.84);
-      backdrop-filter: blur(10px);
-      border:1px solid var(--border);
-      box-shadow:var(--shadow);
-      border-radius:var(--radius);
-    }
-    .topbar{
-      padding:16px;
-      margin-bottom:16px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-    }
-    .title{
-      font-size:1.1rem;
-      font-weight:700;
-      margin:0;
-    }
-    .badge{
-      padding:6px 10px;
-      border-radius:999px;
-      font-size:.85rem;
-      border:1px solid var(--border);
-      color:var(--text);
-      background:rgba(255,255,255,.04);
-    }
-    .badge.online{ background:rgba(34,197,94,.15); color:#bbf7d0; border-color:rgba(34,197,94,.3); }
-    .badge.offline{ background:rgba(239,68,68,.15); color:#fecaca; border-color:rgba(239,68,68,.3); }
-    .grid{
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:16px;
-    }
-    @media(min-width:900px){
-      .grid.two{ grid-template-columns: 1fr 1fr; }
-    }
-    .card{
-      padding:16px;
-    }
-    .card h2{
-      margin:0 0 14px;
-      font-size:1rem;
-    }
-    label{
-      display:block;
-      margin:10px 0 6px;
-      color:var(--muted);
-      font-size:.92rem;
-    }
-    input, select, button, textarea{
-      width:100%;
-      border-radius:14px;
-      border:1px solid var(--border);
-      background:rgba(255,255,255,.03);
-      color:var(--text);
-      padding:12px 14px;
-      font:inherit;
-      outline:none;
-    }
-    input::placeholder{ color:#64748b; }
-    button{
-      cursor:pointer;
-      font-weight:700;
-    }
-    .btn-primary{ background:linear-gradient(135deg, #0284c7, #38bdf8); color:#fff; border:none; }
-    .btn-success{ background:linear-gradient(135deg, #16a34a, #22c55e); color:#fff; border:none; }
-    .btn-danger{ background:linear-gradient(135deg, #dc2626, #ef4444); color:#fff; border:none; }
-    .btn-ghost{ background:rgba(255,255,255,.04); }
-    .row{ display:grid; grid-template-columns:1fr; gap:12px; }
-    @media(min-width:700px){ .row.cols2{ grid-template-columns:1fr 1fr; } .row.cols3{ grid-template-columns:1fr 1fr 1fr; } }
-    .actions{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px; }
-    .muted{ color:var(--muted); font-size:.9rem; }
-    .toast{
-      position:fixed;
-      bottom:18px;
-      left:18px;
-      right:18px;
-      max-width:720px;
-      margin:0 auto;
-      padding:14px 16px;
-      border-radius:14px;
-      background:#0b1220;
-      border:1px solid var(--border);
-      box-shadow:var(--shadow);
-      z-index:9999;
-      display:none;
-    }
-    .toast.show{ display:block; }
-    .list{
-      display:flex;
-      flex-direction:column;
-      gap:10px;
-      margin-top:12px;
-    }
-    .item{
-      padding:12px;
-      border:1px solid var(--border);
-      border-radius:14px;
-      background:rgba(255,255,255,.03);
-    }
-    .item-head{
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      align-items:center;
-      margin-bottom:8px;
-    }
-    .pill{
-      font-size:.78rem;
-      padding:4px 8px;
-      border-radius:999px;
-      border:1px solid var(--border);
-      color:var(--muted);
-    }
-    .pill.pending{ color:#fde68a; border-color:rgba(245,158,11,.35); background:rgba(245,158,11,.08); }
-    .pill.synced{ color:#bbf7d0; border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.08); }
-    .pill.failed{ color:#fecaca; border-color:rgba(239,68,68,.35); background:rgba(239,68,68,.08); }
-    .small{ font-size:.82rem; color:var(--muted); line-height:1.8; }
-    video, img.preview{
-      width:100%;
-      border-radius:16px;
-      background:#020617;
-      border:1px solid var(--border);
-      display:block;
-      max-height:320px;
-      object-fit:cover;
-    }
-    .hidden{ display:none !important; }
-  </style>
-</head>
-<body>
-  <div class="app">
-    <div class="topbar">
-      <h1 class="title">سیستم ثبت تردد</h1>
-      <div id="onlineBadge" class="badge offline">آفلاین</div>
-    </div>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrnRxZ2XkVKll_Thp_RVm0JlJTndxU8NX_ZIcoQ2_XKeVsZOuiY6gxyNyG5mPijwNf/exec";
 
-    <div class="grid two">
-      <div class="card">
-        <h2>اطلاعات پرسنل</h2>
+const GPS_WAIT_MS = 90000;
+const GPS_RETRY_MS = 30000;
+const GOOD_ACCURACY_METERS = 1000;
+const GPS_REQUIRED = true;
 
-        <div class="row cols2">
-          <div>
-            <label for="personnelCode">کد پرسنلی</label>
-            <input id="personnelCode" type="text" placeholder="مثلاً 1234" />
-          </div>
-          <div>
-            <label for="recordType">نوع ثبت</label>
-            <select id="recordType">
-              <option value="IN">ورود</option>
-              <option value="OUT">خروج</option>
-            </select>
-          </div>
-        </div>
+const CLOCK_RISK_GPS_CLICK_DIFF_MS = 5 * 60 * 1000;
+const HIGH_GPS_WAIT_MS = 2 * 60 * 1000;
+const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
+const CLOCK_DRIFT_NETWORK_LIMIT_MS = 2 * 60 * 1000;
 
-        <div class="row cols2">
-          <div>
-            <label for="firstName">نام</label>
-            <input id="firstName" type="text" placeholder="نام" />
-          </div>
-          <div>
-            <label for="lastName">نام خانوادگی</label>
-            <input id="lastName" type="text" placeholder="نام خانوادگی" />
-          </div>
-        </div>
+const APP_SESSION_START_WALL_MS = Date.now();
+const APP_SESSION_START_PERF_MS = performance.now();
 
-        <div class="actions">
-          <button id="btnSaveProfile" class="btn-ghost">ذخیره پروفایل</button>
-          <button id="btnCapture" class="btn-primary">ثبت تردد</button>
-        </div>
+let db = null;
+let currentPhoto = "";
+let pendingLocation = null;
+let syncRunning = false;
+let syncTimer = null;
+let captureStartedAtMs = 0;
+let photoSelectedAtMs = 0;
+let photoCompressedAtMs = 0;
 
-        <p id="statusText" class="small">آماده</p>
-        <p id="syncStatusText" class="small">همگام‌سازی: آماده</p>
-      </div>
+const $ = (id) => document.getElementById(id);
 
-      <div class="card">
-        <h2>عکس و GPS</h2>
+document.addEventListener("DOMContentLoaded", async () => {
+  showGpsToast("📍 حتما جی پی اس خود را روشن کنید", 3000, "error");
 
-        <video id="cameraPreview" autoplay playsinline muted class="hidden"></video>
-        <img id="photoPreview" class="preview hidden" alt="preview" />
+  db = await openDb();
 
-        <div class="row cols2" style="margin-top:12px;">
-          <div>
-            <label for="photoInput">انتخاب عکس</label>
-            <input id="photoInput" type="file" accept="image/*" capture="environment" />
-          </div>
-          <div>
-            <label for="gpsInfo">وضعیت GPS</label>
-            <input id="gpsInfo" type="text" disabled value="در انتظار..." />
-          </div>
-        </div>
+  bindEvents();
+  await loadProfile();
+  await refreshUi();
 
-        <div class="row cols3">
-          <div>
-            <label for="latitude">Latitude</label>
-            <input id="latitude" type="text" disabled />
-          </div>
-          <div>
-            <label for="longitude">Longitude</label>
-            <input id="longitude" type="text" disabled />
-          </div>
-          <div>
-            <label for="accuracy">Accuracy</label>
-            <input id="accuracy" type="text" disabled />
-          </div>
-        </div>
-      </div>
-    </div>
+  setupAutoSync();
 
-    <div class="card" style="margin-top:16px;">
-      <h2>رکوردها</h2>
-      <div id="recordsList" class="list"></div>
-    </div>
-  </div>
-
-  <div id="toast" class="toast"></div>
-
-<script>
-(() => {
-  "use strict";
-
-  const DB_NAME = "attendance-pwa-db";
-  const DB_VERSION = 2;
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrnRxZ2XkVKll_Thp_RVm0JlJTndxU8NX_ZIcoQ2_XKeVsZOuiY6gxyNyG5mPijwNf/exec";
-  const GPS_REQUIRED = true;
-  const GPS_WAIT_MS = 15000;
-  const GPS_RETRY_MS = 3000;
-  const GOOD_ACCURACY_METERS = 50;
-  const CLOCK_RISK_MAX_MS = 10 * 60 * 1000;
-
-  let db = null;
-  let currentPhotoBase64 = "";
-  let currentLocation = null;
-  let syncTimer = null;
-
-  const el = (id) => document.getElementById(id);
-
-  function setStatus(msg) { el("statusText").textContent = msg; }
-  function setSyncStatus(msg) { el("syncStatusText").textContent = msg; }
-  function showToast(msg, ms=3500) {
-    const t = el("toast");
-    t.textContent = msg;
-    t.classList.add("show");
-    clearTimeout(showToast._timer);
-    showToast._timer = setTimeout(() => t.classList.remove("show"), ms);
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
   }
-  function updateOnlineBadge() {
-    const b = el("onlineBadge");
-    const online = navigator.onLine;
-    b.textContent = online ? "آنلاین" : "آفلاین";
-    b.classList.toggle("online", online);
-    b.classList.toggle("offline", !online);
+});
+
+function showGpsToast(message, duration = 3000, type = "success") {
+  const oldToast = document.getElementById("gps-toast");
+  if (oldToast) oldToast.remove();
+
+  const toast = document.createElement("div");
+  toast.id = "gps-toast";
+  toast.textContent = message;
+
+  const isSuccess = type === "success";
+
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%) scale(0.8)",
+    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
+    color: "#ffffff",
+    padding: "25px 40px",
+    borderRadius: "20px",
+    fontSize: "22px",
+    fontWeight: "bold",
+    fontFamily: "Tahoma, sans-serif",
+    boxShadow: isSuccess
+      ? "0 15px 50px rgba(22, 163, 74, 0.45)"
+      : "0 15px 50px rgba(0, 0, 0, 0.5)",
+    zIndex: "10000",
+    opacity: "0",
+    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+    direction: "rtl",
+    textAlign: "center",
+    width: "80%",
+    maxWidth: "400px",
+    border: "3px solid #ffffff"
+  });
+
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%, -50%) scale(1)";
+  }, 100);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
+    setTimeout(() => toast.remove(), 400);
+  }, duration);
+}
+
+function bindEvents() {
+  $("saveProfileBtn")?.addEventListener("click", saveProfile);
+  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
+  $("photoInput")?.addEventListener("change", handlePhotoSelected);
+}
+
+function setupAutoSync() {
+  updateOnlineBadge();
+
+  window.addEventListener("online", async () => {
+    updateOnlineBadge();
+    await markFirstConnectionForOfflineRecords();
+    scheduleSyncPendingRecords(500);
+  });
+
+  window.addEventListener("offline", updateOnlineBadge);
+
+  window.addEventListener("focus", () => {
+    if (navigator.onLine) scheduleSyncPendingRecords(500);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && navigator.onLine) scheduleSyncPendingRecords(500);
+  });
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", async (event) => {
+      if (!event.data) return;
+
+      if (event.data.type === "SYNC_COMPLETE") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار انجام شد");
+      }
+
+      if (event.data.type === "SYNC_FAILED") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار کامل نشد");
+      }
+    });
   }
 
-  function pad2(n){ return String(n).padStart(2,"0"); }
-  function nowIso(){ return new Date().toISOString(); }
-  function formatDateParts(d = new Date()) {
-    return {
-      date: `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`,
-      hour: `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`,
-      time: d.toISOString()
+  setInterval(() => {
+    if (navigator.onLine) scheduleSyncPendingRecords(0);
+  }, 60000);
+
+  if (navigator.onLine) scheduleSyncPendingRecords(1000);
+}
+
+function scheduleSyncPendingRecords(delay = 0) {
+  if (syncTimer) clearTimeout(syncTimer);
+
+  syncTimer = setTimeout(() => {
+    syncPendingRecords();
+  }, delay);
+}
+
+async function registerBackgroundSync() {
+  return;
+}
+
+function startAttendanceCapture() {
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
+
+  if (!personnelCode || !firstName || !lastName) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
+    return;
+  }
+
+  captureStartedAtMs = Date.now();
+  photoSelectedAtMs = 0;
+  photoCompressedAtMs = 0;
+  currentPhoto = "";
+  pendingLocation = null;
+
+  if ($("photoPreview")) {
+    $("photoPreview").removeAttribute("src");
+    $("photoPreview").style.display = "none";
+  }
+
+  const photoInput = $("photoInput");
+
+  if (!photoInput) {
+    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
+    return;
+  }
+
+  photoInput.value = "";
+  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+  photoInput.click();
+}
+
+async function handlePhotoSelected() {
+  const file = $("photoInput")?.files?.[0];
+
+  if (!file) {
+    setStatus("عکسی انتخاب نشد.");
+    return;
+  }
+
+  try {
+    photoSelectedAtMs = Date.now();
+
+    await saveProfileSilent();
+
+    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
+
+    if ($("photoPreview")) {
+      $("photoPreview").src = currentPhoto;
+      $("photoPreview").style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      return;
+    }
+
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    pendingLocation = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(pendingLocation)) {
+      if (pendingLocation?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        return;
+      }
+
+      if (pendingLocation?.status === "unavailable") {
+        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+        return;
+      }
+
+      if (pendingLocation?.status === "timeout") {
+        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        return;
+      }
+
+      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      return;
+    }
+
+    await createRecord("تردد");
+  } catch (err) {
+    console.error(err);
+    setStatus("خطا در پردازش عکس یا ثبت تردد");
+  }
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+    req.onupgradeneeded = (e) => {
+      const openedDb = e.target.result;
+
+      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
+        const store = openedDb.createObjectStore(STORE_RECORDS, {
+          keyPath: "id",
+          autoIncrement: true
+        });
+
+        store.createIndex("status", "status");
+        store.createIndex("clientRecordId", "clientRecordId", { unique: false });
+      } else {
+        const tx = e.target.transaction;
+        const store = tx.objectStore(STORE_RECORDS);
+
+        if (!store.indexNames.contains("status")) {
+          store.createIndex("status", "status");
+        }
+
+        if (!store.indexNames.contains("clientRecordId")) {
+          store.createIndex("clientRecordId", "clientRecordId", { unique: false });
+        }
+      }
+
+      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
+        openedDb.createObjectStore(STORE_PROFILE, {
+          keyPath: "id"
+        });
+      }
     };
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbPut(store, value) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    const st = tx.objectStore(store);
+    const req = st.put(value);
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGet(store, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const st = tx.objectStore(store);
+    const req = st.get(key);
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGetAll(store) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const st = tx.objectStore(store);
+    const req = st.getAll();
+
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveProfile() {
+  const profile = getProfileFromInputs();
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    setStatus("اطلاعات پرسنلی کامل نیست.");
+    return;
   }
 
-  function openDb() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
-        const dbx = req.result;
-        if (!dbx.objectStoreNames.contains("records")) dbx.createObjectStore("records", { keyPath: "clientRecordId" });
-        if (!dbx.objectStoreNames.contains("profile")) dbx.createObjectStore("profile", { keyPath: "id" });
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+  await dbPut(STORE_PROFILE, {
+    id: "main",
+    ...profile
+  });
+
+  showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
+
+  const profileStatus = $("profileStatus");
+
+  if (profileStatus) {
+    profileStatus.textContent = "مشخصات با موفقیت ثبت شد ✅";
+    profileStatus.className = "status online small-status";
+
+    setTimeout(() => {
+      profileStatus.textContent = "";
+      profileStatus.className = "status small-status";
+    }, 3000);
+  } else {
+    setStatus("مشخصات با موفقیت ثبت شد.");
+  }
+}
+
+async function saveProfileSilent() {
+  const profile = getProfileFromInputs();
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    throw new Error("مشخصات پرسنلی کامل نیست.");
+  }
+
+  await dbPut(STORE_PROFILE, {
+    id: "main",
+    ...profile
+  });
+}
+
+async function loadProfile() {
+  const p = await dbGet(STORE_PROFILE, "main");
+  if (!p) return;
+
+  if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
+  if ($("firstName")) $("firstName").value = p.firstName || "";
+  if ($("lastName")) $("lastName").value = p.lastName || "";
+}
+
+function getProfileFromInputs() {
+  return {
+    personnelCode: $("personnelCode")?.value.trim() || "",
+    firstName: $("firstName")?.value.trim() || "",
+    lastName: $("lastName")?.value.trim() || ""
+  };
+}
+
+async function getProfile() {
+  const saved = await dbGet(STORE_PROFILE, "main");
+  const inputProfile = getProfileFromInputs();
+
+  const profile = {
+    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
+    firstName: inputProfile.firstName || saved?.firstName || "",
+    lastName: inputProfile.lastName || saved?.lastName || ""
+  };
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    throw new Error("مشخصات پرسنلی کامل نیست.");
+  }
+
+  await dbPut(STORE_PROFILE, {
+    id: "main",
+    ...profile
+  });
+
+  return profile;
+}
+
+async function createRecord(type) {
+  const profile = await getProfile();
+
+  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
+    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
+    return;
+  }
+
+  const loc = hasValidLocation(pendingLocation)
+    ? pendingLocation
+    : emptyLocation("not_received", "GPS دریافت نشد");
+
+  const now = new Date();
+  const nowMs = now.getTime();
+
+  const clickMs = captureStartedAtMs || nowMs;
+  const photoMs = photoSelectedAtMs || "";
+  const photoCompressedMs = photoCompressedAtMs || "";
+  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
+
+  const deviceTime = now.toISOString();
+  const deviceTimeAtClick = new Date(clickMs).toISOString();
+  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
+  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
+  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
+  const gpsTimestamp = deviceTimeAtGps;
+
+  const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
+  const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
+  const submitDelayMs = Math.max(0, nowMs - clickMs);
+
+  const offlineCreated = !navigator.onLine;
+  const createdOnline = navigator.onLine;
+  const connectionStatus = offlineCreated ? "offline" : "online";
+  const connectionStatusFa = offlineCreated ? "آفلاین" : "آنلاین";
+
+  const firstConnectionAfterOfflineRecord = "";
+  const lastConnectionBeforeUpload = "";
+  const uploadedAt = "";
+  const delayAfterFirstConnectionMs = "";
+
+  const sessionClockDriftMs = getSessionClockDriftMs();
+  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+
+  const risk = calculateClockRisk({
+    clickMs,
+    gpsMs,
+    gpsWaitMs,
+    photoDelayMs,
+    submitDelayMs,
+    offlineCreated,
+    locationStatus: loc.status,
+    accuracy: loc.accuracy,
+    sessionClockDriftMs,
+    networkClockDriftMs
+  });
+
+  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
+
+  const record = {
+    clientRecordId,
+
+    personnelCode: profile.personnelCode,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+
+    type,
+    recordType: type,
+
+    recordDate: getPersianDate(now),
+    recordHour: getTime(now),
+    recordTime: getTime(now),
+
+    latitude: loc.latitude || "",
+    longitude: loc.longitude || "",
+    accuracy: loc.accuracy || "",
+    locationStatus: loc.status || "",
+    locationError: loc.error || "",
+
+    deviceTime,
+    deviceTimeAtClick,
+    deviceTimeAtPhoto,
+    deviceTimeAtPhotoCompressed,
+    deviceTimeAtGps,
+
+    gpsTimestamp,
+    gpsWaitMs,
+    photoDelayMs,
+    submitDelayMs,
+
+    offlineCreated,
+    createdOnline,
+    connectionStatus,
+    connectionStatusFa,
+    firstConnectionAfterOfflineRecord,
+    lastConnectionBeforeUpload,
+    uploadedAt,
+    delayAfterFirstConnectionMs,
+
+    clockRisk: risk.clockRisk,
+    clockRiskReason: risk.clockRiskReason,
+
+    sessionClockDriftMs,
+    networkClockDriftMs: networkClockDriftMs ?? "",
+
+    photo: currentPhoto || "",
+
+    status: "pending",
+    createdAt: now.toISOString(),
+
+    lastSyncTryAt: "",
+    syncTryCount: 0,
+    syncedAt: "",
+    serverResponse: ""
+  };
+
+  await dbPut(STORE_RECORDS, record);
+
+  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
+  setStatus("تردد با GPS ذخیره شد.");
+  await refreshUi();
+
+  if (navigator.onLine) {
+    scheduleSyncPendingRecords(500);
+  }
+}
+
+function createClientRecordId(personnelCode, baseMs) {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `${personnelCode}-${baseMs}-${randomPart}`;
+}
+
+function getSessionClockDriftMs() {
+  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
+  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
+  const drift = wallElapsedMs - realElapsedMs;
+  return Math.round(drift);
+}
+
+async function getNetworkTimeDriftMs(deviceNowMs) {
+  try {
+    const controller = "AbortController" in window ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
+
+    const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
+      signal: controller ? controller.signal : undefined,
+      cache: "no-store"
     });
+
+    if (timeoutId) clearTimeout(timeoutId);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data?.utc_datetime) return null;
+
+    const networkMs = new Date(data.utc_datetime).getTime();
+    if (!networkMs || isNaN(networkMs)) return null;
+
+    return Math.abs(networkMs - deviceNowMs);
+  } catch (e) {
+    return null;
+  }
+}
+
+function calculateClockRisk(data) {
+  const reasons = [];
+  let score = 0;
+
+  const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
+  if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
+    score += 6;
+    reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
   }
 
-  function tx(store, mode="readonly") {
-    return db.transaction(store, mode).objectStore(store);
-  }
-  function dbPut(store, value) {
-    return new Promise((resolve, reject) => {
-      const req = tx(store, "readwrite").put(value);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  function dbGet(store, key) {
-    return new Promise((resolve, reject) => {
-      const req = tx(store).get(key);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  function dbGetAll(store) {
-    return new Promise((resolve, reject) => {
-      const req = tx(store).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+  if (data.gpsMs && data.clickMs) {
+    const gpsDiff = Math.abs(data.gpsMs - data.clickMs);
+    if (gpsDiff > 2 * 60 * 1000) {
+      score += 6;
+      reasons.push(`اختلاف با زمان واقعی جی‌پی‌اس (${Math.round(gpsDiff / 60000)} دقیقه)`);
+    }
   }
 
-  async function saveProfileSilent(profile) {
-    await dbPut("profile", { id: "main", ...profile, updatedAt: nowIso() });
-  }
-  async function saveProfile() {
-    const profile = {
-      personnelCode: el("personnelCode").value.trim(),
-      firstName: el("firstName").value.trim(),
-      lastName: el("lastName").value.trim(),
-      recordTypeDefault: el("recordType").value
-    };
-    await saveProfileSilent(profile);
-    showToast("پروفایل ذخیره شد");
-  }
-  async function loadProfile() {
-    const p = await dbGet("profile", "main");
-    if (!p) return;
-    el("personnelCode").value = p.personnelCode || "";
-    el("firstName").value = p.firstName || "";
-    el("lastName").value = p.lastName || "";
-    if (p.recordTypeDefault) el("recordType").value = p.recordTypeDefault;
+  if (data.offlineCreated) {
+    score += 1;
+    reasons.push("ثبت آفلاین");
   }
 
-  async function getSessionClockDriftMs() { return 0; }
-  async function getNetworkTimeDriftMs() { return 0; }
-
-  function calculateClockRisk({ sessionClockDriftMs=0, networkClockDriftMs=0, locationStatus="", offlineCreated=false, gpsTrueTimeDiffMs=0 }) {
-    let score = 0;
-    const reasons = [];
-
-    const absSession = Math.abs(Number(sessionClockDriftMs) || 0);
-    const absNetwork = Math.abs(Number(networkClockDriftMs) || 0);
-    const absGpsDiff = Math.abs(Number(gpsTrueTimeDiffMs) || 0);
-
-    if (absSession > 30 * 1000) { score += 20; reasons.push("session drift"); }
-    if (absNetwork > 30 * 1000) { score += 20; reasons.push("network drift"); }
-    if (absGpsDiff > 30 * 1000) { score += 15; reasons.push("gps diff"); }
-    if (locationStatus !== "ok") { score += 10; reasons.push("gps status"); }
-    if (offlineCreated) { score += 10; reasons.push("offline"); }
-
-    return {
-      clockRisk: score >= 40 ? "HIGH" : score >= 20 ? "MEDIUM" : "LOW",
-      clockRiskReason: reasons.join(", "),
-      clockRiskScore: score
-    };
+  if (data.locationStatus !== "ok") {
+    score += 4;
+    reasons.push("GPS نامعتبر/خاموش");
   }
 
-  function isGeolocationUsable() {
-    return !!navigator.geolocation;
+  let clockRisk = "low";
+  if (score >= 6) {
+    clockRisk = "high";
+  } else if (score >= 3) {
+    clockRisk = "medium";
   }
 
-  function getLocationIOSFriendly() {
-    return new Promise((resolve, reject) => {
-      if (!isGeolocationUsable()) return reject(new Error("Geolocation not supported"));
-      const start = Date.now();
-      let done = false;
+  return {
+    clockRisk,
+    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
+  };
+}
 
-      const timer = setTimeout(() => {
-        if (done) return;
+function isGeolocationUsable() {
+  return !!navigator.geolocation && window.isSecureContext;
+}
+
+async function getLocationIOSFriendly() {
+  if (!isGeolocationUsable()) {
+    return emptyLocation("unavailable", "GPS در دسترس نیست");
+  }
+
+  const firstLocation = await getCurrentPositionSafe({
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 25000
+  });
+
+  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) {
+    return firstLocation;
+  }
+
+  if (firstLocation?.status === "denied") {
+    return firstLocation;
+  }
+
+  const secondLocation = await getCurrentPositionSafe({
+    enableHighAccuracy: false,
+    maximumAge: 0,
+    timeout: 15000
+  });
+
+  if (secondLocation?.status === "denied") {
+    return secondLocation;
+  }
+
+  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
+
+  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) {
+    return bestLocation;
+  }
+
+  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
+  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
+
+  return bestLocation;
+}
+
+function getCurrentPositionSafe(options) {
+  return new Promise((resolve) => {
+    let done = false;
+
+    const timeoutId = setTimeout(() => {
+      if (!done) {
         done = true;
-        reject(new Error("GPS timeout"));
-      }, GPS_WAIT_MS);
+        resolve(emptyLocation("timeout", "زمان تمام شد"));
+      }
+    }, (options.timeout || 20000) + 3000);
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (done) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!done) {
           done = true;
-          clearTimeout(timer);
+          clearTimeout(timeoutId);
+
           resolve({
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
-            gpsTimestamp: pos.timestamp,
-            locationStatus: pos.coords.accuracy <= GOOD_ACCURACY_METERS ? "ok" : "poor",
-            locationError: ""
+            timestamp: pos.timestamp,
+            status: "ok",
+            error: ""
           });
-        },
-        (err) => {
-          if (done) return;
+        }
+      },
+      (err) => {
+        if (!done) {
           done = true;
-          clearTimeout(timer);
-          reject(err);
-        },
-        { enableHighAccuracy: true, timeout: GPS_WAIT_MS, maximumAge: 0 }
-      );
-    });
-  }
+          clearTimeout(timeoutId);
+          resolve(geoErrorToLocation(err));
+        }
+      },
+      options
+    );
+  });
+}
 
-  function handlePhotoSelected(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        currentPhotoBase64 = reader.result;
-        const img = el("photoPreview");
-        img.src = currentPhotoBase64;
-        img.classList.remove("hidden");
-        resolve(currentPhotoBase64);
-      };
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-  }
+function getLocationWithWatch(waitMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    let best = null;
 
-  async function createRecord() {
-    const personnelCode = el("personnelCode").value.trim();
-    const firstName = el("firstName").value.trim();
-    const lastName = el("lastName").value.trim();
-    const recordType = el("recordType").value;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const loc = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+          status: "ok",
+          error: ""
+        };
 
-    if (!personnelCode) throw new Error("کد پرسنلی را وارد کنید");
-    if (!firstName) throw new Error("نام را وارد کنید");
-    if (!lastName) throw new Error("نام خانوادگی را وارد کنید");
-    if (!currentPhotoBase64) throw new Error("عکس را انتخاب کنید");
-    if (GPS_REQUIRED && !currentLocation) throw new Error("GPS دریافت نشده است");
+        best = chooseBetterLocation(best, loc);
 
-    const deviceNow = new Date();
-    const parts = formatDateParts(deviceNow);
-    const sessionClockDriftMs = await getSessionClockDriftMs();
-    const networkClockDriftMs = await getNetworkTimeDriftMs();
-    const offlineCreated = !navigator.onLine;
+        if (loc.accuracy <= GOOD_ACCURACY_METERS) {
+          finish(loc);
+        }
+      },
+      (err) => {
+        finish(geoErrorToLocation(err));
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: waitMs
+      }
+    );
 
-    const clock = calculateClockRisk({
-      sessionClockDriftMs,
-      networkClockDriftMs,
-      locationStatus: currentLocation?.locationStatus || "",
-      offlineCreated,
-      gpsTrueTimeDiffMs: 0
-    });
+    const timeoutId = setTimeout(() => {
+      finish(best);
+    }, waitMs + 3000);
 
-    return {
-      clientRecordId: `rec_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-      personnelCode,
-      firstName,
-      lastName,
-      type: recordType,
-      recordType,
-      recordDate: parts.date,
-      recordHour: parts.hour,
-      recordTime: parts.time,
-
-      latitude: currentLocation.latitude,
-      longitude: currentLocation.longitude,
-      accuracy: currentLocation.accuracy,
-      locationStatus: currentLocation.locationStatus,
-      locationError: currentLocation.locationError || "",
-
-      deviceTime: nowIso(),
-      deviceTimeAtClick: nowIso(),
-      deviceTimeAtPhoto: nowIso(),
-      deviceTimeAtPhotoCompressed: nowIso(),
-      deviceTimeAtGps: new Date(currentLocation.gpsTimestamp || Date.now()).toISOString(),
-      gpsTimestamp: currentLocation.gpsTimestamp || Date.now(),
-
-      gpsWaitMs: GPS_WAIT_MS,
-      photoDelayMs: 0,
-      submitDelayMs: 0,
-      offlineCreated,
-      clockRisk: clock.clockRisk,
-      clockRiskReason: clock.clockRiskReason,
-      sessionClockDriftMs,
-      networkClockDriftMs,
-
-      photo: currentPhotoBase64,
-      status: "pending",
-      createdAt: nowIso(),
-      lastSyncTryAt: "",
-      syncTryCount: 0,
-      syncedAt: "",
-      serverResponse: null,
-
-      gpsTrueTimeDiffMs: 0
-    };
-  }
-
-  async function saveRecord(record) {
-    await dbPut("records", record);
-    await renderRecords();
-  }
-
-  function buildServerPayload(record) {
-    return {
-      clientRecordId: record.clientRecordId,
-      personnelCode: record.personnelCode,
-      firstName: record.firstName,
-      lastName: record.lastName,
-      type: record.type,
-      recordType: record.recordType,
-      recordDate: record.recordDate,
-      recordHour: record.recordHour,
-      recordTime: record.recordTime,
-      latitude: record.latitude,
-      longitude: record.longitude,
-      accuracy: record.accuracy,
-      locationStatus: record.locationStatus,
-      locationError: record.locationError,
-      deviceTime: record.deviceTime,
-      deviceTimeAtClick: record.deviceTimeAtClick,
-      deviceTimeAtGps: record.deviceTimeAtGps,
-      gpsTimestamp: record.gpsTimestamp,
-      gpsWaitMs: record.gpsWaitMs,
-      offlineCreated: record.offlineCreated,
-      clockRisk: record.clockRisk,
-      clockRiskReason: record.clockRiskReason,
-      sessionClockDriftMs: record.sessionClockDriftMs,
-      networkClockDriftMs: record.networkClockDriftMs,
-      gpsTrueTimeDiffMs: record.gpsTrueTimeDiffMs,
-      photo: record.photo,
-      createdAt: record.createdAt
-    };
-  }
-
-  async function syncPendingRecords() {
-    if (!navigator.onLine) {
-      setSyncStatus("همگام‌سازی: آفلاین");
-      return;
+    function finish(loc) {
+      if (!done) {
+        done = true;
+        navigator.geolocation.clearWatch(watchId);
+        clearTimeout(timeoutId);
+        resolve(loc || emptyLocation("timeout", "GPS دریافت نشد"));
+      }
     }
-    const records = await dbGetAll("records");
-    const pending = records.filter(r => r.status === "pending" || r.status === "failed");
-    if (!pending.length) {
-      setSyncStatus("همگام‌سازی: هیچ رکوردی برای ارسال نیست");
+  });
+}
+
+function geoErrorToLocation(err) {
+  if (err.code === 1) {
+    return emptyLocation("denied", "دسترسی رد شد");
+  }
+
+  if (err.code === 2) {
+    return emptyLocation("unavailable", "موقعیت در دسترس نیست");
+  }
+
+  if (err.code === 3) {
+    return emptyLocation("timeout", "زمان تمام شد");
+  }
+
+  return emptyLocation("error", "خطای GPS");
+}
+
+function hasValidLocation(l) {
+  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
+}
+
+function emptyLocation(status, error) {
+  return {
+    latitude: "",
+    longitude: "",
+    accuracy: "",
+    timestamp: null,
+    status,
+    error
+  };
+}
+
+function chooseBetterLocation(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+
+  if (!hasValidLocation(a)) return b;
+  if (!hasValidLocation(b)) return a;
+
+  return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
+}
+
+async function markFirstConnectionForOfflineRecords() {
+  if (!db || !navigator.onLine) return;
+
+  try {
+    const nowIso = new Date().toISOString();
+    const records = await dbGetAll(STORE_RECORDS);
+    const list = records.filter((r) =>
+      r.offlineCreated === true &&
+      (r.status === "pending" || r.status === "failed") &&
+      !r.firstConnectionAfterOfflineRecord
+    );
+
+    for (const r of list) {
+      r.firstConnectionAfterOfflineRecord = nowIso;
+      await dbPut(STORE_RECORDS, r);
+    }
+
+    if (list.length) {
+      await refreshUi();
+    }
+  } catch (e) {}
+}
+
+async function syncPendingRecords() {
+  if (syncRunning || !navigator.onLine) return;
+
+  syncRunning = true;
+
+  try {
+    await markFirstConnectionForOfflineRecords();
+
+    const records = await dbGetAll(STORE_RECORDS);
+    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
+
+    if (!list.length) {
+      setSyncStatus("چیزی برای ارسال نیست");
       return;
     }
 
-    for (const record of pending) {
+    setSyncStatus("در حال ارسال...");
+
+    for (const r of list) {
+      if (r.status === "sent" || r.status === "syncing") continue;
+
+      const uploadStartIso = new Date().toISOString();
+      const uploadStartMs = new Date(uploadStartIso).getTime();
+
+      r.status = "syncing";
+      r.lastSyncTryAt = uploadStartIso;
+      r.lastConnectionBeforeUpload = uploadStartIso;
+      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
+
+      if (r.offlineCreated === true && !r.connectionStatus) {
+        r.connectionStatus = "offline";
+        r.connectionStatusFa = "آفلاین";
+        r.createdOnline = false;
+      }
+
+      if (r.offlineCreated !== true && !r.connectionStatus) {
+        r.connectionStatus = "online";
+        r.connectionStatusFa = "آنلاین";
+        r.createdOnline = true;
+      }
+
+      if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
+        r.firstConnectionAfterOfflineRecord = uploadStartIso;
+      }
+
+      if (r.firstConnectionAfterOfflineRecord) {
+        const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
+        if (firstConnectionMs && !isNaN(firstConnectionMs)) {
+          r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
+        }
+      }
+
+      await dbPut(STORE_RECORDS, r);
+      await refreshUi();
+
       try {
-        record.lastSyncTryAt = nowIso();
-        record.syncTryCount = (record.syncTryCount || 0) + 1;
-        await dbPut("records", record);
+        const payload = buildServerPayload(r);
 
-        const payload = buildServerPayload(record);
         const res = await fetch(APPS_SCRIPT_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          },
           body: JSON.stringify(payload)
         });
 
-        const text = await res.text();
-        let json = null;
-        try { json = JSON.parse(text); } catch (_) {}
+        const result = await res.json().catch(() => ({}));
 
-        if (!res.ok || (json && json.success === false)) {
-          record.status = "failed";
-          record.serverResponse = text;
-          await dbPut("records", record);
-          continue;
+        r.serverResponse = JSON.stringify(result || {});
+
+        if (result.ok) {
+          const sentIso = new Date().toISOString();
+
+          r.status = "sent";
+          r.syncedAt = sentIso;
+          r.uploadedAt = sentIso;
+
+          if (result.message) {
+            showAdminMessage(result.message);
+          }
+        } else {
+          r.status = "failed";
         }
 
-        record.status = "synced";
-        record.syncedAt = nowIso();
-        record.serverResponse = text;
-        await dbPut("records", record);
+        await dbPut(STORE_RECORDS, r);
       } catch (err) {
-        record.status = "failed";
-        record.serverResponse = String(err?.message || err);
-        await dbPut("records", record);
+        r.status = "failed";
+        r.serverResponse = JSON.stringify({
+          ok: false,
+          error: err?.message || "network_error"
+        });
+
+        await dbPut(STORE_RECORDS, r);
       }
     }
 
-    await renderRecords();
-    setSyncStatus("همگام‌سازی: انجام شد");
+    setSyncStatus("ارسال انجام شد");
+    await refreshUi();
+  } finally {
+    syncRunning = false;
+  }
+}
+
+function buildServerPayload(record) {
+  return {
+    clientRecordId: record.clientRecordId || "",
+
+    personnelCode: record.personnelCode || "",
+    firstName: record.firstName || "",
+    lastName: record.lastName || "",
+
+    type: record.type || record.recordType || "",
+    recordType: record.recordType || record.type || "",
+
+    recordDate: record.recordDate || "",
+    recordHour: record.recordHour || record.recordTime || "",
+    recordTime: record.recordTime || record.recordHour || "",
+
+    latitude: record.latitude || "",
+    longitude: record.longitude || "",
+    accuracy: record.accuracy || "",
+    locationStatus: record.locationStatus || "",
+    locationError: record.locationError || "",
+
+    deviceTime: record.deviceTime || "",
+    deviceTimeAtClick: record.deviceTimeAtClick || "",
+    deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
+    deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
+    deviceTimeAtGps: record.deviceTimeAtGps || "",
+
+    gpsTimestamp: record.gpsTimestamp || "",
+    gpsWaitMs: record.gpsWaitMs ?? "",
+    photoDelayMs: record.photoDelayMs ?? "",
+    submitDelayMs: record.submitDelayMs ?? "",
+
+    offlineCreated: !!record.offlineCreated,
+    createdOnline: record.createdOnline === true,
+    connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
+    connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
+    firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
+    lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
+    uploadedAt: record.uploadedAt || "",
+    delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
+
+    clockRisk: record.clockRisk || "",
+    clockRiskReason: record.clockRiskReason || "",
+    sessionClockDriftMs: record.sessionClockDriftMs ?? "",
+    networkClockDriftMs: record.networkClockDriftMs ?? "",
+
+    photo: record.photo || "",
+
+    createdAt: record.createdAt || "",
+    lastSyncTryAt: record.lastSyncTryAt || "",
+    syncTryCount: Number(record.syncTryCount || 0)
+  };
+}
+
+async function refreshUi() {
+  const rec = await dbGetAll(STORE_RECORDS);
+
+  if ($("pendingCount")) {
+    $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
   }
 
-  async function scheduleSyncPendingRecords() {
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(syncPendingRecords, 1500);
+  if ($("sentCount")) {
+    $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
   }
 
-  async function setupAutoSync() {
-    window.addEventListener("online", () => {
-      updateOnlineBadge();
-      setSyncStatus("به شبکه متصل شد");
-      scheduleSyncPendingRecords();
-    });
-    window.addEventListener("offline", () => {
-      updateOnlineBadge();
-      setSyncStatus("آفلاین");
-    });
-
-    if ("serviceWorker" in navigator) {
-      try { await navigator.serviceWorker.register("./sw.js"); } catch (_) {}
-    }
-
-    setInterval(() => {
-      if (navigator.onLine) syncPendingRecords();
-    }, 2 * 60 * 1000);
+  if ($("failedCount")) {
+    $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
   }
 
-  async function renderRecords() {
-    const list = el("recordsList");
-    const records = (await dbGetAll("records")).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    if (!records.length) {
-      list.innerHTML = `<div class="muted">رکوردی ثبت نشده است</div>`;
-      return;
-    }
+  renderRecords(rec);
+}
 
-    list.innerHTML = records.map(r => `
-      <div class="item">
-        <div class="item-head">
-          <strong>${escapeHtml(r.firstName || "")} ${escapeHtml(r.lastName || "")}</strong>
-          <span class="pill ${r.status || "pending"}">${escapeHtml(r.status || "pending")}</span>
+function renderRecords(records) {
+  if (!$("recordsList")) return;
+
+  if (!records.length) {
+    $("recordsList").innerHTML = "<p>ترددی ثبت نشده</p>";
+    return;
+  }
+
+  const sorted = [...records].sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  );
+
+  $("recordsList").innerHTML = sorted
+    .slice(0, 20)
+    .map((r) => {
+      const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
+      const connectionText = r.connectionStatusFa
+        ? ` - ${escapeHtml(r.connectionStatusFa)}`
+        : r.offlineCreated
+          ? " - آفلاین"
+          : " - آنلاین";
+
+      return `
+        <div class="record-item compact-record">
+          <span>${escapeHtml(r.recordDate || "")}</span>
+          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
         </div>
-        <div class="small">
-          کد: ${escapeHtml(r.personnelCode || "")}<br/>
-          نوع: ${escapeHtml(r.recordType || "")}<br/>
-          زمان: ${escapeHtml(r.recordDate || "")} ${escapeHtml(r.recordHour || "")}<br/>
-          GPS: ${escapeHtml(r.latitude ?? "")}, ${escapeHtml(r.longitude ?? "")} / ${escapeHtml(r.accuracy ?? "")}m<br/>
-          ریسک: ${escapeHtml(r.clockRisk || "")} - ${escapeHtml(r.clockRiskReason || "")}
-        </div>
-      </div>
-    `).join("");
+      `;
+    })
+    .join("");
+}
+
+function updateOnlineBadge() {
+  if (!$("onlineBadge")) return;
+
+  if (navigator.onLine) {
+    $("onlineBadge").textContent = "آنلاین";
+    $("onlineBadge").className = "status online";
+  } else {
+    $("onlineBadge").textContent = "آفلاین";
+    $("onlineBadge").className = "status offline";
   }
+}
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, m => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m]));
+function setStatus(m) {
+  if ($("captureStatus")) {
+    $("captureStatus").textContent = m;
   }
+}
 
-  async function startAttendanceCapture() {
-    try {
-      setStatus("در حال دریافت GPS...");
-      if (GPS_REQUIRED) {
-        currentLocation = await getLocationIOSFriendly();
-        el("gpsInfo").value = `${currentLocation.locationStatus} (${currentLocation.accuracy.toFixed(1)}m)`;
-        el("latitude").value = currentLocation.latitude;
-        el("longitude").value = currentLocation.longitude;
-        el("accuracy").value = currentLocation.accuracy;
-      }
-
-      setStatus("در حال ایجاد رکورد...");
-      const record = await createRecord();
-      await saveRecord(record);
-      setStatus("ثبت شد");
-      showToast("تردد با موفقیت ثبت شد");
-
-      currentPhotoBase64 = "";
-      currentLocation = null;
-      el("photoPreview").classList.add("hidden");
-      el("photoPreview").src = "";
-      el("photoInput").value = "";
-      el("gpsInfo").value = "در انتظار...";
-      el("latitude").value = "";
-      el("longitude").value = "";
-      el("accuracy").value = "";
-
-      await scheduleSyncPendingRecords();
-    } catch (err) {
-      setStatus("خطا در ثبت");
-      showToast(err.message || String(err), 5000);
-    }
+function setSyncStatus(m) {
+  if ($("syncStatus")) {
+    $("syncStatus").textContent = m;
   }
+}
 
-  function bindEvents() {
-    el("btnSaveProfile").addEventListener("click", saveProfile);
-    el("btnCapture").addEventListener("click", startAttendanceCapture);
-    el("photoInput").addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      await handlePhotoSelected(file);
-      showToast("عکس بارگذاری شد");
-    });
-  }
+function showAdminMessage(m) {
+  const msg = "پیام مدیر: " + m;
+  setSyncStatus(msg);
+}
 
-  async function init() {
-    updateOnlineBadge();
-    showToast("GPS و اینترنت را بررسی کنید", 2500);
-    db = await openDb();
-    bindEvents();
-    await loadProfile();
-    await renderRecords();
-    await setupAutoSync();
-    if (navigator.onLine) scheduleSyncPendingRecords();
-  }
+function getPersianDate(d) {
+  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(d);
+}
 
-  document.addEventListener("DOMContentLoaded", init);
-})();
-</script>
-</body>
-</html>
+function getTime(d) {
+  return new Intl.DateTimeFormat("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(d);
+}
+
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const img = new Image();
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX = 400;
+
+        let w = img.width;
+        let h = img.height;
+
+        if (w > h) {
+          if (w > MAX) {
+            h = h * (MAX / w);
+            w = MAX;
+          }
+        } else {
+          if (h > MAX) {
+            w = w * (MAX / h);
+            h = MAX;
+          }
+        }
+
+        canvas.width = w;
+        canvas.height = h;
+
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        canvas.toBlob(
+          (blob) => {
+            const r = new FileReader();
+
+            r.onloadend = () => {
+              resolve(r.result);
+            };
+
+            r.onerror = () => {
+              reject(new Error("خطا در خواندن تصویر فشرده"));
+            };
+
+            r.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          0.3
+        );
+      };
+
+      img.onerror = () => {
+        reject(new Error("خطا در بارگذاری تصویر"));
+      };
+
+      img.src = e.target.result;
+    };
+
+    reader.onerror = () => {
+      reject(new Error("خطا در خواندن فایل تصویر"));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+function escapeHtml(v) {
+  return String(v)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}

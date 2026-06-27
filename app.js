@@ -30,7 +30,7 @@ let photoCompressedAtMs = 0;
 const $ = (id) => document.getElementById(id);
 
 document.addEventListener("DOMContentLoaded", async () => {
-  showGpsToast("📍 حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 3000, "error");
+  showGpsToast("📍 حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
 
   db = await openDb();
 

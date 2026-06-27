@@ -17,7 +17,9 @@ const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
 const CLOCK_DRIFT_NETWORK_LIMIT_MS = 2 * 60 * 1000;
 
 const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
+const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
 const POLICY_ONLINE_ONLY = "ONLINE_ONLY";
+const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
 const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
 const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
 const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
@@ -173,6 +175,50 @@ async function registerBackgroundSync() {
   return;
 }
 
+function evaluateAttendancePolicy(policy, isOnline) {
+  const normalized = normalizeAttendancePolicy(policy);
+
+  if (normalized === POLICY_NOT_ALLOWED) {
+    return {
+      ok: false,
+      message: "ثبت تردد برای شما مجاز نیست."
+    };
+  }
+
+  if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
+    return {
+      ok: false,
+      message: "برای این کاربر فقط ثبت آنلاین مجاز است."
+    };
+  }
+
+  if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
+    return {
+      ok: false,
+      message: "برای این کاربر فقط ثبت آفلاین مجاز است."
+    };
+  }
+
+  return {
+    ok: true,
+    message: ""
+  };
+}
+
+async function getCurrentAttendanceGate() {
+  if (navigator.onLine) {
+    await refreshPolicyIfPossible();
+  }
+
+  const policyInfo = await getAttendancePolicyInfo();
+  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+  return {
+    policyInfo,
+    gate: evaluateAttendancePolicy(policy, navigator.onLine)
+  };
+}
+
 async function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
@@ -185,15 +231,9 @@ async function startAttendanceCapture() {
 
   await saveProfileSilent();
 
-  if (navigator.onLine) {
-    await refreshPolicyIfPossible();
-  }
-
-  const policyInfo = await getAttendancePolicyInfo();
-  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-  if (policy === POLICY_ONLINE_ONLY && !navigator.onLine) {
-    setStatus("برای این کاربر فقط ثبت آنلاین مجاز است.");
+  const { gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
     return;
   }
 
@@ -233,15 +273,11 @@ async function handlePhotoSelected() {
 
     await saveProfileSilent();
 
-    if (navigator.onLine) {
-      await refreshPolicyIfPossible();
-    }
-
-    const policyInfo = await getAttendancePolicyInfo();
-    const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-    if (policy === POLICY_ONLINE_ONLY && !navigator.onLine) {
-      setStatus("برای این کاربر فقط ثبت آنلاین مجاز است.");
+    const { gate } = await getCurrentAttendanceGate();
+    if (!gate.ok) {
+      setStatus(gate.message);
+      $("photoInput").value = "";
+      currentPhoto = "";
       return;
     }
 
@@ -507,7 +543,9 @@ function normalizeAttendancePolicy(policy) {
   const p = String(policy || "").trim().toUpperCase();
 
   if (
+    p === POLICY_NOT_ALLOWED ||
     p === POLICY_ONLINE_ONLY ||
+    p === POLICY_OFFLINE_ONLY ||
     p === POLICY_ONLINE_PREFERRED ||
     p === POLICY_ONLINE_OR_OFFLINE ||
     p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
@@ -556,17 +594,13 @@ async function refreshPolicyIfPossible() {
 async function createRecord(type) {
   const profile = await getProfile();
 
-  if (navigator.onLine) {
-    await refreshPolicyIfPossible();
-  }
-
-  const policyInfo = await getAttendancePolicyInfo();
-  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-  if (attendancePolicy === POLICY_ONLINE_ONLY && !navigator.onLine) {
-    setStatus("برای این کاربر فقط ثبت آنلاین مجاز است.");
+  const { policyInfo, gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
     return;
   }
+
+  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
@@ -969,7 +1003,14 @@ async function syncPendingRecords() {
   syncRunning = true;
 
   try {
-    await refreshPolicyIfPossible();
+    const policyInfo = await refreshPolicyIfPossible() || await getAttendancePolicyInfo();
+    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, navigator.onLine);
+
+    if (!syncGate.ok) {
+      setSyncStatus(syncGate.message);
+      return;
+    }
+
     await markFirstConnectionForOfflineRecords();
 
     const records = await dbGetAll(STORE_RECORDS);
@@ -1032,6 +1073,16 @@ async function syncPendingRecords() {
 
         const result = await res.json().catch(() => ({}));
 
+        if (result.attendancePolicy || result.policyVersion !== undefined) {
+          await saveAttendancePolicyInfo({
+            personnelCode: r.personnelCode || "",
+            attendancePolicy: result.attendancePolicy || policyInfo?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+            policyVersion: Number(result.policyVersion || 0),
+            policyFetchedAt: new Date().toISOString(),
+            policySource: "server_response"
+          });
+        }
+
         r.serverResponse = JSON.stringify(result || {});
 
         if (result.ok) {
@@ -1046,6 +1097,10 @@ async function syncPendingRecords() {
           }
         } else {
           r.status = "failed";
+
+          if (result?.error === "POLICY_VIOLATION") {
+            setSyncStatus("ارسال توسط سیاست حضور و غیاب مجاز نیست.");
+          }
         }
 
         await dbPut(STORE_RECORDS, r);

@@ -1095,7 +1095,8 @@ async function syncPendingRecords() {
               msg !== "false" &&
               msg !== "null" &&
               msg !== "undefined" &&
-              msg !== "0"
+              msg !== "0" &&
+              msg !== "تردد"
             ) {
               showAdminMessage(msg);
             }
@@ -1258,7 +1259,8 @@ function showAdminMessage(m) {
     msg === "false" ||
     msg === "null" ||
     msg === "undefined" ||
-    msg === "0"
+    msg === "0" ||
+    msg === "تردد"
   ) {
     return;
   }
@@ -1382,7 +1384,8 @@ async function fetchMessages() {
           m !== "false" &&
           m !== "null" &&
           m !== "undefined" &&
-          m !== "0"
+          m !== "0" &&
+          m !== "تردد"
       );
 
     if (!cleaned.length) return;

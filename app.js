@@ -1,7 +1,8 @@
 const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
+const STORE_CONFIG = "config";
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrnRxZ2XkVKll_Thp_RVm0JlJTndxU8NX_ZIcoQ2_XKeVsZOuiY6gxyNyG5mPijwNf/exec";
 
@@ -14,6 +15,12 @@ const CLOCK_RISK_GPS_CLICK_DIFF_MS = 5 * 60 * 1000;
 const HIGH_GPS_WAIT_MS = 2 * 60 * 1000;
 const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
 const CLOCK_DRIFT_NETWORK_LIMIT_MS = 2 * 60 * 1000;
+
+const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
+const POLICY_ONLINE_ONLY = "ONLINE_ONLY";
+const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
+const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
+const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
 
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
@@ -36,6 +43,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   bindEvents();
   await loadProfile();
+  await ensurePolicyLoadedAtStartup();
   await refreshUi();
 
   setupAutoSync();
@@ -105,18 +113,25 @@ function setupAutoSync() {
 
   window.addEventListener("online", async () => {
     updateOnlineBadge();
+    await refreshPolicyIfPossible();
     await markFirstConnectionForOfflineRecords();
     scheduleSyncPendingRecords(500);
   });
 
   window.addEventListener("offline", updateOnlineBadge);
 
-  window.addEventListener("focus", () => {
-    if (navigator.onLine) scheduleSyncPendingRecords(500);
+  window.addEventListener("focus", async () => {
+    if (navigator.onLine) {
+      await refreshPolicyIfPossible();
+      scheduleSyncPendingRecords(500);
+    }
   });
 
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && navigator.onLine) scheduleSyncPendingRecords(500);
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden && navigator.onLine) {
+      await refreshPolicyIfPossible();
+      scheduleSyncPendingRecords(500);
+    }
   });
 
   if ("serviceWorker" in navigator) {
@@ -139,7 +154,11 @@ function setupAutoSync() {
     if (navigator.onLine) scheduleSyncPendingRecords(0);
   }, 60000);
 
-  if (navigator.onLine) scheduleSyncPendingRecords(1000);
+  if (navigator.onLine) {
+    refreshPolicyIfPossible().finally(() => {
+      scheduleSyncPendingRecords(1000);
+    });
+  }
 }
 
 function scheduleSyncPendingRecords(delay = 0) {
@@ -154,13 +173,27 @@ async function registerBackgroundSync() {
   return;
 }
 
-function startAttendanceCapture() {
+async function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
   const lastName = $("lastName")?.value.trim() || "";
 
   if (!personnelCode || !firstName || !lastName) {
     setStatus("مشخصات پرسنلی کامل نیست.");
+    return;
+  }
+
+  await saveProfileSilent();
+
+  if (navigator.onLine) {
+    await refreshPolicyIfPossible();
+  }
+
+  const policyInfo = await getAttendancePolicyInfo();
+  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+  if (policy === POLICY_ONLINE_ONLY && !navigator.onLine) {
+    setStatus("برای این کاربر فقط ثبت آنلاین مجاز است.");
     return;
   }
 
@@ -199,6 +232,18 @@ async function handlePhotoSelected() {
     photoSelectedAtMs = Date.now();
 
     await saveProfileSilent();
+
+    if (navigator.onLine) {
+      await refreshPolicyIfPossible();
+    }
+
+    const policyInfo = await getAttendancePolicyInfo();
+    const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+    if (policy === POLICY_ONLINE_ONLY && !navigator.onLine) {
+      setStatus("برای این کاربر فقط ثبت آنلاین مجاز است.");
+      return;
+    }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
@@ -277,6 +322,12 @@ function openDb() {
           keyPath: "id"
         });
       }
+
+      if (!openedDb.objectStoreNames.contains(STORE_CONFIG)) {
+        openedDb.createObjectStore(STORE_CONFIG, {
+          keyPath: "id"
+        });
+      }
     };
 
     req.onsuccess = () => resolve(req.result);
@@ -329,6 +380,8 @@ async function saveProfile() {
     id: "main",
     ...profile
   });
+
+  await refreshPolicyIfPossible();
 
   showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
 
@@ -399,8 +452,121 @@ async function getProfile() {
   return profile;
 }
 
+async function ensurePolicyLoadedAtStartup() {
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile?.personnelCode) return;
+
+  const cached = await getAttendancePolicyInfo();
+  if (cached?.personnelCode === profile.personnelCode) {
+    if (navigator.onLine) {
+      await refreshPolicyIfPossible();
+    }
+    return;
+  }
+
+  if (navigator.onLine) {
+    await refreshPolicyIfPossible();
+  } else {
+    await saveAttendancePolicyInfo({
+      personnelCode: profile.personnelCode,
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default_offline"
+    });
+  }
+}
+
+async function getAttendancePolicyInfo() {
+  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
+  if (!policy) {
+    return {
+      id: "attendancePolicy",
+      personnelCode: "",
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default"
+    };
+  }
+  return policy;
+}
+
+async function saveAttendancePolicyInfo(data) {
+  await dbPut(STORE_CONFIG, {
+    id: "attendancePolicy",
+    personnelCode: data.personnelCode || "",
+    attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
+    policyVersion: Number(data.policyVersion || 0),
+    policyFetchedAt: data.policyFetchedAt || "",
+    policySource: data.policySource || ""
+  });
+}
+
+function normalizeAttendancePolicy(policy) {
+  const p = String(policy || "").trim().toUpperCase();
+
+  if (
+    p === POLICY_ONLINE_ONLY ||
+    p === POLICY_ONLINE_PREFERRED ||
+    p === POLICY_ONLINE_OR_OFFLINE ||
+    p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
+  ) {
+    return p;
+  }
+
+  return DEFAULT_ATTENDANCE_POLICY;
+}
+
+async function refreshPolicyIfPossible() {
+  if (!navigator.onLine) return null;
+
+  const profile = await getProfile().catch(() => null);
+  if (!profile?.personnelCode) return null;
+
+  try {
+    const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${encodeURIComponent(profile.personnelCode)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      cache: "no-store"
+    });
+
+    if (!res.ok) return null;
+
+    const result = await res.json().catch(() => null);
+    if (!result || result.ok !== true) return null;
+
+    const normalizedPolicy = normalizeAttendancePolicy(result.attendancePolicy);
+
+    const policyInfo = {
+      personnelCode: profile.personnelCode,
+      attendancePolicy: normalizedPolicy,
+      policyVersion: Number(result.policyVersion || 0),
+      policyFetchedAt: new Date().toISOString(),
+      policySource: "server"
+    };
+
+    await saveAttendancePolicyInfo(policyInfo);
+    return policyInfo;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function createRecord(type) {
   const profile = await getProfile();
+
+  if (navigator.onLine) {
+    await refreshPolicyIfPossible();
+  }
+
+  const policyInfo = await getAttendancePolicyInfo();
+  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+  if (attendancePolicy === POLICY_ONLINE_ONLY && !navigator.onLine) {
+    setStatus("برای این کاربر فقط ثبت آنلاین مجاز است.");
+    return;
+  }
 
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
@@ -504,6 +670,11 @@ async function createRecord(type) {
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
 
+    attendancePolicy,
+    policyVersion: Number(policyInfo.policyVersion || 0),
+    policyFetchedAt: policyInfo.policyFetchedAt || "",
+    policySource: policyInfo.policySource || "",
+
     photo: currentPhoto || "",
 
     status: "pending",
@@ -591,15 +762,8 @@ function calculateClockRisk(data) {
     reasons.push("GPS نامعتبر/خاموش");
   }
 
-  let clockRisk = "low";
-  if (score >= 6) {
-    clockRisk = "high";
-  } else if (score >= 3) {
-    clockRisk = "medium";
-  }
-
   return {
-    clockRisk,
+    clockRisk: score >= 6 ? "high" : score >= 3 ? "medium" : "low",
     clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
   };
 }
@@ -805,6 +969,7 @@ async function syncPendingRecords() {
   syncRunning = true;
 
   try {
+    await refreshPolicyIfPossible();
     await markFirstConnectionForOfflineRecords();
 
     const records = await dbGetAll(STORE_RECORDS);
@@ -947,6 +1112,11 @@ function buildServerPayload(record) {
     clockRiskReason: record.clockRiskReason || "",
     sessionClockDriftMs: record.sessionClockDriftMs ?? "",
     networkClockDriftMs: record.networkClockDriftMs ?? "",
+
+    attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+    policyVersion: Number(record.policyVersion || 0),
+    policyFetchedAt: record.policyFetchedAt || "",
+    policySource: record.policySource || "",
 
     photo: record.photo || "",
 

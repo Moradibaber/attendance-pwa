@@ -1251,11 +1251,20 @@ function setSyncStatus(m) {
   }
 }
 
+let lastAdminMessage = "";
+
 function showAdminMessage(m) {
   const text = String(m ?? "").trim();
   if (!text) return;
-  setSyncStatus("پیام مدیر: " + text);
+
+  const msg = "پیام مدیر: " + text;
+
+  if (msg === lastAdminMessage) return;
+  lastAdminMessage = msg;
+
+  setSyncStatus(msg);
 }
+
 function getPersianDate(d) {
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
     year: "numeric",

@@ -43,11 +43,15 @@
 <h2>ثبت تردد</h2>
 
 <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
-
-
 <div class="photo-row">
 <img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
 </div>
+    <div id="adminMessageBox" class="admin-message-box">
+        <div class="admin-message-content">
+            <span id="adminMessageText"></span>
+            <button class="close-admin-message" onclick="hideAdminMessageBox()">&times;</button>
+        </div>
+    </div>
 
 <button id="recordBtn" class="primary">ثبت تردد</button>
 

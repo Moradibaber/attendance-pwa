@@ -1235,17 +1235,48 @@ function setSyncStatus(m) {
 
 let lastAdminMessage = "";
 
+// Original showAdminMessage function (lines 954–957)
+// function showAdminMessage(m) {
+//   const msg = "پیام مدیر: " + m;
+//   setSyncStatus(msg);
+// }
+
+// New showAdminMessage function with deduplication and empty message guard
 function showAdminMessage(m) {
-  const text = String(m ?? "").trim();
-  if (!text) return;
+  // Trim whitespace from the message
+  const trimmedMessage = m ? m.trim() : "";
 
-  const msg = "پیام مدیر: " + text;
+  // Ignore empty or null/undefined messages
+  if (!trimmedMessage) {
+    return;
+  }
 
-  if (msg === lastAdminMessage) return;
-  lastAdminMessage = msg;
+  // Optional: Deduplicate against the last shown message
+  // To implement this, you would need to store the last shown message, e.g., in a variable outside this function.
+  // For now, we focus on preventing empty messages and basic handling.
+  // Example of deduplication (requires a global/module-level variable):
+  // if (typeof lastAdminMessage !== 'undefined' && lastAdminMessage === trimmedMessage) {
+  //   return; // Message is the same as the last one, do nothing
+  // }
+  // lastAdminMessage = trimmedMessage; // Update the last shown message
 
+  // Construct the message to display
+  const msg = "پیام مدیر: " + trimmedMessage;
+
+  // Set the sync status with the processed message
   setSyncStatus(msg);
 }
+
+// Assuming setSyncStatus function is defined elsewhere in the file (lines 948–950)
+// function setSyncStatus(m) {
+//   if ($("syncStatus")) {
+//     $("syncStatus").textContent = m;
+//   }
+// }
+
+// You might also want to initialize lastAdminMessage if you implement deduplication:
+// let lastAdminMessage = ""; // Or null, depending on your preference
+
 
 function getPersianDate(d) {
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {

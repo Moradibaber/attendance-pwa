@@ -119,6 +119,7 @@ function setupAutoSync() {
     await refreshPolicyIfPossible();
     await markFirstConnectionForOfflineRecords();
     scheduleSyncPendingRecords(500);
+    await fetchMessages();
   });
 
   window.addEventListener("offline", updateOnlineBadge);
@@ -127,6 +128,7 @@ function setupAutoSync() {
     if (navigator.onLine) {
       await refreshPolicyIfPossible();
       scheduleSyncPendingRecords(500);
+      await fetchMessages();
     }
   });
 
@@ -134,6 +136,7 @@ function setupAutoSync() {
     if (!document.hidden && navigator.onLine) {
       await refreshPolicyIfPossible();
       scheduleSyncPendingRecords(500);
+      await fetchMessages();
     }
   });
 
@@ -1094,7 +1097,8 @@ async function syncPendingRecords() {
           r.uploadedAt = sentIso;
 
           if (result.message) {
-            showAdminMessage(result.message);
+            const msg = String(result.message || "").trim();
+            if (msg) showAdminMessage(msg);
           }
         } else {
           r.status = "failed";
@@ -1119,7 +1123,6 @@ async function syncPendingRecords() {
     setSyncStatus("ارسال انجام شد");
     await refreshUi();
     await fetchMessages();
-
   } finally {
     syncRunning = false;
   }
@@ -1259,8 +1262,9 @@ function setSyncStatus(m) {
 }
 
 function showAdminMessage(m) {
-  const msg = "پیام مدیر: " + m;
-  setSyncStatus(msg);
+  const msg = String(m || "").trim();
+  if (!msg) return;
+  setSyncStatus("پیام مدیر: " + msg);
 }
 
 function getPersianDate(d) {
@@ -1370,10 +1374,15 @@ async function fetchMessages() {
     const result = await res.json().catch(() => null);
     if (!result || result.ok !== true) return;
 
-    if (Array.isArray(result.messages) && result.messages.length) {
-      const msg = result.messages.join(" | ");
-      showAdminMessage(msg);
-    }
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    const cleaned = messages
+      .map((m) => String(m || "").trim())
+      .filter((m) => m);
+
+    if (!cleaned.length) return;
+
+    const msg = cleaned.join(" | ");
+    showAdminMessage(msg);
   } catch (e) {}
 }
 

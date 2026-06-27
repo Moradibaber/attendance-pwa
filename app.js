@@ -1025,16 +1025,14 @@ async function syncPendingRecords() {
       r.lastConnectionBeforeUpload = uploadStartIso;
       r.syncTryCount = Number(r.syncTryCount || 0) + 1;
 
-      if (r.offlineCreated === true && !r.connectionStatus) {
-        r.connectionStatus = "offline";
-        r.connectionStatusFa = "آفلاین";
-        r.createdOnline = false;
-      }
-
       if (r.offlineCreated !== true && !r.connectionStatus) {
         r.connectionStatus = "online";
         r.connectionStatusFa = "آنلاین";
         r.createdOnline = true;
+      } else if (r.offlineCreated === true && !r.connectionStatus) {
+         r.connectionStatus = "offline";
+         r.connectionStatusFa = "آفلاین";
+         r.createdOnline = false;
       }
 
       if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
@@ -1083,24 +1081,8 @@ async function syncPendingRecords() {
           r.syncedAt = sentIso;
           r.uploadedAt = sentIso;
 
-          if (
-            result &&
-            result.message !== false &&
-            result.message !== null &&
-            result.message !== undefined
-          ) {
-            const msg = String(result.message).trim();
-            if (
-              msg &&
-              msg !== "false" &&
-              msg !== "null" &&
-              msg !== "undefined" &&
-              msg !== "0" &&
-              msg !== "تردد"
-            ) {
-              showAdminMessage(msg);
-            }
-          }
+          // ***** بلاک نمایش result.message حذف شد *****
+
         } else {
           r.status = "failed";
 
@@ -1123,7 +1105,7 @@ async function syncPendingRecords() {
 
     setSyncStatus("ارسال انجام شد");
     await refreshUi();
-    await fetchMessages();
+    await fetchMessages(); // ***** این تابع پیام‌ها را می‌فرستد *****
   } finally {
     syncRunning = false;
   }
@@ -1389,7 +1371,9 @@ async function fetchMessages() {
 
     const msg = cleaned.join(" | ");
     showAdminMessage(msg);
-  } catch (e) {}
+  } catch (e) {
+    console.error("Error fetching messages:", e); // برای دیباگ بهتر
+  }
 }
 
 function escapeHtml(v) {

@@ -1241,41 +1241,21 @@ let lastAdminMessage = "";
 //   setSyncStatus(msg);
 // }
 
-// New showAdminMessage function with deduplication and empty message guard
 function showAdminMessage(m) {
-  // Trim whitespace from the message
-  const trimmedMessage = m ? m.trim() : "";
+  // ۱. بررسی اینکه آیا پیام معتبر است یا نه
+  const trimmedMessage = (typeof m === 'string') ? m.trim() : "";
 
-  // Ignore empty or null/undefined messages
-  if (!trimmedMessage) {
-    return;
+  const syncStatusElement = $("syncStatus");
+  if (!syncStatusElement) return;
+
+  if (trimmedMessage.length > 0) {
+    // اگر پیام وجود دارد، آن را نمایش بده
+    syncStatusElement.textContent = "پیام مدیر: " + trimmedMessage;
+  } else {
+    // اگر پیام خالی است، کلاً عبارت "پیام مدیر" را حذف کن تا چیزی نمایش داده نشود
+    syncStatusElement.textContent = ""; 
   }
-
-  // Optional: Deduplicate against the last shown message
-  // To implement this, you would need to store the last shown message, e.g., in a variable outside this function.
-  // For now, we focus on preventing empty messages and basic handling.
-  // Example of deduplication (requires a global/module-level variable):
-  // if (typeof lastAdminMessage !== 'undefined' && lastAdminMessage === trimmedMessage) {
-  //   return; // Message is the same as the last one, do nothing
-  // }
-  // lastAdminMessage = trimmedMessage; // Update the last shown message
-
-  // Construct the message to display
-  const msg = "پیام مدیر: " + trimmedMessage;
-
-  // Set the sync status with the processed message
-  setSyncStatus(msg);
 }
-
-// Assuming setSyncStatus function is defined elsewhere in the file (lines 948–950)
-// function setSyncStatus(m) {
-//   if ($("syncStatus")) {
-//     $("syncStatus").textContent = m;
-//   }
-// }
-
-// You might also want to initialize lastAdminMessage if you implement deduplication:
-// let lastAdminMessage = ""; // Or null, depending on your preference
 
 
 function getPersianDate(d) {

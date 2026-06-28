@@ -26,6 +26,11 @@ const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
 
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
+const MAX_HUMAN_SPEED_MPS = 45;
+const TELEPORT_DISTANCE_METERS = 1500;
+const MIN_TIME_FOR_LONG_DISTANCE_MS = 20000;
+const ACCURACY_SUSPICIOUS_METERS = 5;
+const DISTANCE_JUMP_LIMIT = 2000;
 
 let db = null;
 let currentPhoto = "";
@@ -635,6 +640,17 @@ async function createRecord(type) {
   const loc = hasValidLocation(pendingLocation)
     ? pendingLocation
     : emptyLocation("not_received", "GPS دریافت نشد");
+  const security = await runLocationSecurityChecks(loc);
+
+if(!security.ok){
+
+  showGpsToast("⚠️ موقعیت مکانی مشکوک شناسایی شد",4000,"error");
+
+  setStatus("موقعیت مکانی مشکوک: " + security.reason);
+
+  return;
+
+}
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -977,6 +993,7 @@ function emptyLocation(status, error) {
 }
 
 function chooseBetterLocation(a, b) {
+  
   if (!a) return b;
   if (!b) return a;
 
@@ -984,6 +1001,132 @@ function chooseBetterLocation(a, b) {
   if (!hasValidLocation(b)) return a;
 
   return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
+}
+function chooseBetterLocation(a, b) {
+  function toRad(v){
+  return v * Math.PI / 180;
+}
+
+function distanceMeters(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(toRad(lat1)) *
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon/2) *
+    Math.sin(dLon/2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c;
+}
+async function getLastLocationRecord(){
+
+  const list = await dbGetAll(STORE_RECORDS);
+
+  const valid = list
+    .filter(r =>
+      r.latitude &&
+      r.longitude &&
+      r.deviceTime
+    )
+    .sort((a,b)=>
+      String(b.deviceTime).localeCompare(String(a.deviceTime))
+    );
+
+  if(!valid.length) return null;
+
+  return valid[0];
+
+}
+
+async function detectLocationTeleport(currentLoc){
+
+  const last = await getLastLocationRecord();
+
+  if(!last) return {ok:true};
+
+  const lat1 = Number(last.latitude);
+  const lon1 = Number(last.longitude);
+
+  const lat2 = Number(currentLoc.latitude);
+  const lon2 = Number(currentLoc.longitude);
+
+  if(!lat1 || !lon1 || !lat2 || !lon2){
+    return {ok:true};
+  }
+
+  const distance = distanceMeters(lat1,lon1,lat2,lon2);
+
+  const lastTime = new Date(last.deviceTime).getTime();
+  const nowTime = Date.now();
+
+  const deltaTime = Math.max(1, nowTime - lastTime);
+
+  const speed = distance / (deltaTime / 1000);
+
+  if(distance > TELEPORT_DISTANCE_METERS && deltaTime < MIN_TIME_FOR_LONG_DISTANCE_MS){
+    return {
+      ok:false,
+      reason:"Teleport detected"
+    };
+  }
+
+  if(speed > MAX_HUMAN_SPEED_MPS){
+    return {
+      ok:false,
+      reason:"Speed unrealistic"
+    };
+  }
+
+  if(distance > DISTANCE_JUMP_LIMIT){
+    return {
+      ok:false,
+      reason:"Large jump detected"
+    };
+  }
+
+  return {ok:true};
+
+}
+
+function detectFakeAccuracy(loc){
+
+  if(!loc || !loc.accuracy) return {ok:true};
+
+  const acc = Number(loc.accuracy);
+
+  if(acc > 0 && acc < ACCURACY_SUSPICIOUS_METERS){
+    return {
+      ok:false,
+      reason:"Suspicious GPS accuracy"
+    };
+  }
+
+  return {ok:true};
+
+}
+
+async function runLocationSecurityChecks(loc){
+
+  const accuracyCheck = detectFakeAccuracy(loc);
+
+  if(!accuracyCheck.ok){
+    return accuracyCheck;
+  }
+
+  const teleportCheck = await detectLocationTeleport(loc);
+
+  if(!teleportCheck.ok){
+    return teleportCheck;
+  }
+
+  return {ok:true};
+
 }
 
 async function markFirstConnectionForOfflineRecords() {

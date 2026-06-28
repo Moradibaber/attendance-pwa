@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   db = await openDb();
 
-  bindEvents();
+  bindEvents(); 
   await loadProfile();
   await ensurePolicyLoadedAtStartup();
   await refreshUi();

@@ -5,52 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0f766e" />
 <link rel="manifest" href="manifest.json" />
-<link rel="stylesheet" href="styles.css?v=6" />
+<link rel="stylesheet" href="styles.css?v=5" />
 <title>ثبت تردد</title>
 </head>
-<style>
-  #saveProfileBtn{
-    background: linear-gradient(135deg,#0b66ff,#0052cc) !important;
-    color: #fff !important;
-    border: 0 !important;
-    box-shadow: 0 6px 16px rgba(0,82,204,.28) !important;
-    font-weight: 700 !important;
-  }
-  #saveProfileBtn:hover{
-    filter: brightness(1.05);
-  }
-  .inline-loading{
-    display:none;
-    margin-top:8px;
-    font-size:13px;
-    color:#666;
-    align-items:center;
-    gap:8px;
-  }
-  .inline-loading .spin{
-    width:14px;
-    height:14px;
-    border:2px solid #ccc;
-    border-top-color:#0b66ff;
-    border-radius:50%;
-    display:inline-block;
-    animation:spin .7s linear infinite;
-  }
-  @keyframes spin{
-    to{transform:rotate(360deg)}
-  }
-</style>
 
 <body>
 <main class="app">
 
 <p id="onlineBadge" class="status top-status"></p>
-
-<section class="card guide-card">
-  <button id="openGuideBtn" class="guide-button" type="button">
-    📘 راهنمای نصب و ثبت تردد
-  </button>
-</section>
 
 <section class="card warning compact-warning">
 <strong>هشدار مهم</strong>
@@ -68,32 +30,20 @@
 <input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
 
 <button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
-<div id="saveLoading" class="inline-loading">
-  <span class="spin"></span>
-  <span>در حال ذخیره...</span>
-</div>
 <p id="profileStatus" class="status small-status"></p>
 </section>
 
 <section class="card attendance-card">
 <h2>ثبت تردد</h2>
 
-<input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+<input id="photoInput" type="file" accept="image/*" capture="user" style="display:none" />
+
 <div class="photo-row">
 <img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
 </div>
-    <div id="adminMessageBox" class="admin-message-box">
-        <div class="admin-message-content">
-            <span id="adminMessageText"></span>
-            <button class="close-admin-message" onclick="hideAdminMessageBox()">&times;</button>
-        </div>
-    </div>
 
 <button id="recordBtn" class="primary">ثبت تردد</button>
-<div id="recordLoading" class="inline-loading">
-  <span class="spin"></span>
-  <span>در حال ثبت تردد...</span>
-</div>
+
 <p id="captureStatus" class="status small-status"></p>
 </section>
 
@@ -116,117 +66,6 @@
 
 </main>
 
-<div id="guideModal" class="guide-modal" aria-hidden="true">
-  <div class="guide-overlay" id="guideOverlay"></div>
-
-  <div class="guide-box" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
-
-    <div class="guide-header">
-      <div>
-        <h2 id="guideTitle">راهنمای نصب و ثبت تردد</h2>
-        <p>لطفاً قبل از استفاده از سامانه، موارد زیر را با دقت مطالعه کنید.</p>
-      </div>
-
-      <button id="closeGuideBtn" class="guide-close" type="button" aria-label="بستن">
-        ×
-      </button>
-    </div>
-
-    <div class="guide-content">
-
-      <div class="guide-section android">
-        <h3>📱 ذخیره فرم روی صفحه موبایل در اندروید</h3>
-        <ol>
-          <li>لینک فرم ثبت تردد را در مرورگر گوشی باز کنید.</li>
-          <li>ترجیحاً از مرورگر Chrome استفاده کنید.</li>
-          <li>از قسمت منوی مرورگر، گزینه سه‌نقطه را انتخاب کنید.</li>
-          <li>گزینه <strong>Add to Home screen</strong> یا <strong>افزودن به صفحه اصلی</strong> را بزنید.</li>
-          <li>در پایان گزینه <strong>Add</strong> یا <strong>افزودن</strong> را انتخاب کنید.</li>
-        </ol>
-      </div>
-
-      <div class="guide-section ios">
-        <h3>🍎 ذخیره فرم روی صفحه موبایل در iOS / آیفون</h3>
-        <ol>
-          <li>لینک فرم ثبت تردد را با مرورگر Safari باز کنید.</li>
-          <li>از پایین صفحه، گزینه Share یا همان دکمه اشتراک‌گذاری را بزنید.</li>
-          <li>گزینه <strong>Add to Home Screen</strong> را انتخاب کنید.</li>
-          <li>در صفحه بعد، گزینه <strong>Add</strong> را بزنید.</li>
-          <li>بعد از این مرحله، آیکون فرم روی صفحه اصلی گوشی قرار می‌گیرد.</li>
-        </ol>
-      </div>
-
-      <div class="guide-section gps">
-        <h3>📍 نکات مهم قبل از ثبت تردد</h3>
-        <ul>
-          <li>همیشه حداقل <strong>۱ دقیقه قبل از ثبت تردد</strong>، GPS یا Location گوشی را روشن کنید.</li>
-          <li>دسترسی Location مرورگر را برای این فرم روی حالت <strong>Allow / مجاز</strong> قرار دهید.</li>
-          <li>در زمان ثبت تردد، اینترنت گوشی روشن باشد.</li>
-          <li>تا پایان ثبت عکس و دریافت موقعیت مکانی، صفحه را نبندید.</li>
-          <li>در صورت مشاهده خطای GPS، ابتدا Location گوشی را خاموش و روشن کرده و دوباره تلاش کنید.</li>
-        </ul>
-      </div>
-
-      <div class="guide-section warning-guide">
-        <h3>⚠️ هشدارهای مهم</h3>
-        <ul>
-          <li>در صورت بروز هرگونه مشکل، بلافاصله با واحد منابع انسانی تماس بگیرید.</li>
-          <li>عدم ثبت صحیح تردد، عدم ارسال اطلاعات، خاموش بودن GPS یا رد کردن دسترسی Location ممکن است باعث ناقص شدن اطلاعات حضور و غیاب شود.</li>
-          <li>مسئولیت عدم ثبت تردد صحیح، عدم اعلام مشکل در زمان مناسب، یا حذف اطلاعات ارسال‌نشده بر عهده کاربر خواهد بود.</li>
-          <li>از پاک کردن حافظه مرورگر، حذف برنامه، Clear Data یا Clear Storage خودداری کنید.</li>
-        </ul>
-      </div>
-
-      <div class="guide-section editable-note">
-        <h3>📝 توضیحات تکمیلی</h3>
-        <p></p>
-      </div>
-
-    </div>
-
-    <div class="guide-footer">
-      <button id="closeGuideBtn2" class="guide-ok" type="button">
-        متوجه شدم، بستن راهنما
-      </button>
-    </div>
-
-  </div>
-</div>
-
-<script src="app.js?v=75"></script>
-
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const guideModal = document.getElementById("guideModal");
-    const openGuideBtn = document.getElementById("openGuideBtn");
-    const closeGuideBtn = document.getElementById("closeGuideBtn");
-    const closeGuideBtn2 = document.getElementById("closeGuideBtn2");
-    const guideOverlay = document.getElementById("guideOverlay");
-
-    function openGuide() {
-      guideModal.classList.add("show");
-      guideModal.setAttribute("aria-hidden", "false");
-      document.body.classList.add("modal-open");
-    }
-
-    function closeGuide() {
-      guideModal.classList.remove("show");
-      guideModal.setAttribute("aria-hidden", "true");
-      document.body.classList.remove("modal-open");
-    }
-
-    openGuideBtn.addEventListener("click", openGuide);
-    closeGuideBtn.addEventListener("click", closeGuide);
-    closeGuideBtn2.addEventListener("click", closeGuide);
-    guideOverlay.addEventListener("click", closeGuide);
-
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") {
-        closeGuide();
-      }
-    });
-  });
-</script>
-
+<script src="app.js?v=8"></script>
 </body>
 </html>

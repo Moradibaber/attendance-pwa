@@ -112,44 +112,35 @@ p {
         font-weight: bold;
         cursor: pointer;
     }
-/*
-  #saveProfileBtn {
-  background-color: #0d6efd;
-  color: #fff;
-  font-weight: bold;
-  border: none;
-  padding: 12px 18px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-#saveProfileBtn:hover {
-  background-color: #0b5ed7;
-}
-.loadingDots::after {
-  content: "...";
-  animation: dots 1.5s steps(4,end) infinite;
-  font-size: 20px;
-  color: #333;
-  display: inline-block;
-  margin-top: 6px;
-}
-
-@keyframes dots {
-  0% { content: ""; }
-  25% { content: "."; }
-  50% { content: ".."; }
-  75% { content: "..."; }
-  100% { content: ""; }
-}
-
 
     .close-admin-message:hover,
     .close-admin-message:focus {
         color: black;
         text-decoration: none;
     }
-*/
+
+/* المنت‌های loading */
+#saveLoading, #recordLoading {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin: 0 5px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--primary);
+  animation: spin 1s linear infinite;
+  vertical-align: middle;
+}
+
+#saveLoading:empty, #recordLoading:empty {
+  display: none; /* Hide if empty */
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 /* فرم پرسنلی فشرده‌تر */
 label {
   display: block;
@@ -166,8 +157,14 @@ button {
   margin-top: 4px;
   font: inherit;
   text-align: center;
-  font-color:red;
 }
+
+/* اصلاح رنگ فونت */
+input[type="text"], input[type="number"] {
+  color: var(--text);
+}
+/* رنگ قرمز در CSS معتبر نیست، این خط حذف یا اصلاح شود */
+/* font-color:red; */
 
 input {
   direction: rtl;

@@ -1242,12 +1242,36 @@ let lastAdminMessage = "";
 // }
 
 function showAdminMessage(m) {
-  // فقط و فقط اگر پیامی وجود داشت که "خالی" یا "undefined" نبود
-  if (m && String(m).trim() !== "" && m !== "undefined" && m !== "null") {
-    const msg = "پیام مدیر: " + m;
-    setSyncStatus(msg);
+  // ۱. فیلتر کردن پیام‌های نامعتبر
+  if (!m || String(m).trim() === "" || m === "undefined" || m === "null") {
+    return;
   }
-  // اگر پیامی نبود، هیچ تغییری در وضعیت (syncStatus) ایجاد نکن
+
+  const msg = String(m).trim();
+
+  // ۲. نمایش به صورت پاپ‌آپ (Modal)
+  // اگر از کتابخانه خاصی مثل SweetAlert استفاده نمی‌کنید، 
+  // این کد یک مودال استاندارد و تمیز ایجاد می‌کند:
+  
+  const overlay = document.createElement('div');
+  overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
+  
+  const modal = document.createElement('div');
+  modal.style = "background:#fff; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+  
+  modal.innerHTML = `
+    <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
+    <p style="color:#555; line-height:1.6;">${msg}</p>
+    <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
+  `;
+  
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  
+  // بستن پاپ‌آپ
+  document.getElementById('closeAdminMsg').onclick = function() {
+    document.body.removeChild(overlay);
+  };
 }
 
 

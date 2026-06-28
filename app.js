@@ -1286,7 +1286,7 @@ let lastAdminMessage = "";
 //     "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
 
 //   modal.innerHTML = `
-//     <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
+//     <h3 style="margin-top:0; color:#FF6347;">پیام مدیر</h3>
 //     <p style="color:#555; line-height:1.6;">${msg}</p>
 //     <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
 //   `;

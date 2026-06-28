@@ -100,184 +100,265 @@ $(“photoInput”)?.addEventListener(“change”, handlePhotoSelected);
 
 }
 
-// Js.html
-
 async function saveProfile() {
-  const loading = $("saveLoading");
-  if (loading) loading.style.display = "flex";
 
-  try {
-    const profile = getProfileFromInputs();
+$(“saveLoading”).style.display = “block”;
 
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      setStatus("اطلاعات پرسنلی کامل نیست.");
-      return;
-    }
+try {
 
-    await dbPut(STORE_PROFILE, {
-      id: "main",
-      ...profile
-    });
+const profile = getProfileFromInputs();
 
-    await refreshPolicyIfPossible();
+if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
 
-    showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
+setStatus(“اطلاعات پرسنلی کامل نیست.”);
 
-    const profileStatus = $("profileStatus");
-    if (profileStatus) {
-      profileStatus.textContent = "مشخصات با موفقیت ثبت شد ✅";
-      profileStatus.className = "status online small-status";
+return;
 
-      setTimeout(() => {
-        profileStatus.textContent = "";
-        profileStatus.className = "status small-status";
-      }, 3000);
-    } else {
-      setStatus("مشخصات با موفقیت ثبت شد.");
-    }
-  } finally {
-    if (loading) loading.style.display = "none";
-  }
+}
+
+await dbPut(STORE_PROFILE, {
+
+id: “main”,
+
+…profile
+
+});
+
+await refreshPolicyIfPossible();
+
+showGpsToast(“✅ مشخصات با موفقیت ثبت شد”, 3000, “success”);
+
+const profileStatus = $(“profileStatus”);
+
+if (profileStatus) {
+
+profileStatus.textContent = “مشخصات با موفقیت ثبت شد ✅”;
+
+profileStatus.className = “status online small-status”;
+
+setTimeout(() => {
+
+profileStatus.textContent = “”;
+
+profileStatus.className = “status small-status”;
+
+}, 3000);
+
+} else {
+
+setStatus(“مشخصات با موفقیت ثبت شد.”);
+
+}
+
+} finally {
+
+$(“saveLoading”).style.display = “none”;
+
+}
+
 }
 
 async function saveProfileSilent() {
-  const loading = $("saveLoading");
-  if (loading) loading.style.display = "flex";
 
-  try {
-    const profile = getProfileFromInputs();
+$(“saveLoading”).style.display = “block”;
 
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      throw new Error("مشخصات پرسنلی کامل نیست.");
-    }
+try {
 
-    await dbPut(STORE_PROFILE, {
-      id: "main",
-      ...profile
-    });
-  } finally {
-    if (loading) loading.style.display = "none";
-  }
+const profile = getProfileFromInputs();
+
+if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+
+throw new Error(“مشخصات پرسنلی کامل نیست.”);
+
 }
 
-function startAttendanceCapture() {
-  const loading = $("recordLoading");
-  if (loading) loading.style.display = "flex";
+await dbPut(STORE_PROFILE, {
 
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
+id: “main”,
 
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    if (loading) loading.style.display = "none";
-    return;
-  }
+…profile
 
-  saveProfileSilent()
-    .then(async () => {
-      const { gate } = await getCurrentAttendanceGate();
-      if (!gate.ok) {
-        setStatus(gate.message);
-        if (loading) loading.style.display = "none";
-        return;
-      }
+});
 
-      captureStartedAtMs = Date.now();
-      photoSelectedAtMs = 0;
-      photoCompressedAtMs = 0;
-      currentPhoto = "";
-      pendingLocation = null;
+} finally {
 
-      if ($("photoPreview")) {
-        $("photoPreview").removeAttribute("src");
-        $("photoPreview").style.display = "none";
-      }
+$(“saveLoading”).style.display = “none”;
 
-      const photoInput = $("photoInput");
-      if (!photoInput) {
-        setStatus("ورودی عکس پیدا نشد.");
-        if (loading) loading.style.display = "none";
-        return;
-      }
+}
 
-      photoInput.value = "";
-      setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-      photoInput.click();
-    })
-    .catch((err) => {
-      setStatus(err?.message || "خطا در ثبت مشخصات.");
-    })
-    .finally(() => {
-      if (loading) loading.style.display = "none";
-    });
+}
+
+async function startAttendanceCapture() {
+
+$(“recordLoading”).style.display = “block”;
+
+const personnelCode = $(“personnelCode”)?.value.trim() || “”;
+
+const firstName = $(“firstName”)?.value.trim() || “”;
+
+const lastName = $(“lastName”)?.value.trim() || “”;
+
+if (!personnelCode || !firstName || !lastName) {
+
+setStatus(“مشخصات پرسنلی کامل نیست.”);
+
+$(“recordLoading”).style.display = “none”;
+
+return;
+
+}
+
+await saveProfileSilent();
+
+const { gate } = await getCurrentAttendanceGate();
+
+if (!gate.ok) {
+
+setStatus(gate.message);
+
+$(“recordLoading”).style.display = “none”;
+
+return;
+
+}
+
+captureStartedAtMs = Date.now();
+
+photoSelectedAtMs = 0;
+
+photoCompressedAtMs = 0;
+
+currentPhoto = “”;
+
+pendingLocation = null;
+
+if ($(“photoPreview”)) {
+
+$(“photoPreview”).removeAttribute(“src”);
+
+$(“photoPreview”).style.display = “none”;
+
+}
+
+const photoInput = $(“photoInput”);
+
+if (!photoInput) {
+
+setStatus(“ورودی عکس پیدا نشد.”);
+
+$(“recordLoading”).style.display = “none”;
+
+return;
+
+}
+
+photoInput.value = “”;
+
+setStatus(“دوربین باز می‌شود. لطفاً عکس بگیرید.”);
+
+photoInput.click();
+
 }
 
 async function createRecord(type) {
-  const loading = $("recordLoading");
-  if (loading) loading.style.display = "flex";
 
-  try {
-    const profile = await getProfile();
+try {
 
-    const { policyInfo, gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setStatus(gate.message);
-      return;
-    }
+const profile = await getProfile();
 
-    const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+const { policyInfo, gate } = await getCurrentAttendanceGate();
 
-    if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-      setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
-      return;
-    }
+if (!gate.ok) {
 
-    const loc = hasValidLocation(pendingLocation)
-      ? pendingLocation
-      : emptyLocation("not_received", "GPS دریافت نشد");
+setStatus(gate.message);
 
-    const now = new Date();
-    const nowMs = now.getTime();
+return;
 
-    const clickMs = captureStartedAtMs || nowMs;
-
-    const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
-    const record = {
-      clientRecordId,
-      personnelCode: profile.personnelCode,
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      type,
-      recordType: type,
-      recordDate: getPersianDate(now),
-      recordHour: getTime(now),
-      recordTime: getTime(now),
-      latitude: loc.latitude || "",
-      longitude: loc.longitude || "",
-      accuracy: loc.accuracy || "",
-      locationStatus: loc.status || "",
-      locationError: loc.error || "",
-      photo: currentPhoto || "",
-      status: "pending",
-      createdAt: now.toISOString()
-    };
-
-    await dbPut(STORE_RECORDS, record);
-
-    showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-    setStatus("تردد با GPS ذخیره شد.");
-    await refreshUi();
-
-    if (navigator.onLine) {
-      scheduleSyncPendingRecords(500);
-    }
-  } finally {
-    if (loading) loading.style.display = "none";
-  }
 }
 
+const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
+
+setStatus(“GPS معتبر نیست. تردد ذخیره نشد.”);
+
+return;
+
+}
+
+const loc = hasValidLocation(pendingLocation)
+
+? pendingLocation
+
+: emptyLocation(“not_received”, “GPS دریافت نشد”);
+
+const now = new Date();
+
+const nowMs = now.getTime();
+
+const clickMs = captureStartedAtMs || nowMs;
+
+const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
+
+const record = {
+
+clientRecordId,
+
+personnelCode: profile.personnelCode,
+
+firstName: profile.firstName,
+
+lastName: profile.lastName,
+
+type,
+
+recordType: type,
+
+recordDate: getPersianDate(now),
+
+recordHour: getTime(now),
+
+recordTime: getTime(now),
+
+latitude: loc.latitude || “”,
+
+longitude: loc.longitude || “”,
+
+accuracy: loc.accuracy || “”,
+
+locationStatus: loc.status || “”,
+
+locationError: loc.error || “”,
+
+photo: currentPhoto || “”,
+
+status: “pending”,
+
+createdAt: now.toISOString()
+
+};
+
+await dbPut(STORE_RECORDS, record);
+
+showGpsToast(“✅ تردد با موفقیت ثبت شد”, 3000, “success”);
+
+setStatus(“تردد با GPS ذخیره شد.”);
+
+await refreshUi();
+
+if (navigator.onLine) {
+
+scheduleSyncPendingRecords(500);
+
+}
+
+} finally {
+
+$(“recordLoading”).style.display = “none”;
+
+}
+
+}
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;

@@ -410,34 +410,48 @@ function dbGetAll(store) {
 }
 
 async function saveProfile() {
-  const profile = getProfileFromInputs();
+  const btn = $("saveProfileBtn");
+  if (!btn) return;
 
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    setStatus("اطلاعات پرسنلی کامل نیست.");
-    return;
-  }
+  const originalText = btn.textContent;
+  const originalBg = btn.style.backgroundColor;
 
-  await dbPut(STORE_PROFILE, {
-    id: "main",
-    ...profile
-  });
+  // وضعیت در حال ذخیره
+  btn.disabled = true;
+  btn.style.backgroundColor = "#6c757d"; // خاکستری
+  btn.textContent = "در حال ذخیره ...";
 
-  await refreshPolicyIfPossible();
+  try {
+    const profile = getProfileFromInputs();
 
-  showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      setStatus("اطلاعات پرسنلی کامل نیست.");
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
 
-  const profileStatus = $("profileStatus");
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await refreshPolicyIfPossible();
 
-  if (profileStatus) {
-    profileStatus.textContent = "مشخصات با موفقیت ثبت شد ✅";
-    profileStatus.className = "status online small-status";
+    // وضعیت موفقیت
+    btn.style.backgroundColor = "#28a745"; // سبز
+    btn.textContent = "✅ ذخیره شد";
+    showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
 
     setTimeout(() => {
-      profileStatus.textContent = "";
-      profileStatus.className = "status small-status";
-    }, 3000);
-  } else {
-    setStatus("مشخصات با موفقیت ثبت شد.");
+      btn.disabled = false;
+      btn.style.backgroundColor = "#ff9800"; // نارنجی
+      btn.textContent = originalText;
+    }, 2000);
+
+  } catch (e) {
+    // وضعیت خطا
+    btn.disabled = false;
+    btn.style.backgroundColor = originalBg;
+    btn.textContent = originalText;
+    setStatus("خطا در ذخیره مشخصات");
   }
 }
 

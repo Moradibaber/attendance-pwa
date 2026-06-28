@@ -1257,7 +1257,7 @@ function showAdminMessage(m) {
   overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
   
   const modal = document.createElement('div');
-  modal.style = "background:#D8BFD8; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+  modal.style = "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
   
   modal.innerHTML = `
     <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>

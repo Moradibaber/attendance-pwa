@@ -8,6 +8,38 @@
 <link rel="stylesheet" href="styles.css?v=6" />
 <title>ثبت تردد</title>
 </head>
+<style>
+  #saveProfileBtn{
+    background: linear-gradient(135deg,#0b66ff,#0052cc) !important;
+    color: #fff !important;
+    border: 0 !important;
+    box-shadow: 0 6px 16px rgba(0,82,204,.28) !important;
+    font-weight: 700 !important;
+  }
+  #saveProfileBtn:hover{
+    filter: brightness(1.05);
+  }
+  .inline-loading{
+    display:none;
+    margin-top:8px;
+    font-size:13px;
+    color:#666;
+    align-items:center;
+    gap:8px;
+  }
+  .inline-loading .spin{
+    width:14px;
+    height:14px;
+    border:2px solid #ccc;
+    border-top-color:#0b66ff;
+    border-radius:50%;
+    display:inline-block;
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{
+    to{transform:rotate(360deg)}
+  }
+</style>
 
 <body>
 <main class="app">

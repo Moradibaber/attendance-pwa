@@ -32,6 +32,7 @@ let currentPhoto = "";
 let pendingLocation = null;
 let syncRunning = false;
 let syncTimer = null;
+let adminMessageShownOnEntry = false;
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;

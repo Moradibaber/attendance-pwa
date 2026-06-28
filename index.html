@@ -36,7 +36,10 @@
 <input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
 
 <button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
-<div id="saveLoading" class="loadingDots" style="display:none"></div>
+<div id="saveLoading" class="inline-loading">
+  <span class="spin"></span>
+  <span>در حال ذخیره...</span>
+</div>
 <p id="profileStatus" class="status small-status"></p>
 </section>
 
@@ -55,7 +58,10 @@
     </div>
 
 <button id="recordBtn" class="primary">ثبت تردد</button>
-<div id="recordLoading" class="loadingDots" style="display:none"></div>
+<div id="recordLoading" class="inline-loading">
+  <span class="spin"></span>
+  <span>در حال ثبت تردد...</span>
+</div>
 <p id="captureStatus" class="status small-status"></p>
 </section>
 

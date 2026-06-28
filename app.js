@@ -13,9 +13,9 @@ const GPS_REQUIRED = true;
 
 // --- شروع ثابت‌های امنیتی ---
 const MAX_HUMAN_SPEED_MPS = 45;
-const TELEPORT_DISTANCE_METERS = 2000;
+const TELEPORT_DISTANCE_METERS = 100;
 const MIN_TIME_FOR_LONG_DISTANCE_MS = 60000;
-const ACCURACY_SUSPICIOUS_METERS = 5;
+const ACCURACY_SUSPICIOUS_METERS = 100;
 // --- پایان ثابت‌های امنیتی ---
 
 const CLOCK_RISK_GPS_CLICK_DIFF_MS = 5 * 60 * 1000;

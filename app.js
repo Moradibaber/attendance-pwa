@@ -408,50 +408,56 @@ function dbGetAll(store) {
     req.onerror = () => reject(req.error);
   });
 }
-
 async function saveProfile() {
-  const btn = $("saveProfileBtn");
+  const btn = document.getElementById("saveProfileBtn");
   if (!btn) return;
 
-  const originalText = btn.textContent;
-  const originalBg = btn.style.backgroundColor;
+  const originalText = "ذخیره مشخصات";
+  const originalBg = "#ff9800"; // رنگ نارنجی اصلی شما
 
-  // وضعیت در حال ذخیره
+  // ۱. حالت در حال ذخیره (رنگ خاکستری + انیمیشن سه نقطه)
   btn.disabled = true;
-  btn.style.backgroundColor = "#6c757d"; // خاکستری
-  btn.textContent = "در حال ذخیره ...";
+  btn.style.backgroundColor = "#6c757d"; 
+  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
 
   try {
     const profile = getProfileFromInputs();
 
     if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      setStatus("اطلاعات پرسنلی کامل نیست.");
+      // افکت لرزش در صورت خطا در پر کردن فرم
+      btn.classList.add("shake");
+      setTimeout(() => btn.classList.remove("shake"), 500);
+      
+      if (typeof setStatus === "function") setStatus("اطلاعات پرسنلی کامل نیست.");
+      
       btn.disabled = false;
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
       return;
     }
 
+    // عملیات ذخیره در دیتابیس
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    await refreshPolicyIfPossible();
+    if (typeof refreshPolicyIfPossible === "function") await refreshPolicyIfPossible();
 
-    // وضعیت موفقیت
-    btn.style.backgroundColor = "#28a745"; // سبز
+    // ۲. حالت موفقیت (ررضایتمندی کاربر با رنگ سبز)
+    btn.style.backgroundColor = "#28a745";
     btn.textContent = "✅ ذخیره شد";
-    showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
+    if (typeof showGpsToast === "function") showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
 
+    // ۳. بازگشت به حالت عادی بعد از ۲.۵ ثانیه
     setTimeout(() => {
       btn.disabled = false;
-      btn.style.backgroundColor = "#ff9800"; // نارنجی
+      btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
-    }, 2000);
+    }, 2500);
 
   } catch (e) {
-    // وضعیت خطا
+    // حالت خطا
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;
     btn.textContent = originalText;
-    setStatus("خطا در ذخیره مشخصات");
+    if (typeof setStatus === "function") setStatus("خطا در ذخیره مشخصات");
   }
 }
 

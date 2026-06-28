@@ -7,6 +7,41 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="stylesheet" href="styles.css?v=6" />
 <title>ثبت تردد</title>
+<style>
+  /* استایل‌های مربوط به انیمیشن دکمه ذخیره */
+  #saveProfileBtn {
+    transition: all 0.4s ease;
+    position: relative;
+    font-weight: bold;
+    border: none;
+    cursor: pointer;
+  }
+
+  /* انیمیشن نقطه چین در حال ذخیره */
+  .dots::after {
+    content: '';
+    animation: dots 1.5s infinite;
+  }
+
+  @keyframes dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+    100% { content: ''; }
+  }
+
+  /* افکت لرزش ملایم در صورت خطا */
+  .shake {
+    animation: shake 0.5s;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+</style>
 </head>
 
 <body>

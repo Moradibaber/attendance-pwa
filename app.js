@@ -32,6 +32,7 @@ let currentPhoto = "";
 let pendingLocation = null;
 let syncRunning = false;
 let syncTimer = null;
+let adminMessageShownOnEntry = false;
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
@@ -1025,16 +1026,14 @@ async function syncPendingRecords() {
       r.lastConnectionBeforeUpload = uploadStartIso;
       r.syncTryCount = Number(r.syncTryCount || 0) + 1;
 
-      if (r.offlineCreated === true && !r.connectionStatus) {
-        r.connectionStatus = "offline";
-        r.connectionStatusFa = "آفلاین";
-        r.createdOnline = false;
-      }
-
       if (r.offlineCreated !== true && !r.connectionStatus) {
         r.connectionStatus = "online";
         r.connectionStatusFa = "آنلاین";
         r.createdOnline = true;
+      } else if (r.offlineCreated === true && !r.connectionStatus) {
+         r.connectionStatus = "offline";
+         r.connectionStatusFa = "آفلاین";
+         r.createdOnline = false;
       }
 
       if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
@@ -1083,24 +1082,8 @@ async function syncPendingRecords() {
           r.syncedAt = sentIso;
           r.uploadedAt = sentIso;
 
-          if (
-            result &&
-            result.message !== false &&
-            result.message !== null &&
-            result.message !== undefined
-          ) {
-            const msg = String(result.message).trim();
-            if (
-              msg &&
-              msg !== "false" &&
-              msg !== "null" &&
-              msg !== "undefined" &&
-              msg !== "0" &&
-              msg !== "تردد"
-            ) {
-              showAdminMessage(msg);
-            }
-          }
+          // ***** بلاک نمایش result.message حذف شد *****
+
         } else {
           r.status = "failed";
 
@@ -1123,7 +1106,7 @@ async function syncPendingRecords() {
 
     setSyncStatus("ارسال انجام شد");
     await refreshUi();
-    await fetchMessages();
+    await fetchMessages(); // ***** این تابع پیام‌ها را می‌فرستد *****
   } finally {
     syncRunning = false;
   }
@@ -1253,17 +1236,76 @@ function setSyncStatus(m) {
 
 let lastAdminMessage = "";
 
+// Original showAdminMessage function (lines 954–957)
+// function showAdminMessage(m) {
+//   const msg = "پیام مدیر: " + m;
+//   setSyncStatus(msg);
+// }
+
+// function showAdminMessage(m) {
+
+//   if (adminMessageShownThisSession) return;
+
+//   if (!m || String(m).trim() === "" || m === "undefined" || m === "null") {
+//     return;
+//   }
+
+//   const msg = String(m).trim();
+
+//   if (msg === lastAdminMessage) return;
+
+//   lastAdminMessage = msg;
+//   adminMessageShownThisSession = true;
+
+//   const overlay = document.createElement("div");
+//   overlay.style =
+//     "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
+
+//   const modal = document.createElement("div");
+//   modal.style =
+//     "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+
+//   modal.innerHTML = `
+//     <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
+//     <p style="color:#555; line-height:1.6;">${msg}</p>
+//     <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
+//   `;
+
+//   overlay.appendChild(modal);
+//   document.body.appendChild(overlay);
+
+//   document.getElementById("closeAdminMsg").onclick = function () {
+//     document.body.removeChild(overlay);
+//   };
+// }
 function showAdminMessage(m) {
-  const text = String(m ?? "").trim();
-  if (!text) return;
 
-  const msg = "پیام مدیر: " + text;
+  if (!m || String(m).trim() === "" || m === "undefined" || m === "null") {
+    return;
+  }
 
-  if (msg === lastAdminMessage) return;
-  lastAdminMessage = msg;
+  const msg = String(m).trim();
 
-  setSyncStatus(msg);
+  const overlay = document.createElement("div");
+  overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
+
+  const modal = document.createElement("div");
+  modal.style = "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+
+  modal.innerHTML = `
+    <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
+    <p style="color:#555; line-height:1.6;">${msg}</p>
+    <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  document.getElementById("closeAdminMsg").onclick = function() {
+    document.body.removeChild(overlay);
+  };
 }
+
 
 function getPersianDate(d) {
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
@@ -1387,9 +1429,19 @@ async function fetchMessages() {
 
     if (!cleaned.length) return;
 
+    // const msg = cleaned.join(" | ");
+    // showAdminMessage(msg);
     const msg = cleaned.join(" | ");
-    showAdminMessage(msg);
-  } catch (e) {}
+
+if (!adminMessageShownThisSession && msg !== lastAdminMessage) {
+  lastAdminMessage = msg;
+  adminMessageShownThisSession = true;
+  showAdminMessage(msg);
+}
+
+  } catch (e) {
+    console.error("Error fetching messages:", e); // برای دیباگ بهتر
+  }
 }
 
 function escapeHtml(v) {

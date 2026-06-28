@@ -1241,9 +1241,43 @@ let lastAdminMessage = "";
 //   setSyncStatus(msg);
 // }
 
-function showAdminMessage(m) {
+// function showAdminMessage(m) {
 
-  if (adminMessageShownThisSession) return;
+//   if (adminMessageShownThisSession) return;
+
+//   if (!m || String(m).trim() === "" || m === "undefined" || m === "null") {
+//     return;
+//   }
+
+//   const msg = String(m).trim();
+
+//   if (msg === lastAdminMessage) return;
+
+//   lastAdminMessage = msg;
+//   adminMessageShownThisSession = true;
+
+//   const overlay = document.createElement("div");
+//   overlay.style =
+//     "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
+
+//   const modal = document.createElement("div");
+//   modal.style =
+//     "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+
+//   modal.innerHTML = `
+//     <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
+//     <p style="color:#555; line-height:1.6;">${msg}</p>
+//     <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
+//   `;
+
+//   overlay.appendChild(modal);
+//   document.body.appendChild(overlay);
+
+//   document.getElementById("closeAdminMsg").onclick = function () {
+//     document.body.removeChild(overlay);
+//   };
+// }
+function showAdminMessage(m) {
 
   if (!m || String(m).trim() === "" || m === "undefined" || m === "null") {
     return;
@@ -1251,18 +1285,11 @@ function showAdminMessage(m) {
 
   const msg = String(m).trim();
 
-  if (msg === lastAdminMessage) return;
-
-  lastAdminMessage = msg;
-  adminMessageShownThisSession = true;
-
   const overlay = document.createElement("div");
-  overlay.style =
-    "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
+  overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
 
   const modal = document.createElement("div");
-  modal.style =
-    "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+  modal.style = "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
 
   modal.innerHTML = `
     <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
@@ -1273,7 +1300,7 @@ function showAdminMessage(m) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  document.getElementById("closeAdminMsg").onclick = function () {
+  document.getElementById("closeAdminMsg").onclick = function() {
     document.body.removeChild(overlay);
   };
 }
@@ -1401,8 +1428,16 @@ async function fetchMessages() {
 
     if (!cleaned.length) return;
 
+    // const msg = cleaned.join(" | ");
+    // showAdminMessage(msg);
     const msg = cleaned.join(" | ");
-    showAdminMessage(msg);
+
+if (!adminMessageShownThisSession && msg !== lastAdminMessage) {
+  lastAdminMessage = msg;
+  adminMessageShownThisSession = true;
+  showAdminMessage(msg);
+}
+
   } catch (e) {
     console.error("Error fetching messages:", e); // برای دیباگ بهتر
   }

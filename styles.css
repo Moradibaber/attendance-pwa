@@ -112,7 +112,8 @@ p {
         font-weight: bold;
         cursor: pointer;
     }
-#saveProfileBtn {
+/*
+  #saveProfileBtn {
   background-color: #0d6efd;
   color: #fff;
   font-weight: bold;
@@ -148,7 +149,7 @@ p {
         color: black;
         text-decoration: none;
     }
-
+*/
 /* فرم پرسنلی فشرده‌تر */
 label {
   display: block;

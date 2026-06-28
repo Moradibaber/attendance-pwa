@@ -1433,9 +1433,9 @@ async function fetchMessages() {
     // showAdminMessage(msg);
     const msg = cleaned.join(" | ");
 
-if (!adminMessageShownThisSession && msg !== lastAdminMessage) {
+if (!adminMessageShownOnEntry && msg !== lastAdminMessage) {
   lastAdminMessage = msg;
-  adminMessageShownThisSession = true;
+  adminMessageShownOnEntry = true;
   showAdminMessage(msg);
 }
 

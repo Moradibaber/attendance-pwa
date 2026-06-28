@@ -1,6 +1,4 @@
 {
-  "name": "خوش آمدید",
-  "short_name": "تردد",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f1f5f9",

@@ -4,7 +4,7 @@ const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrnRxZ2XkVKll_Thp_RVm0JlJTndxU8NX_ZIcoQ2_XKeVsZOuiY6gxyNyG5mPijwNf/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrnRxZ2XkVKll_Thp_RVm0J1JTndxU8NX_ZIcoQ2_XKeVsZOuiY6gxyNyG5mPijwNf/exec";
 
 const GPS_WAIT_MS = 90000;
 const GPS_RETRY_MS = 30000;
@@ -26,11 +26,14 @@ const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
 
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
-const MAX_HUMAN_SPEED_MPS = 45;
-const TELEPORT_DISTANCE_METERS = 1500;
-const MIN_TIME_FOR_LONG_DISTANCE_MS = 20000;
+
 const ACCURACY_SUSPICIOUS_METERS = 5;
 const DISTANCE_JUMP_LIMIT = 2000;
+
+// ثابت‌های امنیتی ضد تقلب
+const MAX_HUMAN_SPEED_MPS = 45;
+const TELEPORT_DISTANCE_METERS = 2000;
+const MIN_TIME_FOR_LONG_DISTANCE_MS = 60000;
 
 let db = null;
 let currentPhoto = "";
@@ -123,6 +126,7 @@ function setupAutoSync() {
   window.addEventListener("online", async () => {
     updateOnlineBadge();
     await refreshPolicyIfPossible();
+    await refreshGeoFenceIfPossible();
     await markFirstConnectionForOfflineRecords();
     scheduleSyncPendingRecords(500);
     await fetchMessages();
@@ -133,6 +137,7 @@ function setupAutoSync() {
   window.addEventListener("focus", async () => {
     if (navigator.onLine) {
       await refreshPolicyIfPossible();
+      await refreshGeoFenceIfPossible();
       scheduleSyncPendingRecords(500);
       await fetchMessages();
     }
@@ -141,6 +146,7 @@ function setupAutoSync() {
   document.addEventListener("visibilitychange", async () => {
     if (!document.hidden && navigator.onLine) {
       await refreshPolicyIfPossible();
+      await refreshGeoFenceIfPossible();
       scheduleSyncPendingRecords(500);
       await fetchMessages();
     }
@@ -167,7 +173,7 @@ function setupAutoSync() {
   }, 60000);
 
   if (navigator.onLine) {
-    refreshPolicyIfPossible().finally(() => {
+    Promise.all([refreshPolicyIfPossible(), refreshGeoFenceIfPossible()]).finally(() => {
       scheduleSyncPendingRecords(1000);
     });
   }
@@ -413,14 +419,14 @@ function dbGetAll(store) {
     req.onerror = () => reject(req.error);
   });
 }
+
 async function saveProfile() {
   const btn = document.getElementById("saveProfileBtn");
   if (!btn) return;
 
   const originalText = "ذخیره مشخصات";
-  const originalBg = "#ff9800"; // رنگ نارنجی اصلی شما
+  const originalBg = "#ff9800";
 
-  // ۱. حالت در حال ذخیره (رنگ خاکستری + انیمیشن سه نقطه)
   btn.disabled = true;
   btn.style.backgroundColor = "#6c757d"; 
   btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
@@ -429,7 +435,6 @@ async function saveProfile() {
     const profile = getProfileFromInputs();
 
     if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      // افکت لرزش در صورت خطا در پر کردن فرم
       btn.classList.add("shake");
       setTimeout(() => btn.classList.remove("shake"), 500);
       
@@ -441,16 +446,14 @@ async function saveProfile() {
       return;
     }
 
-    // عملیات ذخیره در دیتابیس
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     if (typeof refreshPolicyIfPossible === "function") await refreshPolicyIfPossible();
+    if (typeof refreshGeoFenceIfPossible === "function") await refreshGeoFenceIfPossible();
 
-    // ۲. حالت موفقیت (ررضایتمندی کاربر با رنگ سبز)
     btn.style.backgroundColor = "#28a745";
     btn.textContent = "✅ ذخیره شد";
     if (typeof showGpsToast === "function") showGpsToast("✅ مشخصات با موفقیت ثبت شد", 3000, "success");
 
-    // ۳. بازگشت به حالت عادی بعد از ۲.۵ ثانیه
     setTimeout(() => {
       btn.disabled = false;
       btn.style.backgroundColor = originalBg;
@@ -458,7 +461,6 @@ async function saveProfile() {
     }, 2500);
 
   } catch (e) {
-    // حالت خطا
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;
     btn.textContent = originalText;
@@ -526,12 +528,14 @@ async function ensurePolicyLoadedAtStartup() {
   if (cached?.personnelCode === profile.personnelCode) {
     if (navigator.onLine) {
       await refreshPolicyIfPossible();
+      await refreshGeoFenceIfPossible();
     }
     return;
   }
 
   if (navigator.onLine) {
     await refreshPolicyIfPossible();
+    await refreshGeoFenceIfPossible();
   } else {
     await saveAttendancePolicyInfo({
       personnelCode: profile.personnelCode,
@@ -621,6 +625,39 @@ async function refreshPolicyIfPossible() {
   }
 }
 
+async function getGeoFence() {
+  const geo = await dbGet(STORE_CONFIG, "geoFence").catch(() => null);
+  return geo || { enabled: false, lat: 0, lng: 0, radius: 0 };
+}
+
+async function refreshGeoFenceIfPossible() {
+  if (!navigator.onLine) return null;
+  try {
+    const profile = await getProfile().catch(() => null);
+    if (!profile?.personnelCode) return null;
+    const url = `${APPS_SCRIPT_URL}?action=getGeoFence&personnelCode=${encodeURIComponent(profile.personnelCode)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      cache: "no-store"
+    });
+    if (!res.ok) return null;
+    const result = await res.json().catch(() => null);
+    if (!result || result.ok !== true) return null;
+    const geo = {
+      id: "geoFence",
+      enabled: result.enabled === true,
+      lat: Number(result.lat || 0),
+      lng: Number(result.lng || 0),
+      radius: Number(result.radius || 0),
+      updatedAt: new Date().toISOString()
+    };
+    await dbPut(STORE_CONFIG, geo).catch(() => null);
+    return geo;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function createRecord(type) {
   const profile = await getProfile();
 
@@ -640,17 +677,29 @@ async function createRecord(type) {
   const loc = hasValidLocation(pendingLocation)
     ? pendingLocation
     : emptyLocation("not_received", "GPS دریافت نشد");
+
+  // چک کردن ضد تقلب (Anti-Spoofing)
   const security = await runLocationSecurityChecks(loc);
+  if (!security.ok) {
+    showGpsToast("⚠️ موقعیت مکانی مشکوک شناسایی شد", 4000, "error");
+    setStatus("موقعیت مکانی مشکوک: " + security.reason);
+    return;
+  }
 
-if(!security.ok){
-
-  showGpsToast("⚠️ موقعیت مکانی مشکوک شناسایی شد",4000,"error");
-
-  setStatus("موقعیت مکانی مشکوک: " + security.reason);
-
-  return;
-
-}
+  // چک کردن محدوده جغرافیایی (Geo-fencing)
+  try {
+    const geo = await refreshGeoFenceIfPossible() || await getGeoFence();
+    if (geo && geo.enabled && hasValidLocation(loc)) {
+      const dist = distanceMeters(loc.latitude, loc.longitude, geo.lat, geo.lng);
+      if (dist > geo.radius) {
+        showGpsToast(`❌ خارج از محدوده مجاز (فاصله: ${Math.round(dist)} متر)`, 4000, "error");
+        setStatus(`خارج از محدوده مجاز (فاصله: ${Math.round(dist)} متر)`);
+        return;
+      }
+    }
+  } catch (e) {
+    console.error("Geo-fence execution check failed:", e);
+  }
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -993,7 +1042,6 @@ function emptyLocation(status, error) {
 }
 
 function chooseBetterLocation(a, b) {
-  
   if (!a) return b;
   if (!b) return a;
 
@@ -1002,17 +1050,15 @@ function chooseBetterLocation(a, b) {
 
   return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
 }
-function chooseBetterLocation(a, b) {
-  function toRad(v){
+
+function toRad(v) {
   return v * Math.PI / 180;
 }
 
-function distanceMeters(lat1, lon1, lat2, lon2){
+function distanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;
-
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-
   const a =
     Math.sin(dLat/2) * Math.sin(dLat/2) +
     Math.cos(toRad(lat1)) *
@@ -1021,597 +1067,33 @@ function distanceMeters(lat1, lon1, lat2, lon2){
     Math.sin(dLon/2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
   return R * c;
 }
-async function getLastLocationRecord(){
 
+async function getLastLocationRecord() {
   const list = await dbGetAll(STORE_RECORDS);
-
   const valid = list
     .filter(r =>
       r.latitude &&
       r.longitude &&
       r.deviceTime
     )
-    .sort((a,b)=>
+    .sort((a,b) =>
       String(b.deviceTime).localeCompare(String(a.deviceTime))
     );
 
-  if(!valid.length) return null;
-
+  if (!valid.length) return null;
   return valid[0];
-
 }
 
-async function detectLocationTeleport(currentLoc){
-
+async function detectLocationTeleport(currentLoc) {
   const last = await getLastLocationRecord();
-
-  if(!last) return {ok:true};
+  if (!last) return { ok: true };
 
   const lat1 = Number(last.latitude);
   const lon1 = Number(last.longitude);
-
   const lat2 = Number(currentLoc.latitude);
   const lon2 = Number(currentLoc.longitude);
 
-  if(!lat1 || !lon1 || !lat2 || !lon2){
-    return {ok:true};
-  }
-
-  const distance = distanceMeters(lat1,lon1,lat2,lon2);
-
-  const lastTime = new Date(last.deviceTime).getTime();
-  const nowTime = Date.now();
-
-  const deltaTime = Math.max(1, nowTime - lastTime);
-
-  const speed = distance / (deltaTime / 1000);
-
-  if(distance > TELEPORT_DISTANCE_METERS && deltaTime < MIN_TIME_FOR_LONG_DISTANCE_MS){
-    return {
-      ok:false,
-      reason:"Teleport detected"
-    };
-  }
-
-  if(speed > MAX_HUMAN_SPEED_MPS){
-    return {
-      ok:false,
-      reason:"Speed unrealistic"
-    };
-  }
-
-  if(distance > DISTANCE_JUMP_LIMIT){
-    return {
-      ok:false,
-      reason:"Large jump detected"
-    };
-  }
-
-  return {ok:true};
-
-}
-
-function detectFakeAccuracy(loc){
-
-  if(!loc || !loc.accuracy) return {ok:true};
-
-  const acc = Number(loc.accuracy);
-
-  if(acc > 0 && acc < ACCURACY_SUSPICIOUS_METERS){
-    return {
-      ok:false,
-      reason:"Suspicious GPS accuracy"
-    };
-  }
-
-  return {ok:true};
-
-}
-
-async function runLocationSecurityChecks(loc){
-
-  const accuracyCheck = detectFakeAccuracy(loc);
-
-  if(!accuracyCheck.ok){
-    return accuracyCheck;
-  }
-
-  const teleportCheck = await detectLocationTeleport(loc);
-
-  if(!teleportCheck.ok){
-    return teleportCheck;
-  }
-
-  return {ok:true};
-
-}
-
-async function markFirstConnectionForOfflineRecords() {
-  if (!db || !navigator.onLine) return;
-
-  try {
-    const nowIso = new Date().toISOString();
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter((r) =>
-      r.offlineCreated === true &&
-      (r.status === "pending" || r.status === "failed") &&
-      !r.firstConnectionAfterOfflineRecord
-    );
-
-    for (const r of list) {
-      r.firstConnectionAfterOfflineRecord = nowIso;
-      await dbPut(STORE_RECORDS, r);
-    }
-
-    if (list.length) {
-      await refreshUi();
-    }
-  } catch (e) {}
-}
-
-async function syncPendingRecords() {
-  if (syncRunning || !navigator.onLine) return;
-
-  syncRunning = true;
-
-  try {
-    const policyInfo = await refreshPolicyIfPossible() || await getAttendancePolicyInfo();
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, navigator.onLine);
-
-    if (!syncGate.ok) {
-      setSyncStatus(syncGate.message);
-      return;
-    }
-
-    await markFirstConnectionForOfflineRecords();
-
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
-
-    if (!list.length) {
-      setSyncStatus("چیزی برای ارسال نیست");
-      return;
-    }
-
-    setSyncStatus("در حال ارسال...");
-
-    for (const r of list) {
-      if (r.status === "sent" || r.status === "syncing") continue;
-
-      const uploadStartIso = new Date().toISOString();
-      const uploadStartMs = new Date(uploadStartIso).getTime();
-
-      r.status = "syncing";
-      r.lastSyncTryAt = uploadStartIso;
-      r.lastConnectionBeforeUpload = uploadStartIso;
-      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
-
-      if (r.offlineCreated !== true && !r.connectionStatus) {
-        r.connectionStatus = "online";
-        r.connectionStatusFa = "آنلاین";
-        r.createdOnline = true;
-      } else if (r.offlineCreated === true && !r.connectionStatus) {
-         r.connectionStatus = "offline";
-         r.connectionStatusFa = "آفلاین";
-         r.createdOnline = false;
-      }
-
-      if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
-        r.firstConnectionAfterOfflineRecord = uploadStartIso;
-      }
-
-      if (r.firstConnectionAfterOfflineRecord) {
-        const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
-        if (firstConnectionMs && !isNaN(firstConnectionMs)) {
-          r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
-        }
-      }
-
-      await dbPut(STORE_RECORDS, r);
-      await refreshUi();
-
-      try {
-        const payload = buildServerPayload(r);
-
-        const res = await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        const result = await res.json().catch(() => ({}));
-
-        if (result.attendancePolicy || result.policyVersion !== undefined) {
-          await saveAttendancePolicyInfo({
-            personnelCode: r.personnelCode || "",
-            attendancePolicy: result.attendancePolicy || policyInfo?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-            policyVersion: Number(result.policyVersion || 0),
-            policyFetchedAt: new Date().toISOString(),
-            policySource: "server_response"
-          });
-        }
-
-        r.serverResponse = JSON.stringify(result || {});
-
-        if (result.ok) {
-          const sentIso = new Date().toISOString();
-
-          r.status = "sent";
-          r.syncedAt = sentIso;
-          r.uploadedAt = sentIso;
-
-          // ***** بلاک نمایش result.message حذف شد *****
-
-        } else {
-          r.status = "failed";
-
-          if (result?.error === "POLICY_VIOLATION") {
-            setSyncStatus("ارسال توسط سیاست حضور و غیاب مجاز نیست.");
-          }
-        }
-
-        await dbPut(STORE_RECORDS, r);
-      } catch (err) {
-        r.status = "failed";
-        r.serverResponse = JSON.stringify({
-          ok: false,
-          error: err?.message || "network_error"
-        });
-
-        await dbPut(STORE_RECORDS, r);
-      }
-    }
-
-    setSyncStatus("ارسال انجام شد");
-    await refreshUi();
-    await fetchMessages(); // ***** این تابع پیام‌ها را می‌فرستد *****
-  } finally {
-    syncRunning = false;
-  }
-}
-
-function buildServerPayload(record) {
-  return {
-    clientRecordId: record.clientRecordId || "",
-    personnelCode: record.personnelCode || "",
-    firstName: record.firstName || "",
-    lastName: record.lastName || "",
-    type: record.type || record.recordType || "",
-    recordType: record.recordType || record.type || "",
-    recordDate: record.recordDate || "",
-    recordHour: record.recordHour || record.recordTime || "",
-    recordTime: record.recordTime || record.recordHour || "",
-    latitude: record.latitude || "",
-    longitude: record.longitude || "",
-    accuracy: record.accuracy || "",
-    locationStatus: record.locationStatus || "",
-    locationError: record.locationError || "",
-    deviceTime: record.deviceTime || "",
-    deviceTimeAtClick: record.deviceTimeAtClick || "",
-    deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
-    deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
-    deviceTimeAtGps: record.deviceTimeAtGps || "",
-    gpsTimestamp: record.gpsTimestamp || "",
-    gpsWaitMs: record.gpsWaitMs ?? "",
-    photoDelayMs: record.photoDelayMs ?? "",
-    submitDelayMs: record.submitDelayMs ?? "",
-    offlineCreated: !!record.offlineCreated,
-    createdOnline: record.createdOnline === true,
-    connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
-    connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
-    firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
-    lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
-    uploadedAt: record.uploadedAt || "",
-    delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
-    clockRisk: record.clockRisk || "",
-    clockRiskReason: record.clockRiskReason || "",
-    sessionClockDriftMs: record.sessionClockDriftMs ?? "",
-    networkClockDriftMs: record.networkClockDriftMs ?? "",
-    attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-    policyVersion: Number(record.policyVersion || 0),
-    policyFetchedAt: record.policyFetchedAt || "",
-    policySource: record.policySource || "",
-    photo: record.photo || "",
-    createdAt: record.createdAt || "",
-    lastSyncTryAt: record.lastSyncTryAt || "",
-    syncTryCount: Number(record.syncTryCount || 0)
-  };
-}
-
-async function refreshUi() {
-  const rec = await dbGetAll(STORE_RECORDS);
-
-  if ($("pendingCount")) {
-    $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
-  }
-
-  if ($("sentCount")) {
-    $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
-  }
-
-  if ($("failedCount")) {
-    $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
-  }
-
-  renderRecords(rec);
-}
-
-function renderRecords(records) {
-  if (!$("recordsList")) return;
-
-  if (!records.length) {
-    $("recordsList").innerHTML = "<p>ترددی ثبت نشده</p>";
-    return;
-  }
-
-  const sorted = [...records].sort((a, b) =>
-    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-  );
-
-  $("recordsList").innerHTML = sorted
-    .slice(0, 20)
-    .map((r) => {
-      const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
-      const connectionText = r.connectionStatusFa
-        ? ` - ${escapeHtml(r.connectionStatusFa)}`
-        : r.offlineCreated
-          ? " - آفلاین"
-          : " - آنلاین";
-
-      return `
-        <div class="record-item compact-record">
-          <span>${escapeHtml(r.recordDate || "")}</span>
-          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function updateOnlineBadge() {
-  if (!$("onlineBadge")) return;
-
-  if (navigator.onLine) {
-    $("onlineBadge").textContent = "آنلاین";
-    $("onlineBadge").className = "status online";
-  } else {
-    $("onlineBadge").textContent = "آفلاین";
-    $("onlineBadge").className = "status offline";
-  }
-}
-
-function setStatus(m) {
-  if ($("captureStatus")) {
-    $("captureStatus").textContent = m;
-  }
-}
-
-function setSyncStatus(m) {
-  if ($("syncStatus")) {
-    $("syncStatus").textContent = m;
-  }
-}
-
-let lastAdminMessage = "";
-
-// Original showAdminMessage function (lines 954–957)
-// function showAdminMessage(m) {
-//   const msg = "پیام مدیر: " + m;
-//   setSyncStatus(msg);
-// }
-
-// function showAdminMessage(m) {
-
-//   if (adminMessageShownThisSession) return;
-
-//   if (!m || String(m).trim() === "" || m === "undefined" || m === "null") {
-//     return;
-//   }
-
-//   const msg = String(m).trim();
-
-//   if (msg === lastAdminMessage) return;
-
-//   lastAdminMessage = msg;
-//   adminMessageShownThisSession = true;
-
-//   const overlay = document.createElement("div");
-//   overlay.style =
-//     "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
-
-//   const modal = document.createElement("div");
-//   modal.style =
-//     "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
-
-//   modal.innerHTML = `
-//     <h3 style="margin-top:0; color:#FF6347;">پیام مدیر</h3>
-//     <p style="color:#555; line-height:1.6;">${msg}</p>
-//     <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
-//   `;
-
-//   overlay.appendChild(modal);
-//   document.body.appendChild(overlay);
-
-//   document.getElementById("closeAdminMsg").onclick = function () {
-//     document.body.removeChild(overlay);
-//   };
-// }
-function showAdminMessage(m) {
-
-  if (!m || String(m).trim() === "" || m === "undefined" || m === "null") {
-    return;
-  }
-
-  const msg = String(m).trim();
-
-  const overlay = document.createElement("div");
-  overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
-
-  const modal = document.createElement("div");
-  modal.style = "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
-
-  modal.innerHTML = `
-    <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
-    <p style="color:#555; line-height:1.6;">${msg}</p>
-    <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
-  `;
-
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-
-  document.getElementById("closeAdminMsg").onclick = function() {
-    document.body.removeChild(overlay);
-  };
-}
-
-
-function getPersianDate(d) {
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(d);
-}
-
-function getTime(d) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(d);
-}
-
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      const img = new Image();
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX = 400;
-
-        let w = img.width;
-        let h = img.height;
-
-        if (w > h) {
-          if (w > MAX) {
-            h = h * (MAX / w);
-            w = MAX;
-          }
-        } else {
-          if (h > MAX) {
-            w = w * (MAX / h);
-            h = MAX;
-          }
-        }
-
-        canvas.width = w;
-        canvas.height = h;
-
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-
-        canvas.toBlob(
-          (blob) => {
-            const r = new FileReader();
-
-            r.onloadend = () => {
-              resolve(r.result);
-            };
-
-            r.onerror = () => {
-              reject(new Error("خطا در خواندن تصویر فشرده"));
-            };
-
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.3
-        );
-      };
-
-      img.onerror = () => {
-        reject(new Error("خطا در بارگذاری تصویر"));
-      };
-
-      img.src = e.target.result;
-    };
-
-    reader.onerror = () => {
-      reject(new Error("خطا در خواندن فایل تصویر"));
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
-
-async function fetchMessages() {
-  if (!navigator.onLine) return;
-
-  try {
-    const profile = await getProfile().catch(() => null);
-    if (!profile?.personnelCode) return;
-
-    const url =
-      APPS_SCRIPT_URL +
-      "?action=getMessages&personnelCode=" +
-      encodeURIComponent(profile.personnelCode);
-
-    const res = await fetch(url, {
-      method: "GET",
-      cache: "no-store"
-    });
-
-    if (!res.ok) return;
-
-    const result = await res.json().catch(() => null);
-    if (!result || result.ok !== true) return;
-
-    const messages = Array.isArray(result.messages) ? result.messages : [];
-    const cleaned = messages
-      .map((m) => String(m ?? "").trim())
-      .filter(
-        (m) =>
-          m &&
-          m !== "false" &&
-          m !== "null" &&
-          m !== "undefined" &&
-          m !== "0" &&
-          m !== "تردد"
-      );
-
-    if (!cleaned.length) return;
-
-    // const msg = cleaned.join(" | ");
-    // showAdminMessage(msg);
-    const msg = cleaned.join(" | ");
-
-if (!adminMessageShownOnEntry && msg !== lastAdminMessage) {
-  lastAdminMessage = msg;
-adminMessageShownOnEntry = true;
-  showAdminMessage(msg);
-}
-
-  } catch (e) {
-    console.error("Error fetching messages:", e); // برای دیباگ بهتر
-  }
-}
-
-function escapeHtml(v) {
-  return String(v)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+  if (!lat1 || !lon1 || !lat2 || !lon2) {
+    return { ok: true }

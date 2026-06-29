@@ -1407,7 +1407,7 @@ async function renderLastRecords(limit = 10) {
 
   container.innerHTML = sorted.map(r => `
     <div style="padding:8px;border-bottom:1px solid #eee">
-      <div><b>${r.type === "in" ? "ورود" : "خروج"}</b></div>
+      <div><b>${r.type}</b></div>
       <div>${r.date} ${r.time}</div>
       <div style="font-size:12px;opacity:.7">
         ${r.status === "synced" ? "ارسال شده ✅" :
@@ -1417,6 +1417,7 @@ async function renderLastRecords(limit = 10) {
     </div>
   `).join("");
 }
+
 
 async function refreshUiFull() {
   await refreshUi();

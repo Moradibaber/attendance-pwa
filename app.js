@@ -1,4 +1,4 @@
-// js.html — Part 1/4
+     
 
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 4;
@@ -530,7 +530,6 @@ async function getProfile() {
 
   return profile;
 }
-// js.html — Part 2/4
 
 async function ensurePolicyLoadedAtStartup() {
   const cached = await dbGet(STORE_CONFIG, "attendancePolicy");
@@ -783,7 +782,7 @@ async function compressImage(file) {
   let quality = 0.82;
   let out = canvas.toDataURL("image/jpeg", quality);
 
-  while (out.length > 900000 && quality > 0.45) {
+  while (out.length > 300000 && quality > 0.3) {
     quality -= 0.08;
     out = canvas.toDataURL("image/jpeg", quality);
   }
@@ -1003,7 +1002,6 @@ function isPointInPolygon(point, polygon) {
 
   return inside;
 }
-// js.html — Part 3/4
 
 async function createRecord(type) {
   try {
@@ -1063,7 +1061,7 @@ async function createRecord(type) {
       sessionClockDriftMs: security.sessionDrift?.driftMs ?? "",
       networkClockDiffMs: security.networkClock?.diffMs ?? "",
       networkClockAvailable: !!security.networkClock?.available,
-      status: navigator.onLine ? "pending" : "pending",
+      status: "pending",
       syncedAt: "",
       serverResponse: ""
     };
@@ -1079,15 +1077,22 @@ async function createRecord(type) {
       $("photoPreview").removeAttribute("src");
       $("photoPreview").style.display = "none";
     }
+    console.log("saved record:", record);
+    await refreshUiFull();
 
-    await refreshUi();
+    const recordBtn = $("recordBtn");
 
     if (navigator.onLine) {
-      setStatus("تردد ثبت شد. در حال ارسال...");
+      if (recordBtn) {
+        recordBtn.disabled = true;
+        recordBtn.innerHTML = 'در حال ارسال و همگام‌سازی... <span class="dots"></span>';
+      }
+      setStatus("تردد ثبت شد. در حال ارسال به سرور و همگام‌سازی نهایی...");
       scheduleSyncPendingRecords(100);
     } else {
-      setStatus("تردد آفلاین ذخیره شد و بعداً ارسال می‌شود.");
+      setStatus("تردد آفلاین ذخیره شد و بعداً با اتصال به اینترنت ارسال می‌شود.");
     }
+
   } catch (err) {
     console.error(err);
     setStatus("خطا در ساخت رکورد");
@@ -1159,8 +1164,13 @@ async function syncPendingRecords() {
 
     if (!pending.length) {
       setSyncStatus("موردی برای ارسال وجود ندارد");
-      await refreshUi();
+      await refreshUiFull();
       syncRunning = false;
+      const recordBtn = $("recordBtn");
+      if (recordBtn) {
+        recordBtn.disabled = false;
+        recordBtn.textContent = "ثبت تردد";
+      }
       return;
     }
 
@@ -1209,12 +1219,17 @@ async function syncPendingRecords() {
       }
     }
 
-    await refreshUi();
+    await refreshUiFull();
     setSyncStatus("همگام‌سازی انجام شد");
   } catch (err) {
     setSyncStatus("خطا در همگام‌سازی");
   } finally {
     syncRunning = false;
+    const recordBtn = $("recordBtn");
+    if (recordBtn) {
+      recordBtn.disabled = false;
+      recordBtn.textContent = "ثبت تردد";
+    }
   }
 }
 
@@ -1272,7 +1287,6 @@ async function clearSyncedRecordsIfNeeded(maxKeep = 200) {
     await dbDelete(STORE_RECORDS, item.id);
   }
 }
-// js.html — Part 4/4
 
 async function forceManualSync() {
   if (!navigator.onLine) {
@@ -1284,7 +1298,7 @@ async function forceManualSync() {
   await markFirstConnectionForOfflineRecords();
   await syncPendingRecords();
   await clearSyncedRecordsIfNeeded();
-  await refreshUi();
+  await refreshUiFull();
 }
 
 window.forceManualSync = forceManualSync;
@@ -1338,8 +1352,8 @@ async function retryFailedRecords() {
     rec.status = "pending";
     await dbPut(STORE_RECORDS, rec);
   }
-
-  await refreshUi();
+   
+  await refreshUiFull();
   scheduleSyncPendingRecords(100);
 }
 
@@ -1350,7 +1364,7 @@ async function deleteAllLocalRecords() {
   for (const rec of all) {
     await dbDelete(STORE_RECORDS, rec.id);
   }
-  await refreshUi();
+  await refreshUiFull();
   setSyncStatus("همه رکوردهای محلی حذف شدند");
 }
 
@@ -1377,38 +1391,36 @@ function formatPersianNumber(value) {
 }
 
 async function renderLastRecords(limit = 10) {
-  const all = await dbGetAll(STORE_RECORDS);
-  const list = $("lastRecords");
-  if (!list) return;
+  const container = $("lastRecords");
+  if (!container) return;
 
-  const rows = all
-    .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
-    .slice(0, limit);
+  const records = await dbGetAll(STORE_RECORDS);
 
-  if (!rows.length) {
-    list.innerHTML = "<div>رکوردی ثبت نشده است</div>";
+  if (!records || records.length === 0) {
+    container.innerHTML = "<div style='opacity:.6'>ترددی ثبت نشده</div>";
     return;
   }
 
-  list.innerHTML = rows.map((r) => {
-    const statusFa =
-      r.status === "synced" ? "ارسال‌شده" :
-      r.status === "failed" ? "خطادار" :
-      "در انتظار";
+  const sorted = records
+    .sort((a, b) => b.createdAtMs - a.createdAtMs)
+    .slice(0, limit);
 
-    return `
-      <div class="record-row status-${r.status}">
-        <div><b>${r.firstName || ""} ${r.lastName || ""}</b> - ${r.personnelCode || ""}</div>
-        <div>${r.date || ""} ${r.time || ""}</div>
-        <div>${statusFa}</div>
+  container.innerHTML = sorted.map(r => `
+    <div style="padding:8px;border-bottom:1px solid #eee">
+      <div><b>${r.type === "in" ? "ورود" : "خروج"}</b></div>
+      <div>${r.date} ${r.time}</div>
+      <div style="font-size:12px;opacity:.7">
+        ${r.status === "synced" ? "ارسال شده ✅" :
+          r.status === "failed" ? "خطا ❌" :
+          "در انتظار ارسال ⏳"}
       </div>
-    `;
-  }).join("");
+    </div>
+  `).join("");
 }
 
 async function refreshUiFull() {
   await refreshUi();
-  await renderLastRecords();
+  await renderLastRecords(10);
 }
 
 window.refreshUiFull = refreshUiFull;

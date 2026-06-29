@@ -1352,7 +1352,7 @@ async function retryFailedRecords() {
     rec.status = "pending";
     await dbPut(STORE_RECORDS, rec);
   }
-
+   console.log("saved record:", record);
   await refreshUiFull();
   scheduleSyncPendingRecords(100);
 }

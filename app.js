@@ -1390,45 +1390,37 @@ function formatPersianNumber(value) {
   return String(value ?? "").replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]);
 }
 
-async function renderLastRecords() {
-  const list = $("lastRecords");
-  if (!list) return;
+async function renderLastRecords(limit = 10) {
+  const container = $("lastRecords");
+  if (!container) return;
 
-  const profile = await dbGet(STORE_PROFILE, "main");
-  if (!profile?.personnelCode) {
-    list.innerHTML = "";
+  const records = await dbGetAll(STORE_RECORDS);
+
+  if (!records || records.length === 0) {
+    container.innerHTML = "<div style='opacity:.6'>ترددی ثبت نشده</div>";
     return;
   }
 
-  const todayFa = new Date().toLocaleDateString("fa-IR");
-  const all = await dbGetAll(STORE_RECORDS);
+  const sorted = records
+    .sort((a, b) => b.createdAtMs - a.createdAtMs)
+    .slice(0, limit);
 
-  const todayRecords = all
-    .filter(r =>
-      r.personnelCode === profile.personnelCode &&
-      r.date === todayFa
-    )
-    .sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
-
-  if (!todayRecords.length) {
-    list.innerHTML = "<div class='record-summary-empty'>امروز هیچ ترددی ثبت نشده است.</div>";
-    return;
-  }
-
-  const first = todayRecords[0];
-  const last = todayRecords[todayRecords.length - 1];
-
-  list.innerHTML = `
-    <div class="record-summary" style="padding: 15px; border-radius: 12px; background: #f8f9fa; border: 1px solid #e9ecef; direction: rtl; font-family: Tahoma, sans-serif;">
-      <div style="margin-bottom: 8px; font-size: 14px; color: #495057;">⏱ ساعت اولین ورود امروز: <b style="color: #2b8a3e; font-size: 16px;">${first.time}</b></div>
-      <div style="font-size: 14px; color: #495057;">⏱ ساعت آخرین ورود امروز: <b style="color: #e8590c; font-size: 16px;">${last.time}</b></div>
+  container.innerHTML = sorted.map(r => `
+    <div style="padding:8px;border-bottom:1px solid #eee">
+      <div><b>${r.type === "in" ? "ورود" : "خروج"}</b></div>
+      <div>${r.date} ${r.time}</div>
+      <div style="font-size:12px;opacity:.7">
+        ${r.status === "synced" ? "ارسال شده ✅" :
+          r.status === "failed" ? "خطا ❌" :
+          "در انتظار ارسال ⏳"}
+      </div>
     </div>
-  `;
+  `).join("");
 }
 
 async function refreshUiFull() {
   await refreshUi();
-  await renderLastRecords();
+  await renderLastRecords(10);
 }
 
 window.refreshUiFull = refreshUiFull;

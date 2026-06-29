@@ -436,9 +436,13 @@ function dbGetAll(store) {
   });
 }
 async function saveProfile() {
+  
+  if (!db) {
+    db = await openDb();
+  }
+
   const btn = document.getElementById("saveProfileBtn");
   if (!btn) return;
-
   const originalText = "ذخیره مشخصات";
   const originalBg = "#ff9800"; // رنگ نارنجی اصلی شما
 

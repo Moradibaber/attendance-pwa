@@ -1391,13 +1391,13 @@ function formatPersianNumber(value) {
 }
 
 async function renderLastRecords(limit = 10) {
-  const container = $("lastRecords");
+  const container = document.getElementById("lastRecords");
   if (!container) return;
 
   const records = await dbGetAll(STORE_RECORDS);
 
   if (!records || records.length === 0) {
-    container.innerHTML = "<div style='opacity:.6'>ترددی ثبت نشده</div>";
+    container.innerHTML = '<div style="padding:20px;text-align:center;opacity:0.6;font-size:14px;">ترددی ثبت نشده است</div>';
     return;
   }
 
@@ -1406,30 +1406,120 @@ async function renderLastRecords(limit = 10) {
     .slice(0, limit);
 
   container.innerHTML = sorted.map(r => `
-    <div style="padding:10px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
-      
+    <div style="padding:12px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;background:#fff">
       <div style="text-align:right">
-        <div style="font-weight:bold;color:#2c3e50">
-          ${r.type || "تردد"}
-        </div>
-        <div style="font-size:13px;color:#666;margin-top:4px">
-          ${formatPersianNumber(r.date)} - ${formatPersianNumber(r.time)}
+        <div style="font-weight:bold;color:#333;font-size:14px">${r.type || "ثبت تردد"}</div>
+        <div style="font-size:12px;color:#666;margin-top:4px;direction:ltr">
+          ${formatPersianNumber(r.date)} ${formatPersianNumber(r.time)}
         </div>
       </div>
-
-      <div style="font-size:12px">
+      <div style="font-size:11px;font-weight:bold">
         ${
-          r.status === "synced"
-            ? '<span style="color:#28a745">✅ ارسال شده</span>'
-            : r.status === "failed"
-            ? '<span style="color:#dc3545">❌ خطا</span>'
-            : '<span style="color:#ffc107">⏳ در انتظار</span>'
+          r.status === "synced" 
+          ? '<span style="color:#28a745">✅ ارسال شد</span>' 
+          : r.status === "failed" 
+          ? '<span style="color:#dc3545">❌ خطا در ارسال</span>' 
+          : '<span style="color:#f39c12">⏳ در انتظار</span>'
         }
       </div>
-
     </div>
   `).join("");
 }
+
+async function refreshUiFull() {
+  try {
+    const records = await dbGetAll(STORE_RECORDS);
+    
+    const pending = records.filter(r => r.status === "pending").length;
+    const synced = records.filter(r => r.status === "synced").length;
+    const failed = records.filter(r => r.status === "failed").length;
+
+    if($("pendingCount")) $("pendingCount").innerText = formatPersianNumber(pending);
+    if($("syncedCount")) $("syncedCount").innerText = formatPersianNumber(synced);
+    if($("failedCount")) $("failedCount").innerText = formatPersianNumber(failed);
+
+    const syncBtn = $("syncPendingBtn");
+    if (syncBtn) {
+      if (pending > 0) {
+        syncBtn.style.display = "block";
+        syncBtn.innerText = `ارسال ${formatPersianNumber(pending)} مورد باقی‌مانده`;
+      } else {
+        syncBtn.style.display = "none";
+      }
+    }
+
+    await renderLastRecords(10);
+  } catch (e) {
+    console.error("UI Refresh Error:", e);
+  }
+}
+
+async function createRecord(type) {
+  try {
+    const pCode = $("personnelCode").value;
+    const fName = $("firstName").value;
+    const lName = $("lastName").value;
+
+    if (!pCode || !fName || !lName) {
+      showToast("ابتدا مشخصات پرسنلی را ذخیره کنید", "error");
+      return;
+    }
+
+    showLoading(true);
+
+    const now = new Date();
+    const jalali = getJalaliDate(now);
+    const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+
+    // Geo & Anti-Spoof
+    const loc = await getCurrentLocation();
+    const drift = await checkClockDrift();
+
+    const record = {
+      id: "REC_" + Date.now(),
+      personnelCode: pCode,
+      firstName: fName,
+      lastName: lName,
+      type: type,
+      date: jalali,
+      time: timeStr,
+      createdAtMs: Date.now(),
+      status: "pending",
+      lat: loc ? loc.lat : null,
+      lng: loc ? loc.lng : null,
+      accuracy: loc ? loc.accuracy : null,
+      isMock: loc ? loc.isMock : false,
+      isVpn: false, 
+      clockDrift: drift,
+      photo: currentPhoto || ""
+    };
+
+    await dbPut(STORE_RECORDS, record);
+    
+    // پاکسازی فرم
+    currentPhoto = "";
+    const videoText = document.querySelector('.video-container span');
+    if(videoText) videoText.style.display = 'block';
+    const preview = $("photoPreview");
+    if(preview) preview.style.display = 'none';
+
+    showToast("تردد با موفقیت در حافظه گوشی ذخیره شد", "success");
+    
+    // آپدیت آنی لیست و کانترها
+    await refreshUiFull();
+
+    // تلاش برای ارسال خودکار به سرور
+    if (!syncRunning) {
+      scheduleSyncPendingRecords();
+    }
+
+  } catch (err) {
+    showToast("خطا در ثبت: " + err.message, "error");
+  } finally {
+    showLoading(false);
+  }
+}
+
 
 async function refreshUiFull() {
   await refreshUi();

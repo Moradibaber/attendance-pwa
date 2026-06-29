@@ -1439,9 +1439,7 @@ document.addEventListener("DOMContentLoaded", () => {
     clearBtn.addEventListener("click", deleteAllLocalRecords);
   }
 
-  refreshUiFull().catch(() => {});
-});
-
+  refreshUiFull()
 window.addEventListener("beforeunload", () => {
   if (syncTimer) clearTimeout(syncTimer);
 });

@@ -1,5 +1,5 @@
-<!-- js.html -->
-<script>
+
+
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 4;
 const STORE_RECORDS = "records";
@@ -1529,4 +1529,4 @@ async function preloadEmployeeDataIfPossible() {
 }
 
 window.preloadEmployeeDataIfPossible = preloadEmployeeDataIfPossible;
-</script>
+

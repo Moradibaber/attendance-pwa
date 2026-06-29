@@ -1,5 +1,3 @@
-     
-
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 4;
 const STORE_RECORDS = "records";
@@ -231,112 +229,6 @@ async function getCurrentAttendanceGate() {
   };
 }
 
-async function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    return;
-  }
-
-  await saveProfileSilent();
-
-  const { gate } = await getCurrentAttendanceGate();
-  if (!gate.ok) {
-    setStatus(gate.message);
-    return;
-  }
-
-  captureStartedAtMs = Date.now();
-  photoSelectedAtMs = 0;
-  photoCompressedAtMs = 0;
-  currentPhoto = "";
-  pendingLocation = null;
-
-  if ($("photoPreview")) {
-    $("photoPreview").removeAttribute("src");
-    $("photoPreview").style.display = "none";
-  }
-
-  const photoInput = $("photoInput");
-
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
-    return;
-  }
-
-  photoInput.value = "";
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-  photoInput.click();
-}
-
-async function handlePhotoSelected() {
-  const file = $("photoInput")?.files?.[0];
-
-  if (!file) {
-    setStatus("عکسی انتخاب نشد.");
-    return;
-  }
-
-  try {
-    photoSelectedAtMs = Date.now();
-
-    await saveProfileSilent();
-
-    const { gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setStatus(gate.message);
-      $("photoInput").value = "";
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
-
-    if ($("photoPreview")) {
-      $("photoPreview").src = currentPhoto;
-      $("photoPreview").style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
-      return;
-    }
-
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(pendingLocation)) {
-      if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
-        return;
-      }
-
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-        return;
-      }
-
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-      return;
-    }
-
-    await createRecord("تردد");
-  } catch (err) {
-    console.error(err);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
-  }
-}
-
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -431,7 +323,6 @@ function dbDelete(store, key) {
     req.onerror = () => reject(req.error);
   });
 }
-
 async function saveProfile() {
   const btn = document.getElementById("saveProfileBtn");
   if (!btn) return;
@@ -486,10 +377,7 @@ async function saveProfileSilent() {
     throw new Error("مشخصات پرسنلی کامل نیست.");
   }
 
-  await dbPut(STORE_PROFILE, {
-    id: "main",
-    ...profile
-  });
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
 }
 
 async function loadProfile() {
@@ -511,162 +399,20 @@ function getProfileFromInputs() {
 
 async function getProfile() {
   const saved = await dbGet(STORE_PROFILE, "main");
-  const inputProfile = getProfileFromInputs();
+  const input = getProfileFromInputs();
 
   const profile = {
-    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
-    firstName: inputProfile.firstName || saved?.firstName || "",
-    lastName: inputProfile.lastName || saved?.lastName || ""
+    personnelCode: input.personnelCode || saved?.personnelCode || "",
+    firstName: input.firstName || saved?.firstName || "",
+    lastName: input.lastName || saved?.lastName || ""
   };
 
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
     throw new Error("مشخصات پرسنلی کامل نیست.");
   }
 
-  await dbPut(STORE_PROFILE, {
-    id: "main",
-    ...profile
-  });
-
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
   return profile;
-}
-async function renderStatusCounts() {
-
-    const all = await dbGetAll(STORE_RECORDS);
-
-    const pending =
-        all.filter(r => r.status === "pending").length;
-
-    const synced =
-        all.filter(r => r.status === "synced").length;
-
-    const failed =
-        all.filter(r => r.status === "failed").length;
-
-    $("pendingCount").textContent = pending;
-    $("sentCount").textContent = synced;
-    $("failedCount").textContent = failed;
-
-}
-async function ensurePolicyLoadedAtStartup() {
-  const cached = await dbGet(STORE_CONFIG, "attendancePolicy");
-  if (cached?.attendancePolicy) return;
-
-  if (navigator.onLine) {
-    await refreshPolicyIfPossible();
-  } else {
-    await dbPut(STORE_CONFIG, {
-      id: "attendancePolicy",
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      source: "default-offline",
-      fetchedAt: new Date().toISOString()
-    });
-  }
-}
-
-function normalizeAttendancePolicy(value) {
-  const v = String(value || "")
-    .trim()
-    .toUpperCase();
-
-  if (
-    v === POLICY_NOT_ALLOWED ||
-    v === POLICY_ONLINE_ONLY ||
-    v === POLICY_OFFLINE_ONLY ||
-    v === POLICY_ONLINE_PREFERRED ||
-    v === POLICY_ONLINE_OR_OFFLINE ||
-    v === POLICY_OFFLINE_ALLOWED_IMMEDIATE
-  ) {
-    return v;
-  }
-
-  return DEFAULT_ATTENDANCE_POLICY;
-}
-
-async function getAttendancePolicyInfo() {
-  const config = await dbGet(STORE_CONFIG, "attendancePolicy");
-  return {
-    attendancePolicy: normalizeAttendancePolicy(config?.attendancePolicy),
-    fetchedAt: config?.fetchedAt || "",
-    source: config?.source || "default"
-  };
-}
-
-async function refreshPolicyIfPossible() {
-  if (!navigator.onLine) return false;
-
-  try {
-    const profile = await getProfile();
-    const url = new URL(APPS_SCRIPT_URL);
-    url.searchParams.set("action", "employee");
-    url.searchParams.set("personnelCode", profile.personnelCode);
-
-    const res = await fetch(url.toString(), {
-      method: "GET",
-      cache: "no-store"
-    });
-
-    if (!res.ok) throw new Error("policy fetch failed");
-
-    const data = await res.json();
-    const employee = data?.employee || data?.data || data || {};
-    const attendancePolicy = normalizeAttendancePolicy(
-      employee.AttendancePolicy ||
-      employee.attendancePolicy ||
-      employee.Policy ||
-      employee.policy ||
-      DEFAULT_ATTENDANCE_POLICY
-    );
-
-    await dbPut(STORE_CONFIG, {
-      id: "attendancePolicy",
-      attendancePolicy,
-      source: "server",
-      fetchedAt: new Date().toISOString(),
-      employee: {
-        personnelCode: profile.personnelCode
-      }
-    });
-
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-
-function updateOnlineBadge() {
-  const onlineEl = $("onlineBadge");
-  if (!onlineEl) return;
-
-  if (navigator.onLine) {
-    onlineEl.textContent = "آنلاین";
-    onlineEl.className = "badge online";
-  } else {
-    onlineEl.textContent = "آفلاین";
-    onlineEl.className = "badge offline";
-  }
-}
-
-function setStatus(message) {
-  const el = $("status");
-  if (el) el.textContent = message || "";
-}
-
-function setSyncStatus(message) {
-  const el = $("syncStatus");
-  if (el) el.textContent = message || "";
-}
-
-async function refreshUi() {
-  await renderPendingCount();
-  updateOnlineBadge();
-}
-
-async function renderPendingCount() {
-  const all = await dbGetAll(STORE_RECORDS);
-  const pending = all.filter((x) => x.status === "pending" || x.status === "failed");
-  const el = $("pendingCount");
-  if (el) el.textContent = String(pending.length);
 }
 
 function isGeolocationUsable() {
@@ -691,8 +437,7 @@ function getLocationIOSFriendly() {
     const onSuccess = (pos) => {
       const lat = pos?.coords?.latitude;
       const lng = pos?.coords?.longitude;
-      const accuracy = Number(pos?.coords?.accuracy || 999999);
-      const timestamp = pos?.timestamp || Date.now();
+      const acc = Number(pos?.coords?.accuracy || 999999);
 
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
@@ -700,48 +445,24 @@ function getLocationIOSFriendly() {
         status: "ok",
         lat,
         lng,
-        accuracy,
-        speed: Number.isFinite(pos?.coords?.speed) ? pos.coords.speed : null,
-        heading: Number.isFinite(pos?.coords?.heading) ? pos.coords.heading : null,
-        altitude: Number.isFinite(pos?.coords?.altitude) ? pos.coords.altitude : null,
-        gpsTimestamp: timestamp,
+        accuracy: acc,
+        speed: pos?.coords?.speed ?? "",
+        heading: pos?.coords?.heading ?? "",
+        altitude: pos?.coords?.altitude ?? "",
+        gpsTimestamp: pos?.timestamp || Date.now(),
         capturedAt: new Date().toISOString()
       };
 
-      if (!best || accuracy < (best.accuracy || 999999)) {
-        best = point;
-      }
+      if (!best || acc < (best.accuracy || 999999)) best = point;
 
-      if (accuracy <= GOOD_ACCURACY_METERS) {
-        finish(best);
-      }
+      if (acc <= GOOD_ACCURACY_METERS) finish(best);
     };
 
     const onError = (err) => {
-      if (err?.code === 1) {
-        finish({ status: "denied" });
-        return;
-      }
-
-      if (err?.code === 2) {
-        if (best) {
-          finish(best);
-        } else {
-          finish({ status: "unavailable" });
-        }
-        return;
-      }
-
-      if (err?.code === 3) {
-        if (best) {
-          finish(best);
-        } else {
-          finish({ status: "timeout" });
-        }
-        return;
-      }
-
-      finish({ status: "error", message: err?.message || "gps error" });
+      if (err.code === 1) return finish({ status: "denied" });
+      if (err.code === 2) return finish(best || { status: "unavailable" });
+      if (err.code === 3) return finish(best || { status: "timeout" });
+      finish({ status: "error" });
     };
 
     try {
@@ -752,9 +473,8 @@ function getLocationIOSFriendly() {
       });
 
       setTimeout(() => {
-        if (best) {
-          finish(best);
-        } else {
+        if (best) finish(best);
+        else {
           navigator.geolocation.getCurrentPosition(onSuccess, onError, {
             enableHighAccuracy: true,
             maximumAge: 0,
@@ -763,38 +483,84 @@ function getLocationIOSFriendly() {
         }
       }, HIGH_GPS_WAIT_MS);
     } catch (_) {
-      finish({ status: "error", message: "geolocation exception" });
+      finish({ status: "error" });
     }
   });
 }
 
 function hasValidLocation(loc) {
-  return !!(
-    loc &&
+  return loc &&
     loc.status === "ok" &&
     Number.isFinite(loc.lat) &&
-    Number.isFinite(loc.lng)
-  );
+    Number.isFinite(loc.lng);
+}
+
+async function handlePhotoSelected() {
+  const file = $("photoInput")?.files?.[0];
+  if (!file) {
+    setStatus("عکسی انتخاب نشد.");
+    return;
+  }
+
+  try {
+    photoSelectedAtMs = Date.now();
+    await saveProfileSilent();
+
+    const { gate } = await getCurrentAttendanceGate();
+    if (!gate.ok) {
+      setStatus(gate.message);
+      $("photoInput").value = "";
+      currentPhoto = "";
+      return;
+    }
+
+    setStatus("در حال آماده‌سازی عکس، لطفاً صبر کنید...");
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
+
+    if ($("photoPreview")) {
+      $("photoPreview").src = currentPhoto;
+      $("photoPreview").style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setStatus("GPS در دسترس نیست. لطفاً HTTPS و Location را فعال کنید.");
+      return;
+    }
+
+    setStatus("در حال دریافت GPS...");
+    pendingLocation = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(pendingLocation)) {
+      setStatus("GPS معتبر دریافت نشد.");
+      return;
+    }
+
+    await createRecord("تردد");
+  } catch (err) {
+    console.error(err);
+    setStatus("خطا در ثبت تردد");
+  }
 }
 
 async function compressImage(file) {
   const dataUrl = await readFileAsDataUrl(file);
   const img = await loadImage(dataUrl);
 
-  const maxW = 1280;
-  const maxH = 1280;
-  let { width, height } = img;
+  let w = img.width;
+  let h = img.height;
+  const max = 1280;
 
-  const ratio = Math.min(maxW / width, maxH / height, 1);
-  width = Math.round(width * ratio);
-  height = Math.round(height * ratio);
+  const scale = Math.min(max / w, max / h, 1);
+  w = Math.round(w * scale);
+  h = Math.round(h * scale);
 
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = w;
+  canvas.height = h;
 
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, width, height);
+  ctx.drawImage(img, 0, 0, w, h);
 
   let quality = 0.82;
   let out = canvas.toDataURL("image/jpeg", quality);
@@ -811,7 +577,7 @@ function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
     fr.onload = () => resolve(fr.result);
-    fr.onerror = () => reject(fr.error);
+    fr.onerror = reject;
     fr.readAsDataURL(file);
   });
 }
@@ -825,207 +591,127 @@ function loadImage(src) {
   });
 }
 
-function generateClientRecordId(personnelCode) {
+function generateClientRecordId(code) {
   const rand = Math.random().toString(36).slice(2, 10).toUpperCase();
   const ts = Date.now();
-  return `${personnelCode || "EMP"}-${ts}-${rand}`;
+  return `${code || "EMP"}-${ts}-${rand}`;
 }
 
 function getSessionClockDriftInfo() {
-  const wallNow = Date.now();
-  const perfNow = performance.now();
-  const expectedWallNow = APP_SESSION_START_WALL_MS + (perfNow - APP_SESSION_START_PERF_MS);
-  const driftMs = Math.round(wallNow - expectedWallNow);
+  const wall = Date.now();
+  const perf = performance.now();
+  const expected = APP_SESSION_START_WALL_MS + (perf - APP_SESSION_START_PERF_MS);
+  const drift = Math.round(wall - expected);
 
   return {
-    sessionWallNow: wallNow,
-    sessionPerfNow: perfNow,
-    expectedWallNow,
-    driftMs,
-    suspicious: Math.abs(driftMs) > CLOCK_DRIFT_SESSION_LIMIT_MS
+    driftMs: drift,
+    suspicious: Math.abs(drift) > CLOCK_DRIFT_SESSION_LIMIT_MS
   };
 }
 
 async function getNetworkClockInfo() {
-  if (!navigator.onLine) {
-    return {
-      available: false,
-      reason: "offline"
-    };
-  }
+  if (!navigator.onLine) return { available: false };
 
   try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: "HEAD",
-      cache: "no-store"
-    });
+    const res = await fetch(APPS_SCRIPT_URL, { method: "HEAD", cache: "no-store" });
+    const date = res.headers.get("Date");
 
-    const dateHeader = res.headers.get("Date");
-    if (!dateHeader) {
-      return {
-        available: false,
-        reason: "no-date-header"
-      };
-    }
+    if (!date) return { available: false };
 
-    const serverMs = new Date(dateHeader).getTime();
+    const serverMs = new Date(date).getTime();
     const clientMs = Date.now();
-
-    if (!Number.isFinite(serverMs)) {
-      return {
-        available: false,
-        reason: "invalid-date-header"
-      };
-    }
-
-    const diffMs = clientMs - serverMs;
+    const diff = clientMs - serverMs;
 
     return {
       available: true,
-      serverTimeIso: new Date(serverMs).toISOString(),
-      clientTimeIso: new Date(clientMs).toISOString(),
-      diffMs,
-      suspicious: Math.abs(diffMs) > CLOCK_DRIFT_NETWORK_LIMIT_MS
+      diffMs: diff,
+      suspicious: Math.abs(diff) > CLOCK_DRIFT_NETWORK_LIMIT_MS
     };
-  } catch (err) {
-    return {
-      available: false,
-      reason: "network-error"
-    };
+  } catch (_) {
+    return { available: false };
   }
 }
 
-async function runLocationSecurityChecks(locationFix) {
-  const warnings = [];
+async function runLocationSecurityChecks(loc) {
   const flags = {
     suspiciousAccuracy: false,
     teleport: false,
     clockDriftSession: false,
-    clockDriftNetwork: false,
-    gpsClickGapHigh: false
+    clockDriftNetwork: false
   };
 
-  if (!locationFix || !hasValidLocation(locationFix)) {
-    warnings.push("gps_missing");
-    return {
-      ok: false,
-      flags,
-      warnings
-    };
+  const warnings = [];
+
+  if (!hasValidLocation(loc)) {
+    return { ok: false, flags, warnings };
   }
 
-  if (Number(locationFix.accuracy || 999999) > ACCURACY_SUSPICIOUS_METERS) {
+  if (loc.accuracy > ACCURACY_SUSPICIOUS_METERS) {
     flags.suspiciousAccuracy = true;
     warnings.push("gps_accuracy_suspicious");
   }
 
   const last = await dbGet(STORE_CONFIG, "lastLocationFix");
-  if (last && hasValidLocation(last)) {
-    const teleport = detectLocationTeleport(last, locationFix);
-    if (teleport.suspicious) {
+  if (last) {
+    const tele = detectLocationTeleport(last, loc);
+    if (tele.suspicious) {
       flags.teleport = true;
       warnings.push("location_teleport");
     }
   }
 
-  const sessionDrift = getSessionClockDriftInfo();
-  if (sessionDrift.suspicious) {
+  const drift = getSessionClockDriftInfo();
+  if (drift.suspicious) {
     flags.clockDriftSession = true;
     warnings.push("clock_drift_session");
   }
 
-  const networkClock = await getNetworkClockInfo();
-  if (networkClock.available && networkClock.suspicious) {
+  const network = await getNetworkClockInfo();
+  if (network.available && network.suspicious) {
     flags.clockDriftNetwork = true;
     warnings.push("clock_drift_network");
   }
 
-  if (captureStartedAtMs && locationFix.gpsTimestamp) {
-    const gap = Math.abs(Number(locationFix.gpsTimestamp) - Number(captureStartedAtMs));
-    if (gap > CLOCK_RISK_GPS_CLICK_DIFF_MS) {
-      flags.gpsClickGapHigh = true;
-      warnings.push("gps_click_gap_high");
-    }
-  }
-
   await dbPut(STORE_CONFIG, {
     id: "lastLocationFix",
-    ...locationFix,
+    ...loc,
     savedAt: new Date().toISOString()
   });
 
-  return {
-    ok: true,
-    flags,
-    warnings,
-    sessionDrift,
-    networkClock
-  };
+  return { ok: true, flags, warnings };
 }
 
-function detectLocationTeleport(prev, current) {
-  const prevTs = Number(prev.gpsTimestamp || new Date(prev.capturedAt || 0).getTime() || 0);
-  const currentTs = Number(current.gpsTimestamp || new Date(current.capturedAt || 0).getTime() || 0);
-
-  const dtMs = Math.max(0, currentTs - prevTs);
-  const dist = distanceMeters(prev.lat, prev.lng, current.lat, current.lng);
-  const speedMps = dtMs > 0 ? dist / (dtMs / 1000) : Infinity;
+function detectLocationTeleport(a, b) {
+  const dt = Math.max(1, (b.gpsTimestamp - a.gpsTimestamp));
+  const dist = distanceMeters(a.lat, a.lng, b.lat, b.lng);
+  const speed = dist / (dt / 1000);
 
   const suspicious =
     dist >= TELEPORT_DISTANCE_METERS &&
-    (dtMs < MIN_TIME_FOR_LONG_DISTANCE_MS || speedMps > MAX_HUMAN_SPEED_MPS);
+    (dt < MIN_TIME_FOR_LONG_DISTANCE_MS || speed > MAX_HUMAN_SPEED_MPS);
 
-  return {
-    suspicious,
-    distanceMeters: Math.round(dist),
-    deltaMs: dtMs,
-    speedMps: Number.isFinite(speedMps) ? Math.round(speedMps * 100) / 100 : null
-  };
+  return { suspicious, dist, dt, speed };
 }
 
-function distanceMeters(lat1, lng1, lat2, lng2) {
+function distanceMeters(a1, o1, a2, o2) {
   const R = 6371000;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  const dA = (a2 - a1) * Math.PI / 180;
+  const dO = (o2 - o1) * Math.PI / 180;
+
+  const x =
+    Math.sin(dA / 2) ** 2 +
+    Math.cos(a1 * Math.PI / 180) *
+    Math.cos(a2 * Math.PI / 180) *
+    Math.sin(dO / 2) ** 2;
+
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
-
-function toRad(v) {
-  return v * Math.PI / 180;
-}
-
-function isPointInPolygon(point, polygon) {
-  const x = point.lng;
-  const y = point.lat;
-  let inside = false;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].lng;
-    const yi = polygon[i].lat;
-    const xj = polygon[j].lng;
-    const yj = polygon[j].lat;
-
-    const intersect =
-      ((yi > y) !== (yj > y)) &&
-      (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-12) + xi);
-
-    if (intersect) inside = !inside;
-  }
-
-  return inside;
-}
-
 async function createRecord(type) {
   try {
     const profile = await getProfile();
 
     if (!currentPhoto) {
-      setStatus("عکس ثبت نشده است.");
+      setStatus("عکسی ثبت نشده است.");
       return;
     }
 
@@ -1034,8 +720,8 @@ async function createRecord(type) {
       return;
     }
 
-    const policyInfo = await getAttendancePolicyInfo();
-    const gate = evaluateAttendancePolicy(policyInfo.attendancePolicy, navigator.onLine);
+    const policy = await getAttendancePolicyInfo();
+    const gate = evaluateAttendancePolicy(policy.attendancePolicy, navigator.onLine);
 
     if (!gate.ok) {
       setStatus(gate.message);
@@ -1043,211 +729,195 @@ async function createRecord(type) {
     }
 
     const security = await runLocationSecurityChecks(pendingLocation);
-
-    const clientRecordId = generateClientRecordId(profile.personnelCode);
+    const id = generateClientRecordId(profile.personnelCode);
     const now = new Date();
 
-    const record = {
-      clientRecordId,
-      type: type || "تردد",
+    const rec = {
+      clientRecordId: id,
+      type,
       personnelCode: profile.personnelCode,
       firstName: profile.firstName,
       lastName: profile.lastName,
-      photo: currentPhoto,
       createdAt: now.toISOString(),
       createdAtMs: now.getTime(),
       date: now.toLocaleDateString("fa-IR"),
-      time: now.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-      latitude: pendingLocation.lat,
-      longitude: pendingLocation.lng,
-      accuracy: pendingLocation.accuracy ?? "",
-      speed: pendingLocation.speed ?? "",
-      heading: pendingLocation.heading ?? "",
-      altitude: pendingLocation.altitude ?? "",
-      gpsTimestamp: pendingLocation.gpsTimestamp || "",
-      gpsCapturedAt: pendingLocation.capturedAt || "",
-      captureStartedAtMs,
-      photoSelectedAtMs,
-      photoCompressedAtMs,
-      onlineAtCreation: navigator.onLine,
-      attendancePolicy: policyInfo.attendancePolicy,
-      policyFetchedAt: policyInfo.fetchedAt || "",
-      policySource: policyInfo.source || "",
-      securityFlags: security.flags || {},
-      securityWarnings: security.warnings || [],
-      sessionClockDriftMs: security.sessionDrift?.driftMs ?? "",
-      networkClockDiffMs: security.networkClock?.diffMs ?? "",
-      networkClockAvailable: !!security.networkClock?.available,
-      status: "pending",
-      syncedAt: "",
-      serverResponse: ""
+      time: now.toLocaleTimeString("fa-IR"),
+      photo: currentPhoto,
+      ...pendingLocation,
+      securityFlags: security.flags,
+      securityWarnings: security.warnings,
+      status: "pending"
     };
 
-    await dbPut(STORE_RECORDS, record);
+    await dbPut(STORE_RECORDS, rec);
 
     currentPhoto = "";
     pendingLocation = null;
 
     if ($("photoInput")) $("photoInput").value = "";
-
     if ($("photoPreview")) {
-      $("photoPreview").removeAttribute("src");
       $("photoPreview").style.display = "none";
+      $("photoPreview").src = "";
     }
-    console.log("saved record:", record);
+
     await refreshUiFull();
 
-    const recordBtn = $("recordBtn");
-
     if (navigator.onLine) {
-      if (recordBtn) {
-        recordBtn.disabled = true;
-        recordBtn.innerHTML = 'در حال ارسال و همگام‌سازی... <span class="dots"></span>';
-      }
-      setStatus("تردد ثبت شد. در حال ارسال به سرور و همگام‌سازی نهایی...");
-      scheduleSyncPendingRecords(100);
+      scheduleSyncPendingRecords(200);
+      setStatus("تردد ثبت و در حال ارسال است...");
     } else {
-      setStatus("تردد آفلاین ذخیره شد و بعداً با اتصال به اینترنت ارسال می‌شود.");
+      setStatus("تردد آفلاین ذخیره شد.");
     }
-
   } catch (err) {
     console.error(err);
     setStatus("خطا در ساخت رکورد");
   }
 }
 
-function normalizeAttendancePayload(record) {
+function normalizeAttendancePayload(r) {
   return {
     action: "recordAttendance",
-    clientRecordId: record.clientRecordId || "",
-    PersonnelCode: record.personnelCode || "",
-    FirstName: record.firstName || "",
-    LastName: record.lastName || "",
-    RecordType: record.type || "تردد",
-    Date: record.date || "",
-    Time: record.time || "",
-    Latitude: record.latitude ?? "",
-    Longitude: record.longitude ?? "",
-    Accuracy: record.accuracy ?? "",
-    Speed: record.speed ?? "",
-    Heading: record.heading ?? "",
-    Altitude: record.altitude ?? "",
-    GpsTimestamp: record.gpsTimestamp || "",
-    GpsCapturedAt: record.gpsCapturedAt || "",
-    CaptureStartedAtMs: record.captureStartedAtMs || "",
-    PhotoSelectedAtMs: record.photoSelectedAtMs || "",
-    PhotoCompressedAtMs: record.photoCompressedAtMs || "",
-    OnlineAtCreation: record.onlineAtCreation ? "true" : "false",
-    AttendancePolicy: record.attendancePolicy || "",
-    PolicyFetchedAt: record.policyFetchedAt || "",
-    PolicySource: record.policySource || "",
-    SessionClockDriftMs: record.sessionClockDriftMs ?? "",
-    NetworkClockDiffMs: record.networkClockDiffMs ?? "",
-    NetworkClockAvailable: record.networkClockAvailable ? "true" : "false",
-    SecurityFlagsJson: JSON.stringify(record.securityFlags || {}),
-    SecurityWarningsJson: JSON.stringify(record.securityWarnings || []),
-    PhotoBase64: record.photo || ""
+    PersonnelCode: r.personnelCode,
+    FirstName: r.firstName,
+    LastName: r.lastName,
+    RecordType: r.type,
+    Date: r.date,
+    Time: r.time,
+    Latitude: r.lat,
+    Longitude: r.lng,
+    Accuracy: r.accuracy,
+    GpsTimestamp: r.gpsTimestamp,
+    PhotoBase64: r.photo,
+    SecurityFlagsJson: JSON.stringify(r.securityFlags || {}),
+    SecurityWarningsJson: JSON.stringify(r.securityWarnings || {})
   };
 }
 
-async function markFirstConnectionForOfflineRecords() {
-  const all = await dbGetAll(STORE_RECORDS);
-  const changed = [];
-
-  for (const rec of all) {
-    if ((rec.status === "pending" || rec.status === "failed") && !rec.firstOnlineAt && !rec.onlineAtCreation) {
-      rec.firstOnlineAt = new Date().toISOString();
-      changed.push(rec);
-    }
-  }
-
-  for (const item of changed) {
-    await dbPut(STORE_RECORDS, item);
-  }
-}
-
 async function syncPendingRecords() {
-  if (syncRunning) return;
-  if (!navigator.onLine) return;
+  if (syncRunning || !navigator.onLine) return;
 
   syncRunning = true;
-  setSyncStatus("در حال همگام‌سازی...");
+  setSyncStatus("در حال ارسال...");
 
   try {
     const all = await dbGetAll(STORE_RECORDS);
     const pending = all
-      .filter((x) => x.status === "pending" || x.status === "failed")
-      .sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
+      .filter(r => r.status === "pending" || r.status === "failed")
+      .sort((a, b) => a.createdAtMs - b.createdAtMs);
 
     if (!pending.length) {
-      setSyncStatus("موردی برای ارسال وجود ندارد");
-      await refreshUiFull();
+      setSyncStatus("موردی برای ارسال نیست");
       syncRunning = false;
-      const recordBtn = $("recordBtn");
-      if (recordBtn) {
-        recordBtn.disabled = false;
-        recordBtn.textContent = "ثبت تردد";
-      }
       return;
     }
 
-    for (const rec of pending) {
+    for (const r of pending) {
       try {
-        const payload = normalizeAttendancePayload(rec);
-
+        const payload = normalizeAttendancePayload(r);
         const form = new URLSearchParams();
-        Object.entries(payload).forEach(([k, v]) => {
-          form.append(k, v == null ? "" : String(v));
-        });
+
+        for (const [k, v] of Object.entries(payload)) {
+          form.append(k, v ?? "");
+        }
 
         const res = await fetch(APPS_SCRIPT_URL, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
-          },
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: form.toString()
         });
 
-        const text = await res.text();
-        let data = null;
-
+        const txt = await res.text();
+        let data;
         try {
-          data = JSON.parse(text);
+          data = JSON.parse(txt);
         } catch (_) {
-          data = { ok: false, raw: text };
+          data = { ok: false };
         }
 
-        if (!res.ok || data?.ok === false) {
-          rec.status = "failed";
-          rec.serverResponse = text || "";
-          await dbPut(STORE_RECORDS, rec);
+        if (!res.ok || data.ok === false) {
+          r.status = "failed";
+          r.serverResponse = txt;
+          await dbPut(STORE_RECORDS, r);
           continue;
         }
 
-        rec.status = "synced";
-        rec.syncedAt = new Date().toISOString();
-        rec.serverResponse = text || "";
-        rec.serverRecordId = data?.recordId || data?.id || "";
-        await dbPut(STORE_RECORDS, rec);
+        r.status = "synced";
+        r.serverResponse = txt;
+        r.syncedAt = new Date().toISOString();
+        await dbPut(STORE_RECORDS, r);
+
       } catch (err) {
-        rec.status = "failed";
-        rec.serverResponse = err?.message || "sync error";
-        await dbPut(STORE_RECORDS, rec);
+        r.status = "failed";
+        r.serverResponse = err.message;
+        await dbPut(STORE_RECORDS, r);
       }
     }
 
+    setSyncStatus("همگام‌سازی کامل شد");
     await refreshUiFull();
-    setSyncStatus("همگام‌سازی انجام شد");
-  } catch (err) {
+  } catch (_) {
     setSyncStatus("خطا در همگام‌سازی");
-  } finally {
-    syncRunning = false;
-    const recordBtn = $("recordBtn");
-    if (recordBtn) {
-      recordBtn.disabled = false;
-      recordBtn.textContent = "ثبت تردد";
-    }
   }
+
+  syncRunning = false;
+}
+
+async function renderPendingCount() {
+  const all = await dbGetAll(STORE_RECORDS);
+  $("pendingCount").textContent = all.filter(x => x.status === "pending").length;
+}
+
+async function renderLastRecords() {
+  const c = $("recordsList");
+  if (!c) return;
+
+  const records = await dbGetAll(STORE_RECORDS);
+  if (!records.length) {
+    c.innerHTML = "<div>رکوردی نیست</div>";
+    return;
+  }
+
+  records.sort((a, b) => b.createdAtMs - a.createdAtMs);
+  const last = records.slice(0, 10);
+
+  c.innerHTML = last.map(r => `
+    <div style="padding:8px;border-bottom:1px solid #ddd">
+      <b>${r.date}</b> - ${r.time}
+    </div>
+  `).join("");
+}
+
+async function refreshUi() {
+  await renderPendingCount();
+  updateOnlineBadge();
+}
+
+async function refreshUiFull() {
+  await refreshUi();
+  await renderLastRecords();
+}
+
+function updateOnlineBadge() {
+  const el = $("onlineBadge");
+  if (!el) return;
+
+  if (navigator.onLine) {
+    el.textContent = "آنلاین";
+    el.className = "badge online";
+  } else {
+    el.textContent = "آفلاین";
+    el.className = "badge offline";
+  }
+}
+
+function setStatus(m) {
+  const el = $("status");
+  if (el) el.textContent = m;
+}
+
+function setSyncStatus(m) {
+  const el = $("syncStatus");
+  if (el) el.textContent = m;
 }
 
 async function fetchMessages() {
@@ -1259,340 +929,22 @@ async function fetchMessages() {
     url.searchParams.set("action", "employee");
     url.searchParams.set("personnelCode", profile.personnelCode);
 
-    const res = await fetch(url.toString(), {
-      method: "GET",
-      cache: "no-store"
-    });
-
+    const res = await fetch(url.toString());
     if (!res.ok) return;
 
     const data = await res.json();
-    const employee = data?.employee || data?.data || data || {};
-    const message = (
-      employee.AdminMessage ||
-      employee.adminMessage ||
-      employee.Message ||
-      employee.message ||
-      ""
-    ).trim();
+    const emp = data?.employee || data || {};
+    const msg = emp.AdminMessage || emp.message || "";
 
-    if (message && !adminMessageShownOnEntry) {
+    if (msg && !adminMessageShownOnEntry) {
       adminMessageShownOnEntry = true;
-      showAdminMessage(message);
+      $("adminMessage").textContent = msg;
+      $("adminMessage").style.display = "block";
     }
   } catch (_) {}
 }
 
-function showAdminMessage(message) {
-  const box = $("adminMessage");
-  if (!box) return;
-
-  box.textContent = message;
-  box.style.display = "block";
-}
-
-async function clearSyncedRecordsIfNeeded(maxKeep = 200) {
-  const all = await dbGetAll(STORE_RECORDS);
-  const synced = all
-    .filter((x) => x.status === "synced")
-    .sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
-
-  if (synced.length <= maxKeep) return;
-
-  const toDelete = synced.slice(0, synced.length - maxKeep);
-  for (const item of toDelete) {
-    await dbDelete(STORE_RECORDS, item.id);
-  }
-}
-
-async function forceManualSync() {
-  if (!navigator.onLine) {
-    setSyncStatus("اینترنت قطع است");
-    return;
-  }
-
-  await refreshPolicyIfPossible();
-  await markFirstConnectionForOfflineRecords();
+window.forceManualSync = async function () {
   await syncPendingRecords();
-  await clearSyncedRecordsIfNeeded();
   await refreshUiFull();
-}
-
-window.forceManualSync = forceManualSync;
-
-async function exportLocalRecords() {
-  const all = await dbGetAll(STORE_RECORDS);
-  const blob = new Blob(
-    [JSON.stringify(all, null, 2)],
-    { type: "application/json;charset=utf-8" }
-  );
-
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `attendance-records-${Date.now()}.json`;
-  a.click();
-
-  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-}
-
-window.exportLocalRecords = exportLocalRecords;
-
-async function showLocalDebugInfo() {
-  const all = await dbGetAll(STORE_RECORDS);
-  const profile = await dbGet(STORE_PROFILE, "main");
-  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
-  const lastFix = await dbGet(STORE_CONFIG, "lastLocationFix");
-
-  const info = {
-    online: navigator.onLine,
-    profile,
-    policy,
-    lastFix,
-    totalRecords: all.length,
-    pending: all.filter((x) => x.status === "pending").length,
-    failed: all.filter((x) => x.status === "failed").length,
-    synced: all.filter((x) => x.status === "synced").length,
-    sample: all.slice(-5)
-  };
-
-  console.log(info);
-  alert(JSON.stringify(info, null, 2));
-}
-
-window.showLocalDebugInfo = showLocalDebugInfo;
-
-async function retryFailedRecords() {
-  const all = await dbGetAll(STORE_RECORDS);
-  const failed = all.filter((x) => x.status === "failed");
-
-  for (const rec of failed) {
-    rec.status = "pending";
-    await dbPut(STORE_RECORDS, rec);
-  }
-   
-  await refreshUiFull();
-  scheduleSyncPendingRecords(100);
-}
-
-window.retryFailedRecords = retryFailedRecords;
-
-async function deleteAllLocalRecords() {
-  const all = await dbGetAll(STORE_RECORDS);
-  for (const rec of all) {
-    await dbDelete(STORE_RECORDS, rec.id);
-  }
-  await refreshUiFull();
-  setSyncStatus("همه رکوردهای محلی حذف شدند");
-}
-
-window.deleteAllLocalRecords = deleteAllLocalRecords;
-
-async function resendLastRecord() {
-  const all = await dbGetAll(STORE_RECORDS);
-  const last = all.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))[0];
-
-  if (!last) {
-    setSyncStatus("رکوردی وجود ندارد");
-    return;
-  }
-
-  last.status = "pending";
-  await dbPut(STORE_RECORDS, last);
-  await syncPendingRecords();
-}
-
-window.resendLastRecord = resendLastRecord;
-
-function formatPersianNumber(value) {
-  return String(value ?? "").replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]);
-}
-
-async function renderLastRecords() {
-
-    const container = $("recordsList");
-
-    if (!container) return;
-
-    const records = await dbGetAll(STORE_RECORDS);
-
-    if (!records.length) {
-
-        container.innerHTML =
-        "<div style='padding:8px'>ترددی ثبت نشده است.</div>";
-
-        return;
-
-    }
-
-    records.sort((a,b)=>a.createdAtMs-b.createdAtMs);
-
-    const days = {};
-
-    for(const r of records){
-
-        const d = r.date;
-
-        if(!days[d]){
-
-            days[d]={
-                first:r,
-                last:r
-            };
-
-        }else{
-
-            if(r.createdAtMs<days[d].first.createdAtMs)
-                days[d].first=r;
-
-            if(r.createdAtMs>days[d].last.createdAtMs)
-                days[d].last=r;
-
-        }
-
-    }
-
-    const last3 =
-        Object.entries(days)
-        .sort((a,b)=>
-            b[1].last.createdAtMs-
-            a[1].last.createdAtMs
-        )
-        .slice(0,3);
-
-    container.innerHTML =
-        last3.map(([day,v])=>`
-
-<div style="
-display:flex;
-justify-content:space-between;
-align-items:center;
-padding:10px 4px;
-border-bottom:1px solid #ddd;
-font-size:15px">
-
-<div style="width:38%">
-${day}
-</div>
-
-<div style="width:28%">
-ورود:
-<b>${v.first.time}</b>
-</div>
-
-<div style="width:28%">
-خروج:
-<b>${v.last.time}</b>
-</div>
-
-</div>
-
-`).join("");
-
-}
-
-async function refreshUiFull() {
-  await refreshUi();
-
-await renderStatusCounts();
-
-await renderLastRecords();
-}
-
-window.refreshUiFull = refreshUiFull;
-
-document.addEventListener("DOMContentLoaded", () => {
-  const manualSyncBtn = $("manualSyncBtn");
-  if (manualSyncBtn) {
-    manualSyncBtn.addEventListener("click", forceManualSync);
-  }
-
-  const retryBtn = $("retryFailedBtn");
-  if (retryBtn) {
-    retryBtn.addEventListener("click", retryFailedRecords);
-  }
-
-  const exportBtn = $("exportBtn");
-  if (exportBtn) {
-    exportBtn.addEventListener("click", exportLocalRecords);
-  }
-
-  const debugBtn = $("debugBtn");
-  if (debugBtn) {
-    debugBtn.addEventListener("click", showLocalDebugInfo);
-  }
-
-  const clearBtn = $("clearLocalBtn");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", deleteAllLocalRecords);
-  }
-
-  refreshUiFull().catch(() => {});
-});
-
-window.addEventListener("beforeunload", () => {
-  if (syncTimer) clearTimeout(syncTimer);
-});
-
-function normalizeServerEmployeeResponse(data) {
-  const employee = data?.employee || data?.data || data || {};
-
-  return {
-    personnelCode: employee.PersonnelCode || employee.personnelCode || "",
-    firstName: employee.FirstName || employee.firstName || "",
-    lastName: employee.LastName || employee.lastName || "",
-    attendancePolicy: normalizeAttendancePolicy(
-      employee.AttendancePolicy ||
-      employee.attendancePolicy ||
-      DEFAULT_ATTENDANCE_POLICY
-    ),
-    adminMessage:
-      employee.AdminMessage ||
-      employee.adminMessage ||
-      ""
-  };
-}
-
-async function preloadEmployeeDataIfPossible() {
-  if (!navigator.onLine) return;
-
-  try {
-    const profile = await getProfile();
-    const url = new URL(APPS_SCRIPT_URL);
-    url.searchParams.set("action", "employee");
-    url.searchParams.set("personnelCode", profile.personnelCode);
-
-    const res = await fetch(url.toString(), {
-      method: "GET",
-      cache: "no-store"
-    });
-
-    if (!res.ok) return;
-
-    const data = await res.json();
-    const employee = normalizeServerEmployeeResponse(data);
-
-    if ($("firstName") && !($("firstName").value || "").trim() && employee.firstName) {
-      $("firstName").value = employee.firstName;
-    }
-
-    if ($("lastName") && !($("lastName").value || "").trim() && employee.lastName) {
-      $("lastName").value = employee.lastName;
-    }
-
-    await dbPut(STORE_CONFIG, {
-      id: "attendancePolicy",
-      attendancePolicy: employee.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-      source: "server",
-      fetchedAt: new Date().toISOString(),
-      employee: {
-        personnelCode: employee.personnelCode || profile.personnelCode
-      }
-    });
-
-    if (employee.adminMessage) {
-      showAdminMessage(employee.adminMessage);
-    }
-  } catch (_) {}
-}
-
-window.preloadEmployeeDataIfPossible = preloadEmployeeDataIfPossible;
+};

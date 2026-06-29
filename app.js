@@ -1077,7 +1077,7 @@ async function createRecord(type) {
       $("photoPreview").removeAttribute("src");
       $("photoPreview").style.display = "none";
     }
-
+    console.log("saved record:", record);
     await refreshUiFull();
 
     const recordBtn = $("recordBtn");
@@ -1352,7 +1352,7 @@ async function retryFailedRecords() {
     rec.status = "pending";
     await dbPut(STORE_RECORDS, rec);
   }
-   console.log("saved record:", record);
+   
   await refreshUiFull();
   scheduleSyncPendingRecords(100);
 }

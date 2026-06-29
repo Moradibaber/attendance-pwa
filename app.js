@@ -530,7 +530,24 @@ async function getProfile() {
 
   return profile;
 }
+async function renderStatusCounts() {
 
+    const all = await dbGetAll(STORE_RECORDS);
+
+    const pending =
+        all.filter(r => r.status === "pending").length;
+
+    const synced =
+        all.filter(r => r.status === "synced").length;
+
+    const failed =
+        all.filter(r => r.status === "failed").length;
+
+    $("pendingCount").textContent = pending;
+    $("sentCount").textContent = synced;
+    $("failedCount").textContent = failed;
+
+}
 async function ensurePolicyLoadedAtStartup() {
   const cached = await dbGet(STORE_CONFIG, "attendancePolicy");
   if (cached?.attendancePolicy) return;
@@ -1390,37 +1407,95 @@ function formatPersianNumber(value) {
   return String(value ?? "").replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]);
 }
 
-async function renderLastRecords(limit = 10) {
-  const container = $("lastRecords");
-  if (!container) return;
+async function renderLastRecords() {
 
-  const records = await dbGetAll(STORE_RECORDS);
+    const container = $("recordsList");
 
-  if (!records || records.length === 0) {
-    container.innerHTML = "<div style='opacity:.6'>ترددی ثبت نشده</div>";
-    return;
-  }
+    if (!container) return;
 
-  const sorted = records
-    .sort((a, b) => b.createdAtMs - a.createdAtMs)
-    .slice(0, limit);
+    const records = await dbGetAll(STORE_RECORDS);
 
-  container.innerHTML = sorted.map(r => `
-    <div style="padding:8px;border-bottom:1px solid #eee">
-      <div><b>${r.type === "in" ? "ورود" : "خروج"}</b></div>
-      <div>${r.date} ${r.time}</div>
-      <div style="font-size:12px;opacity:.7">
-        ${r.status === "synced" ? "ارسال شده ✅" :
-          r.status === "failed" ? "خطا ❌" :
-          "در انتظار ارسال ⏳"}
-      </div>
-    </div>
-  `).join("");
+    if (!records.length) {
+
+        container.innerHTML =
+        "<div style='padding:8px'>ترددی ثبت نشده است.</div>";
+
+        return;
+
+    }
+
+    records.sort((a,b)=>a.createdAtMs-b.createdAtMs);
+
+    const days = {};
+
+    for(const r of records){
+
+        const d = r.date;
+
+        if(!days[d]){
+
+            days[d]={
+                first:r,
+                last:r
+            };
+
+        }else{
+
+            if(r.createdAtMs<days[d].first.createdAtMs)
+                days[d].first=r;
+
+            if(r.createdAtMs>days[d].last.createdAtMs)
+                days[d].last=r;
+
+        }
+
+    }
+
+    const last3 =
+        Object.entries(days)
+        .sort((a,b)=>
+            b[1].last.createdAtMs-
+            a[1].last.createdAtMs
+        )
+        .slice(0,3);
+
+    container.innerHTML =
+        last3.map(([day,v])=>`
+
+<div style="
+display:flex;
+justify-content:space-between;
+align-items:center;
+padding:10px 4px;
+border-bottom:1px solid #ddd;
+font-size:15px">
+
+<div style="width:38%">
+${day}
+</div>
+
+<div style="width:28%">
+ورود:
+<b>${v.first.time}</b>
+</div>
+
+<div style="width:28%">
+خروج:
+<b>${v.last.time}</b>
+</div>
+
+</div>
+
+`).join("");
+
 }
 
 async function refreshUiFull() {
   await refreshUi();
-  await renderLastRecords(10);
+
+await renderStatusCounts();
+
+await renderLastRecords();
 }
 
 window.refreshUiFull = refreshUiFull;

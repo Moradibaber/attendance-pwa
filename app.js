@@ -783,7 +783,7 @@ async function compressImage(file) {
   let quality = 0.82;
   let out = canvas.toDataURL("image/jpeg", quality);
 
-  while (out.length > 900000 && quality > 0.45) {
+  while (out.length > 500000 && quality > 0.4) {
     quality -= 0.08;
     out = canvas.toDataURL("image/jpeg", quality);
   }
@@ -1080,14 +1080,25 @@ async function createRecord(type) {
       $("photoPreview").style.display = "none";
     }
 
-    await refreshUi();
+   await refreshUi();
 
-    if (navigator.onLine) {
-      setStatus("تردد ثبت شد. در حال ارسال...");
-      scheduleSyncPendingRecords(100);
-    } else {
-      setStatus("تردد آفلاین ذخیره شد و بعداً ارسال می‌شود.");
-    }
+const recordBtn = $("recordBtn");
+
+if (navigator.onLine) {
+
+  if (recordBtn) {
+    recordBtn.disabled = true;
+    recordBtn.innerHTML = 'در حال ارسال <span class="dots"></span>';
+  }
+
+  setStatus("تردد ثبت شد. در حال ارسال به سرور ...");
+
+  scheduleSyncPendingRecords(100);
+
+} else {
+  setStatus("تردد آفلاین ذخیره شد و بعداً ارسال می‌شود.");
+}
+
   } catch (err) {
     console.error(err);
     setStatus("خطا در ساخت رکورد");
@@ -1150,6 +1161,11 @@ async function syncPendingRecords() {
 
   syncRunning = true;
   setSyncStatus("در حال همگام‌سازی...");
+const recordBtn = $("recordBtn");
+if (recordBtn) {
+  recordBtn.disabled = false;
+  recordBtn.textContent = "ثبت تردد";
+}
 
   try {
     const all = await dbGetAll(STORE_RECORDS);

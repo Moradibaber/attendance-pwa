@@ -1,5 +1,5 @@
-// js.html — Part 1/4
-
+<!-- js.html -->
+<script>
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 4;
 const STORE_RECORDS = "records";
@@ -530,7 +530,6 @@ async function getProfile() {
 
   return profile;
 }
-// js.html — Part 2/4
 
 async function ensurePolicyLoadedAtStartup() {
   const cached = await dbGet(STORE_CONFIG, "attendancePolicy");
@@ -783,7 +782,7 @@ async function compressImage(file) {
   let quality = 0.82;
   let out = canvas.toDataURL("image/jpeg", quality);
 
-  while (out.length > 500000 && quality > 0.4) {
+  while (out.length > 300000 && quality > 0.3) {
     quality -= 0.08;
     out = canvas.toDataURL("image/jpeg", quality);
   }
@@ -1003,7 +1002,6 @@ function isPointInPolygon(point, polygon) {
 
   return inside;
 }
-// js.html — Part 3/4
 
 async function createRecord(type) {
   try {
@@ -1063,7 +1061,7 @@ async function createRecord(type) {
       sessionClockDriftMs: security.sessionDrift?.driftMs ?? "",
       networkClockDiffMs: security.networkClock?.diffMs ?? "",
       networkClockAvailable: !!security.networkClock?.available,
-      status: navigator.onLine ? "pending" : "pending",
+      status: "pending",
       syncedAt: "",
       serverResponse: ""
     };
@@ -1080,24 +1078,20 @@ async function createRecord(type) {
       $("photoPreview").style.display = "none";
     }
 
-   await refreshUi();
+    await refreshUiFull();
 
-const recordBtn = $("recordBtn");
+    const recordBtn = $("recordBtn");
 
-if (navigator.onLine) {
-
-  if (recordBtn) {
-    recordBtn.disabled = true;
-    recordBtn.innerHTML = 'در حال ارسال <span class="dots"></span>';
-  }
-
-  setStatus("تردد ثبت شد. در حال ارسال به سرور ...");
-
-  scheduleSyncPendingRecords(100);
-
-} else {
-  setStatus("تردد آفلاین ذخیره شد و بعداً ارسال می‌شود.");
-}
+    if (navigator.onLine) {
+      if (recordBtn) {
+        recordBtn.disabled = true;
+        recordBtn.innerHTML = 'در حال ارسال و همگام‌سازی... <span class="dots"></span>';
+      }
+      setStatus("تردد ثبت شد. در حال ارسال به سرور و همگام‌سازی نهایی...");
+      scheduleSyncPendingRecords(100);
+    } else {
+      setStatus("تردد آفلاین ذخیره شد و بعداً با اتصال به اینترنت ارسال می‌شود.");
+    }
 
   } catch (err) {
     console.error(err);
@@ -1161,11 +1155,6 @@ async function syncPendingRecords() {
 
   syncRunning = true;
   setSyncStatus("در حال همگام‌سازی...");
-const recordBtn = $("recordBtn");
-if (recordBtn) {
-  recordBtn.disabled = false;
-  recordBtn.textContent = "ثبت تردد";
-}
 
   try {
     const all = await dbGetAll(STORE_RECORDS);
@@ -1175,8 +1164,13 @@ if (recordBtn) {
 
     if (!pending.length) {
       setSyncStatus("موردی برای ارسال وجود ندارد");
-      await refreshUi();
+      await refreshUiFull();
       syncRunning = false;
+      const recordBtn = $("recordBtn");
+      if (recordBtn) {
+        recordBtn.disabled = false;
+        recordBtn.textContent = "ثبت تردد";
+      }
       return;
     }
 
@@ -1225,12 +1219,17 @@ if (recordBtn) {
       }
     }
 
-    await refreshUi();
+    await refreshUiFull();
     setSyncStatus("همگام‌سازی انجام شد");
   } catch (err) {
     setSyncStatus("خطا در همگام‌سازی");
   } finally {
     syncRunning = false;
+    const recordBtn = $("recordBtn");
+    if (recordBtn) {
+      recordBtn.disabled = false;
+      recordBtn.textContent = "ثبت تردد";
+    }
   }
 }
 
@@ -1288,7 +1287,6 @@ async function clearSyncedRecordsIfNeeded(maxKeep = 200) {
     await dbDelete(STORE_RECORDS, item.id);
   }
 }
-// js.html — Part 4/4
 
 async function forceManualSync() {
   if (!navigator.onLine) {
@@ -1300,7 +1298,7 @@ async function forceManualSync() {
   await markFirstConnectionForOfflineRecords();
   await syncPendingRecords();
   await clearSyncedRecordsIfNeeded();
-  await refreshUi();
+  await refreshUiFull();
 }
 
 window.forceManualSync = forceManualSync;
@@ -1355,7 +1353,7 @@ async function retryFailedRecords() {
     await dbPut(STORE_RECORDS, rec);
   }
 
-  await refreshUi();
+  await refreshUiFull();
   scheduleSyncPendingRecords(100);
 }
 
@@ -1366,7 +1364,7 @@ async function deleteAllLocalRecords() {
   for (const rec of all) {
     await dbDelete(STORE_RECORDS, rec.id);
   }
-  await refreshUi();
+  await refreshUiFull();
   setSyncStatus("همه رکوردهای محلی حذف شدند");
 }
 
@@ -1391,37 +1389,7 @@ window.resendLastRecord = resendLastRecord;
 function formatPersianNumber(value) {
   return String(value ?? "").replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]);
 }
-async function renderLastRecords(limit = 10) {
-  const all = await dbGetAll(STORE_RECORDS);
-  const list = $("lastRecords");
-  if (!list) return;
 
-  const rows = all
-    .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
-    .slice(0, limit);
-
-  if (!rows.length) {
-    list.innerHTML = "<div>رکوردی ثبت نشده است</div>";
-    return;
-  }
-
-  list.innerHTML = rows.map((r) => {
-    const statusFa =
-      r.status === "synced" ? "ارسال‌شده" :
-      r.status === "failed" ? "خطادار" :
-      "در انتظار";
-
-    return `
-      <div class="record-row status-${r.status}">
-        <div><b>${r.firstName || ""} ${r.lastName || ""}</b> - ${r.personnelCode || ""}</div>
-        <div>${r.date || ""} ${r.time || ""}</div>
-        <div>${statusFa}</div>
-      را با این جایگزین کن:
-```js
-async function renderLastRecords() {
-  این جایگزین کن:
-
-```js
 async function renderLastRecords() {
   const list = $("lastRecords");
   if (!list) return;
@@ -1433,7 +1401,6 @@ async function renderLastRecords() {
   }
 
   const todayFa = new Date().toLocaleDateString("fa-IR");
-
   const all = await dbGetAll(STORE_RECORDS);
 
   const todayRecords = all
@@ -1444,7 +1411,7 @@ async function renderLastRecords() {
     .sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
 
   if (!todayRecords.length) {
-    list.innerHTML = "<div>امروز ترددی ثبت نشده است</div>";
+    list.innerHTML = "<div class='record-summary-empty'>امروز هیچ ترددی ثبت نشده است.</div>";
     return;
   }
 
@@ -1452,13 +1419,12 @@ async function renderLastRecords() {
   const last = todayRecords[todayRecords.length - 1];
 
   list.innerHTML = `
-    <div class="record-summary">
-      <div>⏱ اولین ورود: <b>${first.time}</b></div>
-      <div>⏱ آخرین ورود: <b>${last.time}</b></div>
+    <div class="record-summary" style="padding: 15px; border-radius: 12px; background: #f8f9fa; border: 1px solid #e9ecef; direction: rtl; font-family: Tahoma, sans-serif;">
+      <div style="margin-bottom: 8px; font-size: 14px; color: #495057;">⏱ ساعت اولین ورود امروز: <b style="color: #2b8a3e; font-size: 16px;">${first.time}</b></div>
+      <div style="font-size: 14px; color: #495057;">⏱ ساعت آخرین ورود امروز: <b style="color: #e8590c; font-size: 16px;">${last.time}</b></div>
     </div>
   `;
 }
-
 
 async function refreshUiFull() {
   await refreshUi();
@@ -1563,3 +1529,4 @@ async function preloadEmployeeDataIfPossible() {
 }
 
 window.preloadEmployeeDataIfPossible = preloadEmployeeDataIfPossible;
+</script>

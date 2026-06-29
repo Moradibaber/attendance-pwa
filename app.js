@@ -1067,7 +1067,7 @@ async function createRecord(type) {
     };
 
     await dbPut(STORE_RECORDS, record);
-
+    if (syncRunning) return;
     currentPhoto = "";
     pendingLocation = null;
 
@@ -1402,18 +1402,31 @@ async function renderLastRecords(limit = 10) {
   }
 
   const sorted = records
-    .sort((a, b) => b.createdAtMs - a.createdAtMs)
+    .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
     .slice(0, limit);
 
   container.innerHTML = sorted.map(r => `
-    <div style="padding:8px;border-bottom:1px solid #eee">
-      <div><b>${r.type === "in" ? "ورود" : "خروج"}</b></div>
-      <div>${r.date} ${r.time}</div>
-      <div style="font-size:12px;opacity:.7">
-        ${r.status === "synced" ? "ارسال شده ✅" :
-          r.status === "failed" ? "خطا ❌" :
-          "در انتظار ارسال ⏳"}
+    <div style="padding:10px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
+      
+      <div style="text-align:right">
+        <div style="font-weight:bold;color:#2c3e50">
+          ${r.type || "تردد"}
+        </div>
+        <div style="font-size:13px;color:#666;margin-top:4px">
+          ${formatPersianNumber(r.date)} - ${formatPersianNumber(r.time)}
+        </div>
       </div>
+
+      <div style="font-size:12px">
+        ${
+          r.status === "synced"
+            ? '<span style="color:#28a745">✅ ارسال شده</span>'
+            : r.status === "failed"
+            ? '<span style="color:#dc3545">❌ خطا</span>'
+            : '<span style="color:#ffc107">⏳ در انتظار</span>'
+        }
+      </div>
+
     </div>
   `).join("");
 }

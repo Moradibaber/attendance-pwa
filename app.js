@@ -40,22 +40,49 @@ let photoCompressedAtMs = 0;
 const $ = (id) => document.getElementById(id);
 
 document.addEventListener("DOMContentLoaded", async () => {
-  showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
 
-  db = await openDb();
+  try {
+    showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
+  } catch(e) {}
 
-  bindEvents();
-  await loadProfile();
-  await ensurePolicyLoadedAtStartup();
-  await refreshUi();
-  await fetchMessages();
-
-  setupAutoSync();
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+  try {
+    db = await openDb();
+  } catch(e) {
+    console.error("DB init error", e);
   }
+
+  try {
+    bindEvents();
+  } catch(e) {}
+
+  try {
+    await loadProfile();
+  } catch(e) {}
+
+  try {
+    await ensurePolicyLoadedAtStartup();
+  } catch(e) {}
+
+  try {
+    await refreshUi();
+  } catch(e) {}
+
+  try {
+    await fetchMessages();
+  } catch(e) {}
+
+  try {
+    setupAutoSync();
+  } catch(e) {}
+
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(()=>{});
+    }
+  } catch(e) {}
+
 });
+
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");

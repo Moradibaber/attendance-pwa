@@ -1391,7 +1391,6 @@ window.resendLastRecord = resendLastRecord;
 function formatPersianNumber(value) {
   return String(value ?? "").replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[d]);
 }
-
 async function renderLastRecords(limit = 10) {
   const all = await dbGetAll(STORE_RECORDS);
   const list = $("lastRecords");
@@ -1417,10 +1416,49 @@ async function renderLastRecords(limit = 10) {
         <div><b>${r.firstName || ""} ${r.lastName || ""}</b> - ${r.personnelCode || ""}</div>
         <div>${r.date || ""} ${r.time || ""}</div>
         <div>${statusFa}</div>
-      </div>
-    `;
-  }).join("");
+      را با این جایگزین کن:
+```js
+async function renderLastRecords() {
+  این جایگزین کن:
+
+```js
+async function renderLastRecords() {
+  const list = $("lastRecords");
+  if (!list) return;
+
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile?.personnelCode) {
+    list.innerHTML = "";
+    return;
+  }
+
+  const todayFa = new Date().toLocaleDateString("fa-IR");
+
+  const all = await dbGetAll(STORE_RECORDS);
+
+  const todayRecords = all
+    .filter(r =>
+      r.personnelCode === profile.personnelCode &&
+      r.date === todayFa
+    )
+    .sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
+
+  if (!todayRecords.length) {
+    list.innerHTML = "<div>امروز ترددی ثبت نشده است</div>";
+    return;
+  }
+
+  const first = todayRecords[0];
+  const last = todayRecords[todayRecords.length - 1];
+
+  list.innerHTML = `
+    <div class="record-summary">
+      <div>⏱ اولین ورود: <b>${first.time}</b></div>
+      <div>⏱ آخرین ورود: <b>${last.time}</b></div>
+    </div>
+  `;
 }
+
 
 async function refreshUiFull() {
   await refreshUi();

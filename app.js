@@ -785,30 +785,43 @@ function getSessionClockDriftMs() {
   return Math.round(drift);
 }
 
-async function getNetworkTimeDriftMs(deviceNowMs) {
-  try {
-    const controller = "AbortController" in window ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
+async function getNetworkTimeDriftMs(nowMs) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), 5000)
+    : null;
 
+  try {
     const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
       signal: controller ? controller.signal : undefined,
       cache: "no-store"
     });
 
-    if (timeoutId) clearTimeout(timeoutId);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      throw new Error(`HTTP_${response.status}`);
+    }
 
     const data = await response.json();
-    if (!data?.utc_datetime) return null;
+    const utcDate = data && data.utc_datetime ? new Date(data.utc_datetime) : null;
 
-    const networkMs = new Date(data.utc_datetime).getTime();
-    if (!networkMs || isNaN(networkMs)) return null;
+    if (!utcDate || isNaN(utcDate.getTime())) {
+      throw new Error("INVALID_UTC_RESPONSE");
+    }
 
-    return Math.abs(networkMs - deviceNowMs);
-  } catch (e) {
+    return utcDate.getTime() - nowMs;
+  } catch (err) {
+    console.warn("Network time drift fetch failed:", err);
+
+    if (navigator && navigator.onLine === false) {
+      return null;
+    }
+
     return null;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
+
 
 function calculateClockRisk(data) {
   const reasons = [];

@@ -696,8 +696,7 @@ async function createRecord(type) {
   const delayAfterFirstConnectionMs = "";
 
   const sessionClockDriftMs = getSessionClockDriftMs();
- const sessionClockDriftMs = getSessionClockDriftMs();
-  
+   
   // تعریف متغیر به صورت مستقل و بدون مسدود کردن اجرای کد
   let networkClockDriftMs = 0; 
   if (navigator.onLine) {

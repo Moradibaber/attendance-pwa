@@ -347,13 +347,13 @@ async function handlePhotoSelected() {
 
       setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
       return;
-    
+    }
     await createRecord("تردد");
-    catch (err) {
+    }catch (err) {
     console.error(err);
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
-
+}
 function openDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);

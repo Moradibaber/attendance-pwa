@@ -787,7 +787,7 @@ function getSessionClockDriftMs() {
 
 async function getNetworkTimeDriftMs(nowMs) {
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 5000) : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 4000) : null;
 
   try {
     const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
@@ -811,14 +811,11 @@ async function getNetworkTimeDriftMs(nowMs) {
 
     return utcDate.getTime() - nowMs;
   } catch (err) {
-    console.warn("Network time drift fetch failed:", err);
     return null;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
 }
-
-
 
 function calculateClockRisk(data) {
   const reasons = [];

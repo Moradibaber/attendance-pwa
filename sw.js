@@ -99,9 +99,11 @@ async function syncPendingRecordsInBackground() {
   body: JSON.stringify(record)
 });
 
-console.log("Status:", response.status);
-console.log("OK:", response.ok);
-console.log("Response Text:", await response.text());
+const text = await response.text();
+
+console.log("Sending to:", APPS_SCRIPT_URL);
+console.log("HTTP Status:", response.status);
+console.log("Response:", text);
 const result = {};
         if (result.ok) {
           record.status = "sent";

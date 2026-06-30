@@ -695,7 +695,8 @@ async function createRecord(type) {
   const uploadedAt = "";
   const delayAfterFirstConnectionMs = "";
 
-    const sessionClockDriftMs = getSessionClockDriftMs();
+     // --- ۱. محاسبه درایفت زمان ---
+  const sessionClockDriftMs = getSessionClockDriftMs();
   let networkClockDriftMs = 0;
 
   if (navigator.onLine) {
@@ -706,25 +707,14 @@ async function createRecord(type) {
       .catch(() => console.log("Network time skipped"));
   }
 
-  const risk = calculateClockRisk({
-    clickMs: clickMs,
-    nowMs: nowMs,
-    sessionClockDriftMs: sessionClockDriftMs,
-    networkClockDriftMs: networkClockDriftMs
-  });
-    clickMs,
-    gpsMs,
-    gpsWaitMs,
-    photoDelayMs,
-    submitDelayMs,
-    offlineCreated,
-    locationStatus: loc.status,
-    accuracy: loc.accuracy,
-    sessionClockDriftMs,
-    networkClockDriftMs
-  });
+  // --- ۲. محاسبه ریسک (اصلاح شده بر اساس ورودی‌های تابع) ---
+  const risk = calculateClockRisk(sessionClockDriftMs, networkClockDriftMs);
+
+  // --- ۳. ساخت شناسه یکتا ---
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-   const record = {
+
+  // --- ۴. تشکیل شیء رکورد برای ذخیره ---
+  const record = {
     clientRecordId,
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,

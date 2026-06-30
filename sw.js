@@ -110,18 +110,23 @@ const result = {};
           record.status = "failed";
           await dbPutInServiceWorker(db, STORE_RECORDS, record);
         }
-    } catch (err) {
+  } catch (err) {
 
-  console.error("SW Sync Error:", err);
-  console.error("URL:", APPS_SCRIPT_URL);
+        console.error("SW Sync Error:", err);
+        console.error("URL:", APPS_SCRIPT_URL);
 
-  record.status = "failed";
+        record.status = "failed";
+        await dbPutInServiceWorker(db, STORE_RECORDS, record);
+      }
 
-  await dbPutInServiceWorker(db, STORE_RECORDS, record);
-}
+    }   // ← بستن حلقه for
 
     await notifyClients("SYNC_COMPLETE");
-  } catch {
+
+  } catch (err) {
+
+    console.error("syncPendingRecordsInBackground Error:", err);
+
     await notifyClients("SYNC_FAILED");
   }
 }

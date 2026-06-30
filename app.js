@@ -1135,7 +1135,7 @@ async function syncPendingRecords() {
             setSyncStatus("ارسال توسط سیاست حضور و غیاب مجاز نیست.");
           }
         }
-
+      try{
         await dbPut(STORE_RECORDS, r);
       } catch (err) {
         r.status = "failed";
@@ -1143,7 +1143,7 @@ async function syncPendingRecords() {
           ok: false,
           error: err?.message || "network_error"
         });
-
+      }
         await dbPut(STORE_RECORDS, r);
       }
     }

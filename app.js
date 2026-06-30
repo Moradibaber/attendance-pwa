@@ -347,7 +347,7 @@ async function handlePhotoSelected() {
       return;
     }
     await createRecord("تردد");
-    }catch (err) {
+    }catch(err) {
     console.error(err);
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }

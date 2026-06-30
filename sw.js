@@ -87,7 +87,7 @@ async function syncPendingRecordsInBackground() {
     if (!list.length) {
       await notifyClients("SYNC_COMPLETE");
       return;
-    }
+    } 
 
     for (const record of list) {
       try {

@@ -1,8 +1,8 @@
-const CACHE_NAME = "attendance-pwa-v1"; 
+const CACHE_NAME = "attendance-pwa-v2"; 
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 4;
+const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 
 const APPS_SCRIPT_URL ="https://script.google.com/macros/s/AKfycbzCXbn278amilnb9NUMM_tpMMzspMLQ2s37dXJGWCXf5tx_8VLU2RN3pYjqQ2kA21t1/exec";

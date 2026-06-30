@@ -786,26 +786,20 @@ function getSessionClockDriftMs() {
   return Math.round(drift);
 }
 
-async function getNetworkTimeDriftMs(deviceNowMs) {
+async function getNetworkTimeDriftMs(localNowMs) {
   try {
-    const controller = "AbortController" in window ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
-
-    try {
-      const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
-        signal: controller ? controller.signal : undefined,
-        cache: "no-store"
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const data = await response.json(); 
-
-      if (!data || !data.utc_datetime) {
-        return null;
-      }
+    const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", { 
+      signal: AbortSignal.timeout(3000) // بعد از ۳ ثانیه بیخیال شود
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const networkMs = new Date(data.utc_datetime).getTime();
+    return networkMs - localNowMs;
+  } catch (e) {
+    // اینجا خطا قورت داده می‌شود تا برنامه کرش نکند
+    return null;
+  }
+}
 
       const serverUtcMs = new Date(data.utc_datetime).getTime();
       if (!Number.isFinite(serverUtcMs)) {

@@ -104,23 +104,16 @@ const text = await response.text();
 console.log("Sending to:", APPS_SCRIPT_URL);
 console.log("HTTP Status:", response.status);
 console.log("Response:", text);
-const result = {};
-        if (result.ok) {
-          record.status = "sent";
-          await dbPutInServiceWorker(db, STORE_RECORDS, record);
-        } else {
-          record.status = "failed";
-          await dbPutInServiceWorker(db, STORE_RECORDS, record);
-        }
-  } catch (err) {
 
-        console.error("SW Sync Error:", err);
-        console.error("URL:", APPS_SCRIPT_URL);
+const result = JSON.parse(text);
 
-        record.status = "failed";
-        await dbPutInServiceWorker(db, STORE_RECORDS, record);
-      }
-
+if (result.ok) {
+    record.status = "sent";
+    await dbPutInServiceWorker(db, STORE_RECORDS, record);
+} else {
+    record.status = "failed";
+    await dbPutInServiceWorker(db, STORE_RECORDS, record);
+}
     }   // ← بستن حلقه for
 
     await notifyClients("SYNC_COMPLETE");

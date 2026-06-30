@@ -31,43 +31,28 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-
-  if (event.request.method !== "GET") {
-    return;
-  }
-
-  if (
-    url.pathname.endsWith("/app.js") ||
-    url.pathname.endsWith("/styles.css") ||
-    url.pathname.endsWith("/index.html") ||
-    url.pathname.endsWith("/manifest.json") ||
-    url.pathname === "/" ||
-    url.pathname.endsWith("/")
-  ) {
+self.addEventListener('fetch', (event) => {
+  // اگر درخواست به APIهای خارجی (مثل ساعت جهانی) است، اصلاً سراغ کش نرو
+  if (event.request.url.includes('worldtimeapi.org')) {
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, copy);
-          });
-
-          return response;
-        })
-        .catch(() => {
-          return caches.match(event.request);
-        })
+      fetch(event.request).catch(() => {
+        return new Response(JSON.stringify({ error: "Network unavailable" }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      })
     );
-
     return;
   }
 
+  // برای بقیه درخواست‌ها (فایل‌های خود برنامه)
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request);
+    caches.match(event.request).then((cachedResponse) => {
+      // اگر در کش بود که همان را برگردان، وگرنه از شبکه بگیر
+      return cachedResponse || fetch(event.request).catch(() => {
+        // اگر شبکه هم قطع بود و در کش هم نبود، اینجا خطا نده
+        console.warn("Fetch failed and not in cache:", event.request.url);
+        return new Response("Offline Content Not Available");
+      });
     })
   );
 });

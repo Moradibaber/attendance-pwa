@@ -1493,4 +1493,4 @@ function escapeHtml(v) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}  
+}

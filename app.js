@@ -787,9 +787,7 @@ function getSessionClockDriftMs() {
 
 async function getNetworkTimeDriftMs(nowMs) {
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeoutId = controller
-    ? setTimeout(() => controller.abort(), 5000)
-    : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 5000) : null;
 
   try {
     const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
@@ -798,29 +796,28 @@ async function getNetworkTimeDriftMs(nowMs) {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP_${response.status}`);
+      return null;
     }
 
     const data = await response.json();
-    const utcDate = data && data.utc_datetime ? new Date(data.utc_datetime) : null;
+    if (!data || !data.utc_datetime) {
+      return null;
+    }
 
-    if (!utcDate || isNaN(utcDate.getTime())) {
-      throw new Error("INVALID_UTC_RESPONSE");
+    const utcDate = new Date(data.utc_datetime);
+    if (isNaN(utcDate.getTime())) {
+      return null;
     }
 
     return utcDate.getTime() - nowMs;
   } catch (err) {
     console.warn("Network time drift fetch failed:", err);
-
-    if (navigator && navigator.onLine === false) {
-      return null;
-    }
-
     return null;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
 }
+
 
 
 function calculateClockRisk(data) {

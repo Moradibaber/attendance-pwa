@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v56"; 
+const CACHE_NAME = "attendance-pwa-v57"; 
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 const DB_NAME = "attendance-pwa-db";
@@ -32,19 +32,9 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // خارج کردن کامل درخواست‌های ساعت جهانی از حیطه مدیریت سرویس‌ورکر
   if (event.request.url.includes('worldtimeapi.org')) {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(
-          JSON.stringify({ error: true, utc_datetime: null }), 
-          {
-            status: 503,
-            headers: { 'Content-Type': 'application/json' }
-          }
-        );
-      })
-    );
-    return;
+    return; 
   }
 
   event.respondWith(
@@ -56,7 +46,6 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
-
 
 async function syncPendingRecordsInBackground() {
   try {

@@ -91,16 +91,18 @@ async function syncPendingRecordsInBackground() {
 
     for (const record of list) {
       try {
-        const response = await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(record)
-        });
+       const response = await fetch(APPS_SCRIPT_URL, {
+  method: "POST",
+  headers: {
+    "Content-Type": "text/plain;charset=utf-8"
+  },
+  body: JSON.stringify(record)
+});
 
-        const result = await response.json().catch(() => ({}));
-
+console.log("Status:", response.status);
+console.log("OK:", response.ok);
+console.log("Response Text:", await response.text());
+const result = {};
         if (result.ok) {
           record.status = "sent";
           await dbPutInServiceWorker(db, STORE_RECORDS, record);
@@ -108,11 +110,15 @@ async function syncPendingRecordsInBackground() {
           record.status = "failed";
           await dbPutInServiceWorker(db, STORE_RECORDS, record);
         }
-      } catch {
-        record.status = "failed";
-        await dbPutInServiceWorker(db, STORE_RECORDS, record);
-      }
-    }
+    } catch (err) {
+
+  console.error("SW Sync Error:", err);
+  console.error("URL:", APPS_SCRIPT_URL);
+
+  record.status = "failed";
+
+  await dbPutInServiceWorker(db, STORE_RECORDS, record);
+}
 
     await notifyClients("SYNC_COMPLETE");
   } catch {

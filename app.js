@@ -1145,9 +1145,7 @@ async function syncPendingRecords() {
         });
       }
         await dbPut(STORE_RECORDS, r);
-      }
-    }
-
+      
     setSyncStatus("ارسال انجام شد");
     await refreshUi();
     await fetchMessages(); // ***** این تابع پیام‌ها را می‌فرستد *****

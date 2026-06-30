@@ -695,27 +695,22 @@ async function createRecord(type) {
   const uploadedAt = "";
   const delayAfterFirstConnectionMs = "";
 
-   const sessionClockDriftMs = getSessionClockDriftMs();
-  
-  // ۱. مقدار را ابتدا صفر فرض می‌کنیم
-  let networkClockDriftMs = 0; 
+    const sessionClockDriftMs = getSessionClockDriftMs();
+  let networkClockDriftMs = 0;
 
-  // ۲. درخواست را می‌فرستیم ولی منتظر پاسخ نمی‌مانیم (حذف await)
   if (navigator.onLine) {
-    getNetworkTimeDriftMs(nowMs).then(drift => {
-      if (drift !== null) networkClockDriftMs = drift;
-    }).catch(() => {
-      // اینجا خطا مدیریت شده و برنامه متوقف نمی‌شود
-      console.log("Using local time due to network error.");
-    });
+    getNetworkTimeDriftMs(nowMs)
+      .then(drift => {
+        if (drift !== null) networkClockDriftMs = drift;
+      })
+      .catch(() => console.log("Network time skipped"));
   }
 
-  // ۳. بقیه کدها بلافاصله اجرا می‌شوند و معطل خطای قرمز نمی‌مانند
   const risk = calculateClockRisk({
-    clickMs,
-    nowMs,
-    sessionClockDriftMs,
-    networkClockDriftMs // در صورت خطا، با همان مقدار 0 ارسال می‌شود
+    clickMs: clickMs,
+    nowMs: nowMs,
+    sessionClockDriftMs: sessionClockDriftMs,
+    networkClockDriftMs: networkClockDriftMs
   });
     clickMs,
     gpsMs,

@@ -1,7 +1,7 @@
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
-const STORE_PROFILE = "https://script.google.com/macros/s/AKfycbzCXbn278amilnb9NUMM_tpMMzspMLQ2s37dXJGWCXf5tx_8VLU2RN3pYjqQ2kA21t1/execprofile";
+const STORE_PROFILE ="https://script.google.com/macros/s/AKfycbzCXbn278amilnb9NUMM_tpMMzspMLQ2s37dXJGWCXf5tx_8VLU2RN3pYjqQ2kA21t1/exec";
 const STORE_CONFIG = "config";
 const APPS_SCRIPT_URL = 
 const GPS_WAIT_MS = 90000;

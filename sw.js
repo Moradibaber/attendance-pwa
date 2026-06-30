@@ -31,7 +31,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-self.addEventListener("fetch", (event) => {
+self.addEventener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   if (event.request.method !== "GET") {
@@ -89,43 +89,54 @@ async function syncPendingRecordsInBackground() {
       return;
     } 
 
-    for (const record of list) {
-      try {
-       const response = await fetch(APPS_SCRIPT_URL, {
-  method: "POST",
-  headers: {
-    "Content-Type": "text/plain;charset=utf-8"
-  },
-  body: JSON.stringify(record)
-});
+  for (const record of list) {
 
-const text = await response.text();
+  try {
 
-console.log("Sending to:", APPS_SCRIPT_URL);
-console.log("HTTP Status:", response.status);
-console.log("Response:", text);
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(record)
+    });
 
-const result = JSON.parse(text);
+    const text = await response.text();
 
-if (result.ok) {
-    record.status = "sent";
+    console.log("Sending to:", APPS_SCRIPT_URL);
+    console.log("HTTP Status:", response.status);
+    console.log("Response:", text);
+
+    const result = JSON.parse(text);
+
+    if (result.ok) {
+      record.status = "sent";
+    } else {
+      record.status = "failed";
+    }
+
     await dbPutInServiceWorker(db, STORE_RECORDS, record);
-} else {
-    record.status = "failed";
-    await dbPutInServiceWorker(db, STORE_RECORDS, record);
-}
-    }   // ← بستن حلقه for
-
-    await notifyClients("SYNC_COMPLETE");
 
   } catch (err) {
 
-    console.error("syncPendingRecordsInBackground Error:", err);
+    console.error("SW Sync Error:", err);
+    console.error("URL:", APPS_SCRIPT_URL);
 
-    await notifyClients("SYNC_FAILED");
+    record.status = "failed";
+    await dbPutInServiceWorker(db, STORE_RECORDS, record);
+
   }
-}
 
+}   // پایان حلقه for
+
+await notifyClients("SYNC_COMPLETE");
+
+} catch (err) {
+
+  console.error("syncPendingRecordsInBackground Error:", err);
+
+  await notifyClients("SYNC_FAILED");
+}
 function openDbInServiceWorker() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);

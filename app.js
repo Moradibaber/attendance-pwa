@@ -723,10 +723,8 @@ async function createRecord(type) {
     sessionClockDriftMs,
     networkClockDriftMs
   });
-
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
-  const record = {
+   const record = {
     clientRecordId,
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,

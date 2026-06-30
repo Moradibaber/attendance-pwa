@@ -5,7 +5,7 @@ const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 4;
 const STORE_RECORDS = "records";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpdfapAKi9QLxdam2ZfAakx9Ygf0XwOOPrmz9K__6wfaemr-2qhpJEFusapw9JJyvZ/exec";
+const APPS_SCRIPT_URL =  "https://script.google.com/macros/s/AKfycbzrnRxZ2XkVKll_Thp_RVm0JlJTndxU8NX_ZIcoQ2_XKeVsZOuiY6gxyNyG5mPijwNf/exec";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

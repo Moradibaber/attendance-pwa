@@ -32,36 +32,31 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // اگر درخواست به APIهای خارجی (مثل ساعت جهانی) است، اصلاً سراغ کش نرو
   if (event.request.url.includes('worldtimeapi.org')) {
     event.respondWith(
       fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: "Network unavailable" }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return new Response(
+          JSON.stringify({ error: true, utc_datetime: null }), 
+          {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
       })
     );
     return;
   }
 
-  // برای بقیه درخواست‌ها (فایل‌های خود برنامه)
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      // اگر در کش بود که همان را برگردان، وگرنه از شبکه بگیر
       return cachedResponse || fetch(event.request).catch(() => {
-        // اگر شبکه هم قطع بود و در کش هم نبود، اینجا خطا نده
         console.warn("Fetch failed and not in cache:", event.request.url);
-        return new Response("Offline Content Not Available");
+        return new Response("Offline Content Not Available", { status: 503 });
       });
     })
   );
 });
 
-self.addEventListener("sync", (event) => {
-  if (event.tag === "attendance-sync") {
-    event.waitUntil(syncPendingRecordsInBackground());
-  }
-});
 
 async function syncPendingRecordsInBackground() {
   try {

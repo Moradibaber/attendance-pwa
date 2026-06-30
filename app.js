@@ -1,5 +1,5 @@
 const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 4;
+const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";

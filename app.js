@@ -696,9 +696,24 @@ async function createRecord(type) {
   const delayAfterFirstConnectionMs = "";
 
   const sessionClockDriftMs = getSessionClockDriftMs();
-  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+ const sessionClockDriftMs = getSessionClockDriftMs();
+  
+  // تعریف متغیر به صورت مستقل و بدون مسدود کردن اجرای کد
+  let networkClockDriftMs = 0; 
+  if (navigator.onLine) {
+    getNetworkTimeDriftMs(nowMs)
+      .then(drift => {
+        if (drift !== null) {
+          networkClockDriftMs = drift;
+        }
+      })
+      .catch(() => {
+        console.log("Network time failed, using local time.");
+      });
+  }
 
   const risk = calculateClockRisk({
+    clickMs,
     clickMs,
     gpsMs,
     gpsWaitMs,

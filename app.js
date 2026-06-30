@@ -1101,22 +1101,16 @@ async function syncPendingRecords() {
 
       try {
         const payload = buildServerPayload(r);
-         console.log("ارسال به سرور", payload);
-      const res = await fetch(APPS_SCRIPT_URL, {
-  method: "POST",
-  headers:{
-    "Content-Type":"application/json"
-}
-  body: JSON.stringify(payload)
-});
 
-console.log("HTTP Status:", res.status);
+        const res = await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          },
+          body: JSON.stringify(payload)
+        });
 
-const text = await res.text();
-
-console.log("Server Response:", text);
-
-const result = JSON.parse(text);
+        const result = await res.json().catch(() => ({}));
 
         if (result.attendancePolicy || result.policyVersion !== undefined) {
           await saveAttendancePolicyInfo({

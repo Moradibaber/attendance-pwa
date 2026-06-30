@@ -696,7 +696,7 @@ async function createRecord(type) {
   const delayAfterFirstConnectionMs = "";
 
   const sessionClockDriftMs = getSessionClockDriftMs();
- const networkClockDriftMs = "";
+  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
 
   const risk = calculateClockRisk({
     clickMs,

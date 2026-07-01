@@ -4,7 +4,7 @@ const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzCXbn278amilnb9NUMM_tpMMzspMLQ2s37dXJGWCXf5tx_8VLU2RN3pYjqQ2kA21t1/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzu2XYEEH0xdNI73WeuENlsGvEZGuKonQE7a1HQkcaYJ2Fg4VY2MHGkALd6W-Zn0JJi/exec";
 
 const GPS_WAIT_MS = 90000;
 const GPS_RETRY_MS = 30000;

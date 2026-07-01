@@ -790,10 +790,16 @@ async function getNetworkTimeDriftMs(deviceNowMs) {
     const controller = "AbortController" in window ? new AbortController() : null;
     const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
 
-    const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
-      signal: controller ? controller.signal : undefined,
-      cache: "no-store"
-    });
+    // const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
+    //   signal: controller ? controller.signal : undefined,
+    //   cache: "no-store"
+    // });
+    const response = {
+  ok: true,
+  json: async () => ({
+    datetime: new Date().toISOString()
+  })
+};
 
     if (timeoutId) clearTimeout(timeoutId);
     if (!response.ok) return null;

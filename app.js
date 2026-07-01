@@ -1368,12 +1368,37 @@ window.addEventListener('offline', function() {
   sendStatusToGAS("آفلاین");
 });
 
+// ==========================================
+// PWA Frontend: Place this block right before the closing </body> tag in your index.html,
+// or at the very end of your main JavaScript file (e.g., app.js, script.js, or index.js).
+// ==========================================
+
+window.addEventListener('online', function() {
+  sendStatusToGAS("آنلاین");
+});
+
+window.addEventListener('offline', function() {
+  sendStatusToGAS("آفلاین");
+});
+
 function sendStatusToGAS(status) {
+  var storedPersonnelCode = "";
+  var storedFirstName = "";
+  var storedLastName = "";
+
+  try {
+    storedPersonnelCode = localStorage.getItem("personnelCode") || "";
+    storedFirstName = localStorage.getItem("firstName") || "";
+    storedLastName = localStorage.getItem("lastName") || "";
+  } catch (e) {
+    console.error("LocalStorage read error", e);
+  }
+
   var payload = {
     type: "ConnectionStatus",
-    personnelCode: localStorage.getItem("personnelCode") || "N/A",
-    firstName: localStorage.getItem("firstName") || "N/A",
-    lastName: localStorage.getItem("lastName") || "N/A",
+    personnelCode: storedPersonnelCode,
+    firstName: storedFirstName,
+    lastName: storedLastName,
     connectionStatusFa: status,
     deviceTime: new Date().toISOString()
   };
@@ -1389,3 +1414,4 @@ function sendStatusToGAS(status) {
     console.error("Failed to sync connection status", err);
   });
 }
+

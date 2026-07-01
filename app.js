@@ -1494,6 +1494,7 @@ adminMessageShownOnEntry = true;
 }
 
 function escapeHtml(v) {
+  if (!v) return ""; 
   return String(v)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")

@@ -1241,12 +1241,13 @@ async function syncPendingRecords() {
         console.log("داده ارسالی به گوگل:", payload);
 
         const res = await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(payload)
-        });
+  method: "POST",
+  mode: "cors", // برای رفع محدودیت‌های CORS مرورگر
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify(payload)
+});
 
         console.log("کد وضعیت پاسخ گوگل (Status Code):", res.status);
 

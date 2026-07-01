@@ -14,7 +14,7 @@ const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
 
 const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbzu2XYEEH0xdNI73WeuENlsGvEZGuKonQE7a1HQkcaYJ2Fg4VY2MHGkALd6W-Zn0JJi/exec";
+  "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
 
 const GPS_RETRY_MS = 30000;
 const GOOD_ACCURACY_METERS = 1000;

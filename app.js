@@ -12,6 +12,7 @@ const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
 
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
@@ -1414,4 +1415,58 @@ function sendStatusToGAS(status) {
     console.error("Failed to sync connection status", err);
   });
 }
+function sendConnectionStatus(status){
+
+  if(!currentUser || !currentUser.personnelCode) return;
+
+  const payload = {
+    type: "ConnectionStatus",
+    personnelCode: currentUser.personnelCode,
+    firstName: currentUser.firstName,
+    lastName: currentUser.lastName,
+    connectionStatusFa: status
+  };
+
+  fetch(GAS_URL,{
+    method: "POST",
+    headers:{
+      "Content-Type":"application/json"
+    },
+    body: JSON.stringify(payload)
+  }).catch(()=>{});
+
+}
+function startHeartbeat(){
+
+  setInterval(()=>{
+
+    if(!currentUser) return;
+
+    if(navigator.onLine){
+      sendConnectionStatus("آنلاین");
+    }else{
+      sendConnectionStatus("آفلاین");
+    }
+
+  },30000);
+
+}
+window.addEventListener("online",()=>{
+  sendConnectionStatus("آنلاین");
+});
+
+window.addEventListener("offline",()=>{
+  sendConnectionStatus("آفلاین");
+});
+document.addEventListener("DOMContentLoaded",()=>{
+
+  if(navigator.onLine){
+    sendConnectionStatus("آنلاین");
+  }else{
+    sendConnectionStatus("آفلاین");
+  }
+
+  startHeartbeat();
+
+});
 

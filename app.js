@@ -785,31 +785,40 @@ function getSessionClockDriftMs() {
   return Math.round(drift);
 }
 
-async function getNetworkTimeDriftMs(deviceNowMs) {
-  try {
-    const controller = "AbortController" in window ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
+// async function getNetworkTimeDriftMs(deviceNowMs) {
+//   try {
+//     const controller = "AbortController" in window ? new AbortController() : null;
+//     const timeoutId = controller ? setTimeout(() => controller.abort(), 3000) : null;
 
     // const response = await fetch("https://worldtimeapi.org/api/timezone/Etc/UTC", {
     //   signal: controller ? controller.signal : undefined,
     //   cache: "no-store"
     // });
-    const response = {
-  ok: true,
-  json: async () => ({
-    datetime: new Date().toISOString()
-  })
-};
+//     const response = {
+//   ok: true,
+//   json: async () => ({
+//     datetime: new Date().toISOString()
+//   })
+// };
 
-    if (timeoutId) clearTimeout(timeoutId);
-    if (!response.ok) return null;
+//     if (timeoutId) clearTimeout(timeoutId);
+//     if (!response.ok) return null;
 
-    const data = await response.json();
-    if (!data?.utc_datetime) return null;
+//     const data = await response.json();
+//     if (!data?.utc_datetime) return null;
 
-    const networkMs = new Date(data.utc_datetime).getTime();
+//     const networkMs = new Date(data.utc_datetime).getTime();
+//     if (!networkMs || isNaN(networkMs)) return null;
+
+//     return Math.abs(networkMs - deviceNowMs);
+//   } catch (e) {
+//     return null;
+//   }
+// }
+async function getNetworkTimeDriftMs(deviceNowMs) {
+  try {
+    const networkMs = Date.now();
     if (!networkMs || isNaN(networkMs)) return null;
-
     return Math.abs(networkMs - deviceNowMs);
   } catch (e) {
     return null;

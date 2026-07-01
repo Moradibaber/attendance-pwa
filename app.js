@@ -1053,6 +1053,128 @@ for (const r of list) {
   } catch (e) {}
 }
 
+// async function syncPendingRecords() {
+//   if (syncRunning || !navigator.onLine) return;
+
+//   syncRunning = true;
+
+//   try {
+//     const policyInfo = await refreshPolicyIfPossible() || await getAttendancePolicyInfo();
+//     const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, navigator.onLine);
+
+//     if (!syncGate.ok) {
+//       setSyncStatus(syncGate.message);
+//       return;
+//     }
+
+//     await markFirstConnectionForOfflineRecords();
+
+//     const records = await dbGetAll(STORE_RECORDS);
+//     const list = records.filter((r) => r.status === "pending" || r.status === "failed");
+
+//     if (!list.length) {
+//       setSyncStatus("چیزی برای ارسال نیست");
+//       return;
+//     }
+
+//     setSyncStatus("در حال ارسال...");
+
+//     for (const r of list) {
+//       if (r.status === "sent" || r.status === "syncing") continue;
+
+//       const uploadStartIso = new Date().toISOString();
+//       const uploadStartMs = new Date(uploadStartIso).getTime();
+
+//       r.status = "syncing";
+//       r.lastSyncTryAt = uploadStartIso;
+//       r.lastConnectionBeforeUpload = uploadStartIso;
+//       r.syncTryCount = Number(r.syncTryCount || 0) + 1;
+
+//       if (r.offlineCreated !== true && !r.connectionStatus) {
+//         r.connectionStatus = "online";
+//         r.connectionStatusFa = "آنلاین";
+//         r.createdOnline = true;
+//       } else if (r.offlineCreated === true && !r.connectionStatus) {
+//          r.connectionStatus = "offline";
+//          r.connectionStatusFa = "آفلاین";
+//          r.createdOnline = false;
+//       }
+
+//       if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
+//         r.firstConnectionAfterOfflineRecord = uploadStartIso;
+//       }
+
+//       if (r.firstConnectionAfterOfflineRecord) {
+//         const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
+//         if (firstConnectionMs && !isNaN(firstConnectionMs)) {
+//           r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
+//         }
+//       }
+
+//       await dbPut(STORE_RECORDS, r);
+//       await refreshUi();
+
+//       try {
+//         const payload = buildServerPayload(r);
+
+//         const res = await fetch(APPS_SCRIPT_URL, {
+//           method: "POST",
+//           headers: {
+//             "Content-Type": "text/plain;charset=utf-8"
+//           },
+//           body: JSON.stringify(payload)
+//         });
+
+//         const result = await res.json().catch(() => ({}));
+
+//         if (result.attendancePolicy || result.policyVersion !== undefined) {
+//           await saveAttendancePolicyInfo({
+//             personnelCode: r.personnelCode || "",
+//             attendancePolicy: result.attendancePolicy || policyInfo?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+//             policyVersion: Number(result.policyVersion || 0),
+//             policyFetchedAt: new Date().toISOString(),
+//             policySource: "server_response"
+//           });
+//         }
+
+//         r.serverResponse = JSON.stringify(result || {});
+
+//         if (result.ok) {
+//           const sentIso = new Date().toISOString();
+
+//           r.status = "sent";
+//           r.syncedAt = sentIso;
+//           r.uploadedAt = sentIso;
+
+//           // ***** بلاک نمایش result.message حذف شد *****
+
+//         } else {
+//           r.status = "failed";
+
+//           if (result?.error === "POLICY_VIOLATION") {
+//             setSyncStatus("ارسال توسط سیاست حضور و غیاب مجاز نیست.");
+//           }
+//         }
+
+//         await dbPut(STORE_RECORDS, r);
+//       } catch (err) {
+//         r.status = "failed";
+//         r.serverResponse = JSON.stringify({
+//           ok: false,
+//           error: err?.message || "network_error"
+//         });
+
+//         await dbPut(STORE_RECORDS, r);
+//       }
+//     }
+
+//     setSyncStatus("ارسال انجام شد");
+//     await refreshUi();
+//     await fetchMessages(); // ***** این تابع پیام‌ها را می‌فرستد *****
+//   } finally {
+//     syncRunning = false;
+//   }
+// }
 async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
 
@@ -1116,6 +1238,7 @@ async function syncPendingRecords() {
 
       try {
         const payload = buildServerPayload(r);
+        console.log("داده ارسالی به گوگل:", payload);
 
         const res = await fetch(APPS_SCRIPT_URL, {
           method: "POST",
@@ -1125,7 +1248,14 @@ async function syncPendingRecords() {
           body: JSON.stringify(payload)
         });
 
-        const result = await res.json().catch(() => ({}));
+        console.log("کد وضعیت پاسخ گوگل (Status Code):", res.status);
+
+        const result = await res.json().catch((e) => {
+          console.error("پاسخ گوگل فرمت JSON نبود یا خطا داشت:", e);
+          return {};
+        });
+
+        console.log("پاسخ دریافتی از سرور گوگل:", result);
 
         if (result.attendancePolicy || result.policyVersion !== undefined) {
           await saveAttendancePolicyInfo({
@@ -1141,16 +1271,14 @@ async function syncPendingRecords() {
 
         if (result.ok) {
           const sentIso = new Date().toISOString();
-
           r.status = "sent";
           r.syncedAt = sentIso;
           r.uploadedAt = sentIso;
-
-          // ***** بلاک نمایش result.message حذف شد *****
-
+          console.log("تردد با موفقیت در گوگل‌شیت ثبت شد.");
         } else {
           r.status = "failed";
-
+          console.warn("گوگل درخواست را رد کرد. دلیل:", result.message || result.error || "نامشخص");
+          
           if (result?.error === "POLICY_VIOLATION") {
             setSyncStatus("ارسال توسط سیاست حضور و غیاب مجاز نیست.");
           }
@@ -1159,6 +1287,7 @@ async function syncPendingRecords() {
         await dbPut(STORE_RECORDS, r);
       } catch (err) {
         r.status = "failed";
+        console.error("خطا در شبکه یا فرآیند Fetch:", err);
         r.serverResponse = JSON.stringify({
           ok: false,
           error: err?.message || "network_error"
@@ -1170,7 +1299,7 @@ async function syncPendingRecords() {
 
     setSyncStatus("ارسال انجام شد");
     await refreshUi();
-    await fetchMessages(); // ***** این تابع پیام‌ها را می‌فرستد *****
+    await fetchMessages();
   } finally {
     syncRunning = false;
   }

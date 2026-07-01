@@ -1360,4 +1360,32 @@ function compressImage(file) {
     reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
     reader.readAsDataURL(file);
   });
+}window.addEventListener('online', function() {
+  sendStatusToGAS("آنلاین");
+});
+
+window.addEventListener('offline', function() {
+  sendStatusToGAS("آفلاین");
+});
+
+function sendStatusToGAS(status) {
+  var payload = {
+    type: "ConnectionStatus",
+    personnelCode: localStorage.getItem("personnelCode") || "N/A",
+    firstName: localStorage.getItem("firstName") || "N/A",
+    lastName: localStorage.getItem("lastName") || "N/A",
+    connectionStatusFa: status,
+    deviceTime: new Date().toISOString()
+  };
+
+  fetch("YOUR_GAS_WEB_APP_URL", {
+    method: "POST",
+    mode: "no-cors",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  }).catch(function(err) {
+    console.error("Failed to sync connection status", err);
+  });
 }

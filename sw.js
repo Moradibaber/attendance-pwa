@@ -4,7 +4,7 @@ const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 const DB_NAME = "attendance-pwa-db"; 
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzu2XYEEH0xdNI73WeuENlsGvEZGuKonQE7a1HQkcaYJ2Fg4VY2MHGkALd6W-Zn0JJi/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {

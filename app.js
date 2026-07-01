@@ -6,20 +6,23 @@
    - treat success as "queued/sent" and rely on server-side Debug sheet
    ========================= */
 
-const DB_NAME = "attendance-pwa-db";n
+const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
+// **IMPORTANT**: Replace with your actual deployed Google Apps Script Web App URL
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
 
 const GPS_RETRY_MS = 30000;
 const GOOD_ACCURACY_METERS = 1000;
 const GPS_REQUIRED = true;
 
 const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
+
+const APP_SESSION_START_WALL_MS = Date.now();
+const APP_SESSION_START_PERF_MS = performance.now();
 
 const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
 const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
@@ -28,9 +31,6 @@ const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
 const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
 const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
 const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
-
-const APP_SESSION_START_WALL_MS = Date.now();
-const APP_SESSION_START_PERF_MS = performance.now();
 
 let db = null;
 let currentPhoto = "";
@@ -520,7 +520,8 @@ async function refreshPolicyIfPossible() {
 
   try {
     const url =
-      `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
+      GAS_URL + // Corrected from APPS_SCRIPT_URL
+      "?action=getUserPolicy&personnelCode=" +
       encodeURIComponent(profile.personnelCode);
 
     const res = await fetch(url, { method: "GET", cache: "no-store" });
@@ -880,9 +881,9 @@ async function syncPendingRecords() {
       try {
         const payload = buildServerPayload(r);
 
-        await fetch(APPS_SCRIPT_URL, {
+        await fetch(GAS_URL, {
           method: "POST",
-          mode: "no-cors",
+          mode: "no-cors", // Consider removing this if you need to handle GAS responses
           headers: {
             "Content-Type": "text/plain;charset=utf-8"
           },
@@ -893,7 +894,7 @@ async function syncPendingRecords() {
         r.status = "sent";
         r.syncedAt = sentIso;
         r.uploadedAt = sentIso;
-        r.serverResponse = "opaque_no_cors";
+        r.serverResponse = "opaque_no_cors"; // Mark as opaque due to no-cors
         await dbPut(STORE_RECORDS, r);
       } catch (err) {
         r.status = "failed";
@@ -1047,7 +1048,7 @@ async function fetchMessages() {
     if (!profile?.personnelCode) return;
 
     const url =
-      APPS_SCRIPT_URL +
+      GAS_URL + // Corrected from APPS_SCRIPT_URL
       "?action=getMessages&personnelCode=" +
       encodeURIComponent(profile.personnelCode);
 
@@ -1359,13 +1360,24 @@ function compressImage(file) {
     reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
     reader.readAsDataURL(file);
   });
+} // <-- Closing brace for compressImage was here
+
+
+// ==========================================
+// Connection Status and Heartbeat Logic
+// ==========================================
+
+// Check if currentUser is defined (might be populated later by auth logic)
+// If not defined, we fall back to localStorage
+let currentUser = typeof currentUser !== 'undefined' ? currentUser : null;
+
 function sendConnectionStatus(status) {
   let personnelCode = "";
   let firstName = "";
   let lastName = "";
 
-  // Prioritize currentUser object if available
-  if (typeof currentUser !== 'undefined' && currentUser && currentUser.personnelCode) {
+  // Prioritize currentUser object if available and populated
+  if (currentUser && currentUser.personnelCode) {
     personnelCode = currentUser.personnelCode;
     firstName = currentUser.firstName || "";
     lastName = currentUser.lastName || "";
@@ -1419,7 +1431,11 @@ function sendConnectionStatus(status) {
 // --- Heartbeat Function ---
 // Sends status updates periodically (e.g., every 30 seconds)
 function startHeartbeat() {
-  setInterval(() => {
+  // Ensure heartbeat is only set up once
+  if (window.heartbeatInterval) {
+      clearInterval(window.heartbeatInterval);
+  }
+  window.heartbeatInterval = setInterval(() => {
     const currentStatus = navigator.onLine ? "آنلاین" : "آفلاین";
     sendConnectionStatus(currentStatus);
   }, 30000); // 30000 milliseconds = 30 seconds

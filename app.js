@@ -6,7 +6,7 @@
    - treat success as "queued/sent" and rely on server-side Debug sheet
    ========================= */
 
-const DB_NAME = "attendance-pwa-db";
+const DB_NAME = "attendance-pwa-db";n
 const DB_VERSION = 3;
 
 const STORE_RECORDS = "records";

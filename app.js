@@ -1441,5 +1441,45 @@ window.addEventListener("offline", () => {
 
 // Helper for manual console testing
 window.testStatus = () => sendConnectionStatus("Test Online");
+// این را در app.js (Frontend) قرار دهید
+window.testSendConnectionStatusMany = async function () {
+  const personnelCode = 
+    (document.querySelector('[name="personnelCode"]') || {}).value || 
+    (window.currentUser && currentUser.personnelCode) || 
+    localStorage.getItem("personnelCode") || 
+    "20000745";
+
+  const fullName = 
+    (document.querySelector('[name="fullName"]') || {}).value || 
+    (window.currentUser && currentUser.fullName) || 
+    localStorage.getItem("fullName") || 
+    "Test User";
+
+  const statuses = ["آنلاین", "آفلاین", "آنلاین", "آفلاین", "آنلاین"];
+
+  for (const st of statuses) {
+    const payload = {
+      type: "ConnectionStatus",
+      personnelCode: personnelCode,
+      fullName: fullName,
+      connectionStatusFa: st,
+      online: st === "آنلاین"
+    };
+
+    console.log("Sending to Server:", payload);
+
+    try {
+      await fetch(GAS_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      console.error("Fetch Error:", err);
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+};
 
 

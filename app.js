@@ -1481,5 +1481,65 @@ window.testSendConnectionStatusMany = async function () {
     await new Promise(r => setTimeout(r, 1000));
   }
 };
+window.testSendAttendance = async function () {
+  const payload = {
+    personnelCode: "20000745",
+    firstName: "Test",
+    lastName: "User",
+    recordDate: new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tehran",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date()).replace(/-/g, "/"),
+    recordHour: new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Tehran",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(new Date()),
+    recordTime: new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Tehran",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(new Date()),
+    latitude: 35.7219,
+    longitude: 51.3347,
+    accuracy: 10,
+    deviceTime: new Date().toISOString(),
+    deviceTimeAtClick: new Date().toISOString(),
+    deviceTimeAtGps: new Date().toISOString(),
+    gpsTimestamp: new Date().toISOString(),
+    gpsWaitMs: 1000,
+    photoDelayMs: 300,
+    offlineCreated: false,
+    createdAt: new Date().toISOString(),
+    locationStatus: "ok",
+    locationError: "",
+    sessionClockDriftMs: 0,
+    networkClockDriftMs: 0,
+    attendancePolicy: "ONLINE_OR_OFFLINE",
+    policyVersion: 1,
+    policyFetchedAt: new Date().toISOString(),
+    policySource: "frontend-test"
+  };
+
+  try {
+    const response = await fetch("YOUR_WEB_APP_URL", {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(payload),
+      mode: "no-cors"
+    });
+    console.log("Attendance sent. Check Google Sheet execution logs.");
+  } catch (error) {
+    console.error("Error sending attendance:", error);
+  }
+};
 
 

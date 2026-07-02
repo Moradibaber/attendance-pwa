@@ -1360,6 +1360,8 @@ function compressImage(file) {
     reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
     reader.readAsDataURL(file);
   });
+} // <--- این آکولاد و پرانتز برای بستن new Promise و تابع compressImage اینجا الزامی بود و جا افتاده بود.
+
 /* =============================================
    Connection Status and History Logic
    ============================================= */
@@ -1439,3 +1441,5 @@ window.addEventListener("offline", () => {
 
 // Helper for manual console testing
 window.testStatus = () => sendConnectionStatus("Test Online");
+
+

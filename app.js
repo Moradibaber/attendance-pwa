@@ -1,1390 +1,37 @@
-/* =========================
-   Attendance PWA - Clean Client Code
-   Fix: CORS preflight error on Apps Script by using:
-   - POST with Content-Type: text/plain (no preflight)
-   - mode: "no-cors" (so browser won't block; response is opaque)
-   - treat success as "queued/sent" and rely on server-side Debug sheet
-   ========================= */
-
-const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 3;
-
-const STORE_RECORDS = "records";
-const STORE_PROFILE = "profile";
-const STORE_CONFIG = "config";
-// **IMPORTANT**: Replace with your actual deployed Google Apps Script Web App URL
-const GAS_URL = "https://script.google.com/macros/s/AKfycbxmq8SmIhLiMeef_rSMAARJD69cZV01kBTrPsfNGHXPz3cn08DnaojDfv6rIBY4qaB7/exec";
-
-const GPS_RETRY_MS = 30000;
-const GOOD_ACCURACY_METERS = 1000;
-const GPS_REQUIRED = true;
-
-const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
-
-const APP_SESSION_START_WALL_MS = Date.now();
-const APP_SESSION_START_PERF_MS = performance.now();
-
-const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
-const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
-const POLICY_ONLINE_ONLY = "ONLINE_ONLY";
-const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
-const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
-const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
-const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
-
-let db = null;
-let currentPhoto = "";
-let pendingLocation = null;
-
-let syncRunning = false;
-let syncTimer = null;
-
-let adminMessageShownOnEntry = false;
-let lastAdminMessage = "";
-
-let captureStartedAtMs = 0;
-let photoSelectedAtMs = 0;
-let photoCompressedAtMs = 0;
-
-const $ = (id) => document.getElementById(id);
-
-/* =========================
-   Boot
-========================= */
-
-document.addEventListener("DOMContentLoaded", async () => {
-  try {
-    showGpsToast(
-      "★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند",
-      5000,
-      "error"
-    );
-  } catch (_) {}
-
-  try {
-    db = await openDb();
-  } catch (e) {
-    console.error("DB init error", e);
-  }
-
-  try {
-    bindEvents();
-  } catch (_) {}
-
-  try {
-    await loadProfile();
-  } catch (_) {}
-
-  try {
-    await ensurePolicyLoadedAtStartup();
-  } catch (_) {}
-
-  try {
-    await refreshUi();
-  } catch (_) {}
-
-  try {
-    await fetchMessages();
-  } catch (_) {}
-
-  try {
-    setupAutoSync();
-  } catch (_) {}
-
-  try {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
-    }
-  } catch (_) {}
-});
-
-/* =========================
-   UI Helpers
-========================= */
-
-function showGpsToast(message, duration = 3000, type = "success") {
-  const oldToast = document.getElementById("gps-toast");
-  if (oldToast) oldToast.remove();
-
-  const toast = document.createElement("div");
-  toast.id = "gps-toast";
-  toast.textContent = message;
-
-  const isSuccess = type === "success";
-
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%) scale(0.8)",
-    backgroundColor: isSuccess
-      ? "rgba(22, 163, 74, 0.96)"
-      : "rgba(220, 38, 38, 0.95)",
-    color: "#ffffff",
-    padding: "25px 40px",
-    borderRadius: "20px",
-    fontSize: "22px",
-    fontWeight: "bold",
-    fontFamily: "Tahoma, sans-serif",
-    boxShadow: isSuccess
-      ? "0 15px 50px rgba(22, 163, 74, 0.45)"
-      : "0 15px 50px rgba(0, 0, 0, 0.5)",
-    zIndex: "10000",
-    opacity: "0",
-    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-    direction: "rtl",
-    textAlign: "center",
-    width: "80%",
-    maxWidth: "400px",
-    border: "3px solid #ffffff"
-  });
-
-  document.body.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 100);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
-    setTimeout(() => toast.remove(), 400);
-  }, duration);
-}
-
-function setStatus(m) {
-  const el = $("captureStatus");
-  if (el) el.textContent = m;
-}
-
-function setSyncStatus(m) {
-  const el = $("syncStatus");
-  if (el) el.textContent = m;
-}
-
-function updateOnlineBadge() {
-  const el = $("onlineBadge");
-  if (!el) return;
-
-  if (navigator.onLine) {
-    el.textContent = "آنلاین";
-    el.className = "status online";
-  } else {
-    el.textContent = "آفلاین";
-    el.className = "status offline";
-  }
-}
-
-function escapeHtml(v) {
-  if (!v) return "";
-  return String(v)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-/* =========================
-   Events
-========================= */
-
-function bindEvents() {
-  $("saveProfileBtn")?.addEventListener("click", saveProfile);
-  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
-  $("photoInput")?.addEventListener("change", handlePhotoSelected);
-}
-
-/* =========================
-   Auto Sync
-========================= */
-
-function setupAutoSync() {
-  updateOnlineBadge();
-
-  window.addEventListener("online", async () => {
-    updateOnlineBadge();
-    await refreshPolicyIfPossible();
-    await markFirstConnectionForOfflineRecords();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  window.addEventListener("offline", updateOnlineBadge);
-
-  window.addEventListener("focus", async () => {
-    if (!navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  document.addEventListener("visibilitychange", async () => {
-    if (document.hidden || !navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.addEventListener("message", async (event) => {
-      if (!event.data) return;
-
-      if (event.data.type === "SYNC_COMPLETE") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار انجام شد");
-      }
-
-      if (event.data.type === "SYNC_FAILED") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار کامل نشد");
-      }
-    });
-  }
-
-  setInterval(() => {
-    if (navigator.onLine) scheduleSyncPendingRecords(0);
-  }, 60000);
-
-  if (navigator.onLine) {
-    refreshPolicyIfPossible().finally(() => scheduleSyncPendingRecords(1000));
-  }
-}
-
-function scheduleSyncPendingRecords(delay = 0) {
-  if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => syncPendingRecords(), delay);
-}
-
-/* =========================
-   IndexedDB
-========================= */
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = (e) => {
-      const openedDb = e.target.result;
-
-      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = openedDb.createObjectStore(STORE_RECORDS, {
-          keyPath: "id",
-          autoIncrement: true
-        });
-        store.createIndex("status", "status");
-        store.createIndex("clientRecordId", "clientRecordId", { unique: false });
-      } else {
-        const tx = e.target.transaction;
-        const store = tx.objectStore(STORE_RECORDS);
-
-        if (!store.indexNames.contains("status")) store.createIndex("status", "status");
-        if (!store.indexNames.contains("clientRecordId")) {
-          store.createIndex("clientRecordId", "clientRecordId", { unique: false });
-        }
-      }
-
-      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
-        openedDb.createObjectStore(STORE_PROFILE, { keyPath: "id" });
-      }
-
-      if (!openedDb.objectStoreNames.contains(STORE_CONFIG)) {
-        openedDb.createObjectStore(STORE_CONFIG, { keyPath: "id" });
-      }
-    };
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbPut(store, value) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readwrite");
-    const st = tx.objectStore(store);
-    const req = st.put(value);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbGet(store, key) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbGetAll(store) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/* =========================
-   Profile
-========================= */
-
-function getProfileFromInputs() {
-  return {
-    personnelCode: $("personnelCode")?.value.trim() || "",
-    firstName: $("firstName")?.value.trim() || "",
-    lastName: $("lastName")?.value.trim() || ""
-  };
-}
-
-async function loadProfile() {
-  const p = await dbGet(STORE_PROFILE, "main");
-  if (!p) return;
-
-  if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
-  if ($("firstName")) $("firstName").value = p.firstName || "";
-  if ($("lastName")) $("lastName").value = p.lastName || "";
-}
-
-async function saveProfileSilent() {
-  const profile = getProfileFromInputs();
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
-  }
-  await dbPut(STORE_PROFILE, { id: "main", ...profile });
-}
-
-async function getProfile() {
-  const saved = await dbGet(STORE_PROFILE, "main");
-  const inputProfile = getProfileFromInputs();
-
-  const profile = {
-    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
-    firstName: inputProfile.firstName || saved?.firstName || "",
-    lastName: inputProfile.lastName || saved?.lastName || ""
-  };
-
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
-  }
-
-  await dbPut(STORE_PROFILE, { id: "main", ...profile });
-  return profile;
-}
-
-async function saveProfile() {
-  if (!db) db = await openDb();
-
-  const btn = $("saveProfileBtn");
-  if (!btn) return;
-
-  const originalText = "ذخیره مشخصات";
-  const originalBg = "#ff9800";
-
-  btn.disabled = true;
-  btn.style.backgroundColor = "#6c757d";
-  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
-
-  try {
-    const profile = getProfileFromInputs();
-
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      btn.classList.add("shake");
-      setTimeout(() => btn.classList.remove("shake"), 500);
-
-      setStatus("اطلاعات پرسنلی کامل نیست.");
-
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-      return;
-    }
-
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    await refreshPolicyIfPossible();
-
-    btn.style.backgroundColor = "#28a745";
-    btn.textContent = "ذخیره شد";
-    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
-
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-    }, 2500);
-  } catch (_) {
-    btn.disabled = false;
-    btn.style.backgroundColor = originalBg;
-    btn.textContent = originalText;
-    setStatus("خطا در ذخیره مشخصات");
-  }
-}
-
-/* =========================
-   Policy
-========================= */
-
-function normalizeAttendancePolicy(policy) {
-  const p = String(policy || "").trim().toUpperCase();
-
-  if (
-    p === POLICY_NOT_ALLOWED ||
-    p === POLICY_ONLINE_ONLY ||
-    p === POLICY_OFFLINE_ONLY ||
-    p === POLICY_ONLINE_PREFERRED ||
-    p === POLICY_ONLINE_OR_OFFLINE ||
-    p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
-  ) {
-    return p;
-  }
-
-  return DEFAULT_ATTENDANCE_POLICY;
-}
-
-function evaluateAttendancePolicy(policy, isOnline) {
-  const normalized = normalizeAttendancePolicy(policy);
-
-  if (normalized === POLICY_NOT_ALLOWED) {
-    return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
-  }
-
-  if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
-  }
-
-  if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
-  }
-
-  return { ok: true, message: "" };
-}
-
-async function getAttendancePolicyInfo() {
-  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
-  if (!policy) {
-    return {
-      id: "attendancePolicy",
-      personnelCode: "",
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      policyFetchedAt: "",
-      policySource: "default"
-    };
-  }
-  return policy;
-}
-
-async function saveAttendancePolicyInfo(data) {
-  await dbPut(STORE_CONFIG, {
-    id: "attendancePolicy",
-    personnelCode: data.personnelCode || "",
-    attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
-    policyVersion: Number(data.policyVersion || 0),
-    policyFetchedAt: data.policyFetchedAt || "",
-    policySource: data.policySource || ""
-  });
-}
-
-async function ensurePolicyLoadedAtStartup() {
-  const profile = await dbGet(STORE_PROFILE, "main");
-  if (!profile?.personnelCode) return;
-
-  const cached = await getAttendancePolicyInfo();
-  if (cached?.personnelCode === profile.personnelCode) {
-    if (navigator.onLine) await refreshPolicyIfPossible();
-    return;
-  }
-
-  if (navigator.onLine) {
-    await refreshPolicyIfPossible();
-  } else {
-    await saveAttendancePolicyInfo({
-      personnelCode: profile.personnelCode,
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      policyFetchedAt: "",
-      policySource: "default_offline"
-    });
-  }
-}
-
-async function refreshPolicyIfPossible() {
-  if (!navigator.onLine) return null;
-
-  const profile = await getProfile().catch(() => null);
-  if (!profile?.personnelCode) return null;
-
-  try {
-    const url =
-      GAS_URL + // Corrected from APPS_SCRIPT_URL
-      "?action=getUserPolicy&personnelCode=" +
-      encodeURIComponent(profile.personnelCode);
-
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
-    if (!res.ok) return null;
-
-    const result = await res.json().catch(() => null);
-    if (!result || result.ok !== true) return null;
-
-    const policyInfo = {
-      personnelCode: profile.personnelCode,
-      attendancePolicy: normalizeAttendancePolicy(result.attendancePolicy),
-      policyVersion: Number(result.policyVersion || 0),
-      policyFetchedAt: new Date().toISOString(),
-      policySource: "server"
-    };
-
-    await saveAttendancePolicyInfo(policyInfo);
-    return policyInfo;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function getCurrentAttendanceGate() {
-  if (navigator.onLine) await refreshPolicyIfPossible();
-  const policyInfo = await getAttendancePolicyInfo();
-  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-  return {
-    policyInfo,
-    gate: evaluateAttendancePolicy(policy, navigator.onLine)
-  };
-}
-
-/* =========================
-   Attendance Capture
-========================= */
-
-async function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    return;
-  }
-
-  await saveProfileSilent();
-
-  const { gate } = await getCurrentAttendanceGate();
-  if (!gate.ok) {
-    setStatus(gate.message);
-    return;
-  }
-
-  captureStartedAtMs = Date.now();
-  photoSelectedAtMs = 0;
-  photoCompressedAtMs = 0;
-  currentPhoto = "";
-  pendingLocation = null;
-
-  const preview = $("photoPreview");
-  if (preview) {
-    preview.removeAttribute("src");
-    preview.style.display = "none";
-  }
-
-  const photoInput = $("photoInput");
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
-    return;
-  }
-
-  photoInput.value = "";
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-  photoInput.click();
-}
-
-async function handlePhotoSelected() {
-  const file = $("photoInput")?.files?.[0];
-
-  if (!file) {
-    setStatus("عکسی انتخاب نشد.");
-    return;
-  }
-
-  try {
-    photoSelectedAtMs = Date.now();
-
-    await saveProfileSilent();
-
-    const { gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setStatus(gate.message);
-      $("photoInput").value = "";
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
-
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = currentPhoto;
-      preview.style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setStatus(
-        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
-      );
-      return;
-    }
-
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(pendingLocation)) {
-      if (pendingLocation?.status === "denied") {
-        setStatus(
-          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
-        );
-        return;
-      }
-
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-        return;
-      }
-
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-      return;
-    }
-
-    await createRecord("تردد");
-  } catch (err) {
-    console.error(err);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
-  }
-}
-
-/* =========================
-   Record Creation
-========================= */
-
-async function createRecord(type) {
-  const profile = await getProfile();
-
-  const { policyInfo, gate } = await getCurrentAttendanceGate();
-  if (!gate.ok) {
-    setStatus(gate.message);
-    return;
-  }
-
-  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
-    return;
-  }
-
-  const loc = hasValidLocation(pendingLocation)
-    ? pendingLocation
-    : emptyLocation("not_received", "GPS دریافت نشد");
-
-  const now = new Date();
-  const nowMs = now.getTime();
-
-  const clickMs = captureStartedAtMs || nowMs;
-  const photoMs = photoSelectedAtMs || "";
-  const photoCompressedMs = photoCompressedAtMs || "";
-  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
-
-  const deviceTime = now.toISOString();
-  const deviceTimeAtClick = new Date(clickMs).toISOString();
-  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
-  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
-  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
-  const gpsTimestamp = deviceTimeAtGps;
-
-  const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
-  const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
-  const submitDelayMs = Math.max(0, nowMs - clickMs);
-
-  const offlineCreated = !navigator.onLine;
-  const createdOnline = navigator.onLine;
-
-  const sessionClockDriftMs = getSessionClockDriftMs();
-  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
-
-  const risk = calculateClockRisk({
-    clickMs,
-    gpsMs,
-    offlineCreated,
-    locationStatus: loc.status,
-    sessionClockDriftMs
-  });
-
-  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
-  const record = {
-    clientRecordId,
-    personnelCode: profile.personnelCode,
-    firstName: profile.firstName,
-    lastName: profile.lastName,
-    type,
-    recordType: type,
-    recordDate: getPersianDate(now),
-    recordHour: getTime(now),
-    recordTime: getTime(now),
-    latitude: loc.latitude || "",
-    longitude: loc.longitude || "",
-    accuracy: loc.accuracy || "",
-    locationStatus: loc.status || "",
-    locationError: loc.error || "",
-    deviceTime,
-    deviceTimeAtClick,
-    deviceTimeAtPhoto,
-    deviceTimeAtPhotoCompressed,
-    deviceTimeAtGps,
-    gpsTimestamp,
-    gpsWaitMs,
-    photoDelayMs,
-    submitDelayMs,
-    offlineCreated,
-    createdOnline,
-    connectionStatus: offlineCreated ? "offline" : "online",
-    connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
-    firstConnectionAfterOfflineRecord: "",
-    lastConnectionBeforeUpload: "",
-    uploadedAt: "",
-    delayAfterFirstConnectionMs: "",
-    clockRisk: risk.clockRisk,
-    clockRiskReason: risk.clockRiskReason,
-    sessionClockDriftMs,
-    networkClockDriftMs: networkClockDriftMs ?? "",
-    attendancePolicy,
-    policyVersion: Number(policyInfo.policyVersion || 0),
-    policyFetchedAt: policyInfo.policyFetchedAt || "",
-    policySource: policyInfo.policySource || "",
-    photo: currentPhoto || "",
-    status: "pending",
-    createdAt: now.toISOString(),
-    lastSyncTryAt: "",
-    syncTryCount: 0,
-    syncedAt: "",
-    serverResponse: ""
-  };
-
-  await dbPut(STORE_RECORDS, record);
-
-  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-  setStatus("تردد با GPS ذخیره شد.");
-  await refreshUi();
-
-  if (navigator.onLine) scheduleSyncPendingRecords(500);
-}
-
-function createClientRecordId(personnelCode, baseMs) {
-  const randomPart = Math.random().toString(36).slice(2, 10);
-  return `${personnelCode}-${baseMs}-${randomPart}`;
-}
-
-/* =========================
-   Sync (CORS-SAFE)
-   - Uses text/plain + no-cors to avoid preflight
-   - Result is opaque; success means "request was sent"
-   - Debug on server side in Debug sheet
-========================= */
-
-async function markFirstConnectionForOfflineRecords() {
-  if (!db || !navigator.onLine) return;
-
-  try {
-    const nowIso = new Date().toISOString();
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter(
-      (r) =>
-        r.offlineCreated === true &&
-        (r.status === "pending" || r.status === "failed") &&
-        !r.firstConnectionAfterOfflineRecord
-    );
-
-    for (const r of list) {
-      r.firstConnectionAfterOfflineRecord = nowIso;
-      await dbPut(STORE_RECORDS, r);
-    }
-
-    if (list.length) await refreshUi();
-  } catch (_) {}
-}
-
-async function syncPendingRecords() {
-  if (syncRunning || !navigator.onLine) return;
-  syncRunning = true;
-
-  try {
-    const policyInfo = (await refreshPolicyIfPossible()) || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
-
-    if (!syncGate.ok) {
-      setSyncStatus(syncGate.message);
-      return;
-    }
-
-    await markFirstConnectionForOfflineRecords();
-
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
-
-    if (!list.length) {
-      setSyncStatus("چیزی برای ارسال نیست");
-      return;
-    }
-
-    setSyncStatus("در حال ارسال...");
-
-    for (const r of list) {
-      if (r.status === "sent" || r.status === "syncing") continue;
-
-      const uploadStartIso = new Date().toISOString();
-      const uploadStartMs = new Date(uploadStartIso).getTime();
-
-      r.status = "syncing";
-      r.lastSyncTryAt = uploadStartIso;
-      r.lastConnectionBeforeUpload = uploadStartIso;
-      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
-
-      if (!r.connectionStatus) {
-        r.connectionStatus = r.offlineCreated ? "offline" : "online";
-        r.connectionStatusFa = r.offlineCreated ? "آفلاین" : "آنلاین";
-        r.createdOnline = !r.offlineCreated;
-      }
-
-      if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
-        r.firstConnectionAfterOfflineRecord = uploadStartIso;
-      }
-
-      if (r.firstConnectionAfterOfflineRecord) {
-        const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
-        if (firstConnectionMs && !isNaN(firstConnectionMs)) {
-          r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
-        }
-      }
-
-      await dbPut(STORE_RECORDS, r);
-      await refreshUi();
-
-      try {
-        const payload = buildServerPayload(r);
-
-        await fetch(GAS_URL, {
-          method: "POST",
-          mode: "no-cors", // Consider removing this if you need to handle GAS responses
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        const sentIso = new Date().toISOString();
-        r.status = "sent";
-        r.syncedAt = sentIso;
-        r.uploadedAt = sentIso;
-        r.serverResponse = "opaque_no_cors"; // Mark as opaque due to no-cors
-        await dbPut(STORE_RECORDS, r);
-      } catch (err) {
-        r.status = "failed";
-        r.serverResponse = JSON.stringify({
-          ok: false,
-          error: err?.message || "network_error"
-        });
-        await dbPut(STORE_RECORDS, r);
-      }
-    }
-
-    setSyncStatus("ارسال انجام شد");
-    await refreshUi();
-    await fetchMessages();
-  } finally {
-    syncRunning = false;
-  }
-}
-
-function buildServerPayload(record) {
-  return {
-    clientRecordId: record.clientRecordId || "",
-    personnelCode: record.personnelCode || "",
-    firstName: record.firstName || "",
-    lastName: record.lastName || "",
-    type: record.type || record.recordType || "",
-    recordType: record.recordType || record.type || "",
-    recordDate: record.recordDate || "",
-    recordHour: record.recordHour || record.recordTime || "",
-    recordTime: record.recordTime || record.recordHour || "",
-    latitude: record.latitude || "",
-    longitude: record.longitude || "",
-    accuracy: record.accuracy || "",
-    locationStatus: record.locationStatus || "",
-    locationError: record.locationError || "",
-    deviceTime: record.deviceTime || "",
-    deviceTimeAtClick: record.deviceTimeAtClick || "",
-    deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
-    deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
-    deviceTimeAtGps: record.deviceTimeAtGps || "",
-    gpsTimestamp: record.gpsTimestamp || "",
-    gpsWaitMs: record.gpsWaitMs ?? "",
-    photoDelayMs: record.photoDelayMs ?? "",
-    submitDelayMs: record.submitDelayMs ?? "",
-    offlineCreated: !!record.offlineCreated,
-    createdOnline: record.createdOnline === true,
-    connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
-    connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
-    firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
-    lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
-    uploadedAt: record.uploadedAt || "",
-    delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
-    clockRisk: record.clockRisk || "",
-    clockRiskReason: record.clockRiskReason || "",
-    sessionClockDriftMs: record.sessionClockDriftMs ?? "",
-    networkClockDriftMs: record.networkClockDriftMs ?? "",
-    attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-    policyVersion: Number(record.policyVersion || 0),
-    policyFetchedAt: record.policyFetchedAt || "",
-    policySource: record.policySource || "",
-    photo: record.photo || "",
-    createdAt: record.createdAt || "",
-    lastSyncTryAt: record.lastSyncTryAt || "",
-    syncTryCount: Number(record.syncTryCount || 0)
-  };
-}
-
-/* =========================
-   Records UI
-========================= */
-
-async function refreshUi() {
-  const rec = await dbGetAll(STORE_RECORDS);
-
-  if ($("pendingCount")) $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
-  if ($("sentCount")) $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
-  if ($("failedCount")) $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
-
-  renderRecords(rec);
-}
-
-function renderRecords(records) {
-  const el = $("recordsList");
-  if (!el) return;
-
-  if (!records.length) {
-    el.innerHTML = "<p>ترددی ثبت نشده</p>";
-    return;
-  }
-
-  const sorted = [...records].sort((a, b) =>
-    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-  );
-
-  el.innerHTML = sorted
-    .slice(0, 20)
-    .map((r) => {
-      const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
-      const connectionText = r.connectionStatusFa
-        ? ` - ${escapeHtml(r.connectionStatusFa)}`
-        : r.offlineCreated
-          ? " - آفلاین"
-          : " - آنلاین";
-
-      return `
-        <div class="record-item compact-record">
-          <span>${escapeHtml(r.recordDate || "")}</span>
-          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-/* =========================
-   Admin Messages
-========================= */
-
-function showAdminMessage(m) {
-  if (!m || String(m).trim() === "" || m === "undefined" || m === "null") return;
-
-  const msg = String(m).trim();
-
-  const overlay = document.createElement("div");
-  overlay.style =
-    "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
-
-  const modal = document.createElement("div");
-  modal.style =
-    "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
-
-  modal.innerHTML = `
-    <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
-    <p style="color:#555; line-height:1.6;">${escapeHtml(msg)}</p>
-    <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
-  `;
-
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-
-  document.getElementById("closeAdminMsg").onclick = function () {
-    document.body.removeChild(overlay);
-  };
-}
-
-async function fetchMessages() {
-  if (!navigator.onLine) return;
-
-  try {
-    const profile = await getProfile().catch(() => null);
-    if (!profile?.personnelCode) return;
-
-    const url =
-      GAS_URL + // Corrected from APPS_SCRIPT_URL
-      "?action=getMessages&personnelCode=" +
-      encodeURIComponent(profile.personnelCode);
-
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
-    if (!res.ok) return;
-
-    const result = await res.json().catch(() => null);
-    if (!result || result.ok !== true) return;
-
-    const messages = Array.isArray(result.messages) ? result.messages : [];
-    const cleaned = messages
-      .map((m) => String(m ?? "").trim())
-      .filter(
-        (m) =>
-          m &&
-          m !== "false" &&
-          m !== "null" &&
-          m !== "undefined" &&
-          m !== "0" &&
-          m !== "تردد"
-      );
-
-    if (!cleaned.length) return;
-
-    const msg = cleaned.join(" | ");
-    if (!adminMessageShownOnEntry && msg !== lastAdminMessage) {
-      lastAdminMessage = msg;
-      adminMessageShownOnEntry = true;
-      showAdminMessage(msg);
-    }
-  } catch (e) {
-    console.error("Error fetching messages:", e);
-  }
-}
-
-/* =========================
-   Time / Date
-========================= */
-
-function getPersianDate(d) {
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(d);
-}
-
-function getTime(d) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(d);
-}
-
-/* =========================
-   Clock Risk
-========================= */
-
-function getSessionClockDriftMs() {
-  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
-  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
-  return Math.round(wallElapsedMs - realElapsedMs);
-}
-
-async function getNetworkTimeDriftMs(deviceNowMs) {
-  try {
-    const networkMs = Date.now();
-    if (!networkMs || isNaN(networkMs)) return null;
-    return Math.abs(networkMs - deviceNowMs);
-  } catch (_) {
-    return null;
-  }
-}
-
-function calculateClockRisk(data) {
-  const reasons = [];
-  let score = 0;
-
-  const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
-  if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
-    score += 6;
-    reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
-  }
-
-  if (data.offlineCreated) {
-    score += 1;
-    reasons.push("ثبت آفلاین");
-  }
-
-  if (String(data.locationStatus || "").toLowerCase() !== "ok") {
-    score += 4;
-    reasons.push("GPS نامعتبر/خاموش");
-  }
-
-  return {
-    clockRisk: score >= 6 ? "high" : score >= 3 ? "medium" : "low",
-    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
-  };
-}
-
-/* =========================
-   Geolocation
-========================= */
-
-function isGeolocationUsable() {
-  return !!navigator.geolocation && window.isSecureContext;
-}
-
-function hasValidLocation(l) {
-  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
-}
-
-function emptyLocation(status, error) {
-  return {
-    latitude: "",
-    longitude: "",
-    accuracy: "",
-    timestamp: null,
-    status,
-    error
-  };
-}
-
-function chooseBetterLocation(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-
-  if (!hasValidLocation(a)) return b;
-  if (!hasValidLocation(b)) return a;
-
-  return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
-}
-
-function geoErrorToLocation(err) {
-  if (err.code === 1) return emptyLocation("denied", "دسترسی رد شد");
-  if (err.code === 2) return emptyLocation("unavailable", "موقعیت در دسترس نیست");
-  if (err.code === 3) return emptyLocation("timeout", "زمان تمام شد");
-  return emptyLocation("error", "خطای GPS");
-}
-
-function getCurrentPositionSafe(options) {
-  return new Promise((resolve) => {
-    let done = false;
-
-    const timeoutId = setTimeout(() => {
-      if (done) return;
-      done = true;
-      resolve(emptyLocation("timeout", "زمان تمام شد"));
-    }, (options.timeout || 20000) + 3000);
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
-
-        resolve({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-          status: "ok",
-          error: ""
-        });
-      },
-      (err) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
-        resolve(geoErrorToLocation(err));
-      },
-      options
-    );
-  });
-}
-
-function getLocationWithWatch(waitMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    let best = null;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const loc = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-          status: "ok",
-          error: ""
-        };
-
-        best = chooseBetterLocation(best, loc);
-        if (loc.accuracy <= GOOD_ACCURACY_METERS) finish(loc);
-      },
-      (err) => finish(geoErrorToLocation(err)),
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: waitMs
-      }
-    );
-
-    const timeoutId = setTimeout(() => finish(best), waitMs + 3000);
-
-    function finish(loc) {
-      if (done) return;
-      done = true;
-      navigator.geolocation.clearWatch(watchId);
-      clearTimeout(timeoutId);
-      resolve(loc || emptyLocation("timeout", "GPS دریافت نشد"));
-    }
-  });
-}
-
-async function getLocationIOSFriendly() {
-  if (!isGeolocationUsable()) return emptyLocation("unavailable", "GPS در دسترس نیست");
-
-  const firstLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 25000
-  });
-
-  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return firstLocation;
-  }
-
-  if (firstLocation?.status === "denied") return firstLocation;
-
-  const secondLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: false,
-    maximumAge: 0,
-    timeout: 15000
-  });
-
-  if (secondLocation?.status === "denied") return secondLocation;
-
-  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
-
-  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return bestLocation;
-  }
-
-  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
-  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
-
-  return bestLocation;
-}
-
-/* =========================
-   Image
-========================= */
-
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      const img = new Image();
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX = 400;
-
-        let w = img.width;
-        let h = img.height;
-
-        if (w > h) {
-          if (w > MAX) {
-            h = h * (MAX / w);
-            w = MAX;
-          }
-        } else {
-          if (h > MAX) {
-            w = w * (MAX / h);
-            h = MAX;
-          }
-        }
-
-        canvas.width = w;
-        canvas.height = h;
-
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-
-        canvas.toBlob(
-          (blob) => {
-            const r = new FileReader();
-
-            r.onloadend = () => resolve(r.result);
-            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.3
-        );
-      };
-
-      img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
-      img.src = e.target.result;
-    };
-
-    reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
-    reader.readAsDataURL(file);
-  });
-} // <--- این آکولاد و پرانتز برای بستن new Promise و تابع compressImage اینجا الزامی بود و جا افتاده بود.
-
-/* =============================================
-   Connection Status and History Logic
-   ============================================= */
+/* Existing code ... */
+
+// =========================
+// Connection Status and History Logic
+// =========================
 
 async function sendConnectionStatus(status) {
   let pCode = "";
   let fName = "";
   let lName = "";
+  let fullName = ""; // For the new sheet
 
-  // 1. Try to get from UI inputs (most reliable if user is typing)
+  // 1. Try to get from UI inputs
   try {
     pCode = document.getElementById("personnelCode")?.value?.trim() || "";
     fName = document.getElementById("firstName")?.value?.trim() || "";
     lName = document.getElementById("lastName")?.value?.trim() || "";
+    if (fName && lName) {
+      fullName = `${fName} ${lName}`; // Construct fullName
+    }
   } catch (e) {
-    console.warn("Input read failed", e);
+    console.warn("Input read failed for status:", e);
   }
 
-  // 2. Fallback to global currentUser object if it exists
+  // 2. Fallback to global currentUser object
   if (!pCode && typeof currentUser !== 'undefined' && currentUser) {
     pCode = currentUser.personnelCode || "";
     fName = currentUser.firstName || "";
     lName = currentUser.lastName || "";
+    if (fName && lName) {
+      fullName = `${fName} ${lName}`;
+    } else if (currentUser.fullName) {
+      fullName = currentUser.fullName; // Use full name if available directly
+    }
   }
 
   // 3. Last fallback to localStorage
@@ -1393,8 +40,11 @@ async function sendConnectionStatus(status) {
       pCode = localStorage.getItem("personnelCode") || "";
       fName = localStorage.getItem("firstName") || "";
       lName = localStorage.getItem("lastName") || "";
+      if (fName && lName) {
+        fullName = `${fName} ${lName}`;
+      }
     } catch (e) {
-      console.error("Storage read failed", e);
+      console.error("Storage read failed for status:", e);
     }
   }
 
@@ -1403,22 +53,33 @@ async function sendConnectionStatus(status) {
     console.log("Status update skipped: No personnelCode found.");
     return;
   }
+  
+  // Ensure fullName is populated if possible, otherwise use pCode as fallback for display
+  if (!fullName) {
+      fullName = pCode; // Use personnelCode if name is unavailable
+  }
+
 
   const payload = {
-    type: "ConnectionStatus",
+    type: "ConnectionStatus", // This MUST match the action in Code.gs doPost
     personnelCode: pCode,
-    firstName: fName,
-    lastName: lName,
+    fullName: fullName, // Send fullName for the new sheet
     connectionStatusFa: status,
     deviceTime: new Date().toISOString()
   };
 
-  console.log("Reporting status to server:", status);
+  console.log("Reporting status to server:", status, "for", fullName);
 
   try {
+    // IMPORTANT: The GAS_URL must be correctly set here.
+    // If GAS_URL is not defined, this will fail. Define it near other constants.
+    if (typeof GAS_URL === 'undefined' || !GAS_URL) {
+        console.error("GAS_URL is not defined. Cannot send status.");
+        return;
+    }
     await fetch(GAS_URL, {
       method: "POST",
-      mode: "no-cors",
+      mode: "no-cors", // This is important - the response cannot be read
       headers: {
         "Content-Type": "text/plain;charset=utf-8"
       },
@@ -1431,6 +92,7 @@ async function sendConnectionStatus(status) {
 }
 
 // Listen for network changes automatically
+// Ensure 'online' and 'offline' event listeners are correctly placed, e.g., within an init function or at the top level.
 window.addEventListener("online", () => {
   sendConnectionStatus("آنلاین");
 });
@@ -1440,8 +102,156 @@ window.addEventListener("offline", () => {
 });
 
 // Helper for manual console testing
-window.testStatus = () => sendConnectionStatus("Test Online");
-// این را در app.js (Frontend) قرار دهید
+window.testStatus = () => {
+    // For testing, we need to mock some values if not in a logged-in state
+    const mockUser = {
+        personnelCode: localStorage.getItem("personnelCode") || "TESTUSER001",
+        fullName: (localStorage.getItem("firstName") || "Test") + " " + (localStorage.getItem("lastName") || "User")
+    };
+    // Temporarily set currentUser or ensure values are in localStorage/inputs
+    // This is just for the test function to have data
+    if (typeof currentUser === 'undefined') window.currentUser = mockUser;
+    if (!localStorage.getItem("personnelCode")) localStorage.setItem("personnelCode", mockUser.personnelCode);
+    if (!localStorage.getItem("firstName")) localStorage.setItem("firstName", "Test");
+    if (!localStorage.getItem("lastName")) localStorage.setItem("lastName", "User");
+    
+    sendConnectionStatus("آنلاین");
+};
+
+// Make sure GAS_URL is defined somewhere accessible, e.g., with other constants:
+// const GAS_URL = 'PASTE_YOUR_DEPLOYED_APPS_SCRIPT_WEB_APP_URL_HERE'; 
+
+/* =========================
+   New Function to Fetch Connection Statuses
+========================= */
+async function fetchConnectionStatuses() {
+  if (typeof GAS_URL === 'undefined' || !GAS_URL) {
+    console.error("GAS_URL is not defined. Cannot fetch statuses.");
+    return [];
+  }
+
+  const url = `${GAS_URL}?action=getConnectionStatuses`;
+
+  try {
+    // Use 'no-cors' for GET as well if your GAS URL requires it,
+    // but typically GET requests to GAS can be CORS enabled.
+    // If you face CORS issues, you might need to adjust GAS CORS settings or use 'no-cors'.
+    const res = await fetch(url, {
+      method: "GET",
+      cache: "no-store" // Ensure we get the latest data
+    });
+
+    // If using 'no-cors', res.ok will always be false.
+    // We rely on the content being available if the fetch itself didn't throw an error.
+    if (!res.ok && res.type === 'opaque') {
+        console.warn("Received opaque response for getConnectionStatuses. Assuming success due to 'no-cors'.");
+        // If no-cors, we can't read the response status/body directly.
+        // We'd have to rely on the Google Apps Script logs to see if it ran.
+        // For a better experience, consider enabling CORS on your Apps Script Web App.
+        // If you can enable CORS, remove 'no-cors' and check res.ok.
+        // Let's try to parse it anyway, it might work sometimes or we can assume success based on no error thrown.
+        // A more robust way would be to have the GAS return a specific success code or log entry.
+        // For now, we'll proceed assuming the GAS ran if no exception was thrown.
+        // If this method fails, you'll need to debug GAS execution logs.
+    } else if (!res.ok) {
+        console.error(`Failed to fetch connection statuses: ${res.status} ${res.statusText}`);
+        return [];
+    }
+
+    // IMPORTANT: If using 'no-cors', res.json() will likely fail or return an empty object.
+    // This is a limitation of 'no-cors'.
+    // If you can enable CORS on your GAS Web App, remove 'no-cors' from the fetch options above,
+    // and this part should work:
+    const result = await res.json().catch(e => {
+        console.error("Failed to parse JSON response for connection statuses. Likely due to 'no-cors'.", e);
+        return { ok: false, statuses: [] }; // Return empty if parsing fails
+    });
+
+    if (result && result.ok === true && Array.isArray(result.statuses)) {
+      return result.statuses;
+    } else {
+      console.error("Unexpected response format from getConnectionStatuses:", result);
+      return [];
+    }
+
+  } catch (error) {
+    console.error("Error fetching connection statuses:", error);
+    return [];
+  }
+}
+
+/* =========================
+   Displaying Statuses (Example for Admin Panel)
+========================= */
+
+// This function would be called from your AdminPanel.html
+async function displayConnectionStatuses() {
+  const statuses = await fetchConnectionStatuses();
+  const container = document.getElementById("connectionStatusTableBody"); // Assume you have a tbody with this ID
+
+  if (!container) {
+    console.error("Element 'connectionStatusTableBody' not found.");
+    return;
+  }
+
+  // Clear previous content
+  container.innerHTML = "";
+
+  if (statuses.length === 0) {
+    container.innerHTML = '<tr><td colspan="3">وضعیت اتصال یافت نشد.</td></tr>';
+    return;
+  }
+
+  statuses.forEach(status => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(status.personnelCode || 'N/A')}</td>
+      <td>${escapeHtml(status.fullName || 'N/A')}</td>
+      <td>${escapeHtml(status.lastConnectionStatus || 'نامشخص')}</td>
+      <td>${formatTimestamp(status.lastSeenTimestamp)}</td>
+    `;
+    container.appendChild(row);
+  });
+}
+
+// Helper function to format timestamp (you might have this already)
+function formatTimestamp(isoString) {
+  if (!isoString) return "N/A";
+  try {
+    const date = new Date(isoString);
+    // Using Persian date formatting if available, otherwise fallback to ISO
+    return new Intl.DateTimeFormat("fa-IR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(date);
+  } catch (e) {
+    return isoString; // Fallback
+  }
+}
+
+// Helper function to escape HTML (you might have this already)
+function escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+ }
+
+// Call this function when your admin page loads, e.g., in its init function
+// document.addEventListener('DOMContentLoaded', () => {
+//     // ... other init code ...
+//     displayConnectionStatuses();
+// });
+
+// Example for window.testSendConnectionStatusMany to include fullName
 window.testSendConnectionStatusMany = async function () {
   const personnelCode = 
     (document.querySelector('[name="personnelCode"]') || {}).value || 
@@ -1449,30 +259,43 @@ window.testSendConnectionStatusMany = async function () {
     localStorage.getItem("personnelCode") || 
     "20000745";
 
-  const fullName = 
-    (document.querySelector('[name="fullName"]') || {}).value || 
-    (window.currentUser && currentUser.fullName) || 
-    localStorage.getItem("fullName") || 
-    "Test User";
+  const firstName = 
+    (document.querySelector('[name="firstName"]') || {}).value || 
+    (window.currentUser && currentUser.firstName) || 
+    localStorage.getItem("firstName") || 
+    "Test";
+    
+  const lastName = 
+    (document.querySelector('[name="lastName"]') || {}).value || 
+    (window.currentUser && currentUser.lastName) || 
+    localStorage.getItem("lastName") || 
+    "User";
+    
+  const fullName = `${firstName} ${lastName}`;
 
   const statuses = ["آنلاین", "آفلاین", "آنلاین", "آفلاین", "آنلاین"];
 
   for (const st of statuses) {
     const payload = {
-      type: "ConnectionStatus",
+      type: "ConnectionStatus", // Matches Code.gs doPost action
       personnelCode: personnelCode,
-      fullName: fullName,
+      fullName: fullName, // Added fullName
       connectionStatusFa: st,
-      online: st === "آنلاین"
+      online: st === "آنلاین", // This 'online' field might not be used by backend, but good for frontend logic
+      deviceTime: new Date().toISOString() // Added deviceTime
     };
 
     console.log("Sending to Server:", payload);
 
     try {
+      if (typeof GAS_URL === 'undefined' || !GAS_URL) {
+        console.error("GAS_URL is not defined. Cannot send status.");
+        break; // Exit loop if URL is not set
+      }
       await fetch(GAS_URL, {
         method: "POST",
         mode: "no-cors",
-        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // Use utf-8 for Persian
         body: JSON.stringify(payload)
       });
     } catch (err) {
@@ -1481,65 +304,3 @@ window.testSendConnectionStatusMany = async function () {
     await new Promise(r => setTimeout(r, 1000));
   }
 };
-window.testSendAttendance = async function () {
-  const payload = {
-    personnelCode: "20000745",
-    firstName: "Test",
-    lastName: "User",
-    recordDate: new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Tehran",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    }).format(new Date()).replace(/-/g, "/"),
-    recordHour: new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Tehran",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false
-    }).format(new Date()),
-    recordTime: new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Tehran",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false
-    }).format(new Date()),
-    latitude: 35.7219,
-    longitude: 51.3347,
-    accuracy: 10,
-    deviceTime: new Date().toISOString(),
-    deviceTimeAtClick: new Date().toISOString(),
-    deviceTimeAtGps: new Date().toISOString(),
-    gpsTimestamp: new Date().toISOString(),
-    gpsWaitMs: 1000,
-    photoDelayMs: 300,
-    offlineCreated: false,
-    createdAt: new Date().toISOString(),
-    locationStatus: "ok",
-    locationError: "",
-    sessionClockDriftMs: 0,
-    networkClockDriftMs: 0,
-    attendancePolicy: "ONLINE_OR_OFFLINE",
-    policyVersion: 1,
-    policyFetchedAt: new Date().toISOString(),
-    policySource: "frontend-test"
-  };
-
-  try {
-    const response = await fetch("https://script.google.com/macros/s/AKfycbxmq8SmIhLiMeef_rSMAARJD69cZV01kBTrPsfNGHXPz3cn08DnaojDfv6rIBY4qaB7/exec", {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify(payload),
-      mode: "no-cors"
-    });
-    console.log("Attendance sent. Check Google Sheet execution logs.");
-  } catch (error) {
-    console.error("Error sending attendance:", error);
-  }
-};
-
-

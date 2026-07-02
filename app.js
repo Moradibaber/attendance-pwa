@@ -13,7 +13,7 @@ const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
 // **IMPORTANT**: Replace with your actual deployed Google Apps Script Web App URL
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbxmq8SmIhLiMeef_rSMAARJD69cZV01kBTrPsfNGHXPz3cn08DnaojDfv6rIBY4qaB7/exec";
 
 const GPS_RETRY_MS = 30000;
 const GOOD_ACCURACY_METERS = 1000;

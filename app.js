@@ -1369,8 +1369,6 @@ function compressImage(file) {
 
 // Check if currentUser is defined (might be populated later by auth logic)
 // If not defined, we fall back to localStorage
-let currentUser = typeof currentUser !== 'undefined' ? currentUser : null;
-
 // function sendConnectionStatus(status) {
 //   let personnelCode = "";
 //   let firstName = "";
@@ -1470,6 +1468,7 @@ let currentUser = typeof currentUser !== 'undefined' ? currentUser : null;
 // // This code assumes `currentUser` is a global JavaScript object that gets populated
 // // when the user logs in or is identified. If `currentUser` is not always available
 // // immediately, the fallback to `localStorage` in `sendConnectionStatus` is crucial.
+```javascript
 function sendConnectionStatus(status) {
   let personnelCode = "";
   let firstName = "";
@@ -1509,3 +1508,82 @@ function sendConnectionStatus(status) {
     body: JSON.stringify(payload)
   }).catch(() => {});
 }
+/* =============================================
+   Connection Status and History Logic
+   ============================================= */
+
+async function sendConnectionStatus(status) {
+  let pCode = "";
+  let fName = "";
+  let lName = "";
+
+  // 1. Try to get from UI inputs (most reliable if user is typing)
+  try {
+    pCode = document.getElementById("personnelCode")?.value?.trim() || "";
+    fName = document.getElementById("firstName")?.value?.trim() || "";
+    lName = document.getElementById("lastName")?.value?.trim() || "";
+  } catch (e) {
+    console.warn("Input read failed", e);
+  }
+
+  // 2. Fallback to global currentUser object if it exists
+  if (!pCode && typeof currentUser !== 'undefined' && currentUser) {
+    pCode = currentUser.personnelCode || "";
+    fName = currentUser.firstName || "";
+    lName = currentUser.lastName || "";
+  }
+
+  // 3. Last fallback to localStorage
+  if (!pCode) {
+    try {
+      pCode = localStorage.getItem("personnelCode") || "";
+      fName = localStorage.getItem("firstName") || "";
+      lName = localStorage.getItem("lastName") || "";
+    } catch (e) {
+      console.error("Storage read failed", e);
+    }
+  }
+
+  // If we still don't have a code, we can't log anything
+  if (!pCode) {
+    console.log("Status update skipped: No personnelCode found.");
+    return;
+  }
+
+  const payload = {
+    type: "ConnectionStatus",
+    personnelCode: pCode,
+    firstName: fName,
+    lastName: lName,
+    connectionStatusFa: status,
+    deviceTime: new Date().toISOString()
+  };
+
+  console.log("Reporting status to server:", status);
+
+  try {
+    await fetch(GAS_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(payload)
+    });
+    console.log("Status sent successfully.");
+  } catch (err) {
+    console.error("Failed to send status", err);
+  }
+}
+
+// Listen for network changes automatically
+window.addEventListener("online", () => {
+  sendConnectionStatus("آنلاین");
+});
+
+window.addEventListener("offline", () => {
+  sendConnectionStatus("آفلاین");
+});
+
+// Helper for manual console testing
+window.testStatus = () => sendConnectionStatus("تست آنلاین");

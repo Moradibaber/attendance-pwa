@@ -13,8 +13,7 @@ const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
 
-const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbxweP2zcSrJd3HNdoQm_3f-5PQk6_S_qAxL__WDgcYqht0jLti93LmNhJnktbjtpmpZ/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxweP2zcSrJd3HNdoQm_3f-5PQk6_S_qAxL__WDgcYqht0jLti93LmNhJnktbjtpmpZ/exec";
 
 const GPS_RETRY_MS = 30000;
 const GOOD_ACCURACY_METERS = 1000;

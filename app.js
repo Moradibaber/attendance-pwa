@@ -1528,7 +1528,7 @@ window.testSendAttendance = async function () {
   };
 
   try {
-    const response = await fetch("YOUR_WEB_APP_URL", {
+    const response = await fetch("https://script.google.com/macros/s/AKfycbxmq8SmIhLiMeef_rSMAARJD69cZV01kBTrPsfNGHXPz3cn08DnaojDfv6rIBY4qaB7/exec", {
       method: "POST",
       headers: {
         "Content-Type": "text/plain;charset=utf-8"

@@ -1371,102 +1371,141 @@ function compressImage(file) {
 // If not defined, we fall back to localStorage
 let currentUser = typeof currentUser !== 'undefined' ? currentUser : null;
 
+// function sendConnectionStatus(status) {
+//   let personnelCode = "";
+//   let firstName = "";
+//   let lastName = "";
+
+//   // Prioritize currentUser object if available and populated
+//   if (currentUser && currentUser.personnelCode) {
+//     personnelCode = currentUser.personnelCode;
+//     firstName = currentUser.firstName || "";
+//     lastName = currentUser.lastName || "";
+//   } else {
+//     // Fallback to localStorage if currentUser is not ready or doesn't have data
+//     try {
+//       personnelCode = localStorage.getItem("personnelCode") || "";
+//       firstName = localStorage.getItem("firstName") || "";
+//       lastName = localStorage.getItem("lastName") || "";
+//     } catch (e) {
+//       console.error("LocalStorage read error:", e);
+//       // If localStorage also fails, we can't send status, so return
+//       return;
+//     }
+//   }
+
+//   // If we still don't have a personnel code, we can't send the status
+//   if (!personnelCode) {
+//     console.log("User not identified (no currentUser or localStorage data), skipping status update.");
+//     return;
+//   }
+
+//   const payload = {
+//     type: "ConnectionStatus",
+//     personnelCode: personnelCode,
+//     firstName: firstName,
+//     lastName: lastName,
+//     connectionStatusFa: status, // e.g., "آنلاین" or "آفلاین"
+//     deviceTime: new Date().toISOString() // ISO format for server to parse easily
+//   };
+
+//   fetch(GAS_URL, {
+//     method: "POST",
+//     // mode: "no-cors", // IMPORTANT: Remove 'no-cors' if you want to receive responses from GAS.
+//                        // If you keep 'no-cors', GAS response will not be accessible in JS.
+//                        // For status updates, it might be fine, but consider removing if debugging.
+//     headers: {
+//       "Content-Type": "application/json"
+//     },
+//     body: JSON.stringify(payload)
+//   })
+//   .then(response => {
+//       // Optional: Handle response if you remove 'no-cors'
+//       // console.log("Status update response:", response);
+//   })
+//   .catch(function(err) {
+//     console.error("Failed to sync connection status:", err);
+//   });
+// }
+
+// // --- Heartbeat Function ---
+// // Sends status updates periodically (e.g., every 30 seconds)
+// function startHeartbeat() {
+//   // Ensure heartbeat is only set up once
+//   if (window.heartbeatInterval) {
+//       clearInterval(window.heartbeatInterval);
+//   }
+//   window.heartbeatInterval = setInterval(() => {
+//     const currentStatus = navigator.onLine ? "آنلاین" : "آفلاین";
+//     sendConnectionStatus(currentStatus);
+//   }, 30000); // 30000 milliseconds = 30 seconds
+// }
+
+// // --- Event Listeners ---
+// // Send status immediately when the browser's online/offline status changes
+// window.addEventListener('online', () => {
+//   console.log("Browser detected ONLINE");
+//   sendConnectionStatus("آنلاین");
+// });
+
+// window.addEventListener('offline', () => {
+//   console.log("Browser detected OFFLINE");
+//   sendConnectionStatus("آفلاین");
+// });
+
+// // --- Initial Setup ---
+// // Run when the DOM is fully loaded
+// document.addEventListener("DOMContentLoaded", () => {
+//   console.log("DOM fully loaded. Initializing status and heartbeat.");
+
+//   // Send the initial status (online/offline) when the PWA loads
+//   const initialStatus = navigator.onLine ? "آنلاین" : "آفلاین";
+//   sendConnectionStatus(initialStatus);
+
+//   // Start the heartbeat to keep the status updated
+//   startHeartbeat();
+// });
+
+// // --- Note on `currentUser` ---
+// // This code assumes `currentUser` is a global JavaScript object that gets populated
+// // when the user logs in or is identified. If `currentUser` is not always available
+// // immediately, the fallback to `localStorage` in `sendConnectionStatus` is crucial.
 function sendConnectionStatus(status) {
   let personnelCode = "";
   let firstName = "";
   let lastName = "";
 
-  // Prioritize currentUser object if available and populated
-  if (currentUser && currentUser.personnelCode) {
-    personnelCode = currentUser.personnelCode;
-    firstName = currentUser.firstName || "";
-    lastName = currentUser.lastName || "";
-  } else {
-    // Fallback to localStorage if currentUser is not ready or doesn't have data
+  try {
+    personnelCode = document.getElementById("personnelCode")?.value?.trim() || "";
+    firstName = document.getElementById("firstName")?.value?.trim() || "";
+    lastName = document.getElementById("lastName")?.value?.trim() || "";
+  } catch (_) {}
+
+  if (!personnelCode) {
     try {
       personnelCode = localStorage.getItem("personnelCode") || "";
       firstName = localStorage.getItem("firstName") || "";
       lastName = localStorage.getItem("lastName") || "";
-    } catch (e) {
-      console.error("LocalStorage read error:", e);
-      // If localStorage also fails, we can't send status, so return
-      return;
-    }
+    } catch (_) {}
   }
 
-  // If we still don't have a personnel code, we can't send the status
-  if (!personnelCode) {
-    console.log("User not identified (no currentUser or localStorage data), skipping status update.");
-    return;
-  }
+  if (!personnelCode) return;
 
   const payload = {
     type: "ConnectionStatus",
     personnelCode: personnelCode,
     firstName: firstName,
     lastName: lastName,
-    connectionStatusFa: status, // e.g., "آنلاین" or "آفلاین"
-    deviceTime: new Date().toISOString() // ISO format for server to parse easily
+    connectionStatusFa: status,
+    deviceTime: new Date().toISOString()
   };
 
   fetch(GAS_URL, {
     method: "POST",
-    // mode: "no-cors", // IMPORTANT: Remove 'no-cors' if you want to receive responses from GAS.
-                       // If you keep 'no-cors', GAS response will not be accessible in JS.
-                       // For status updates, it might be fine, but consider removing if debugging.
+    mode: "no-cors",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "text/plain;charset=utf-8"
     },
     body: JSON.stringify(payload)
-  })
-  .then(response => {
-      // Optional: Handle response if you remove 'no-cors'
-      // console.log("Status update response:", response);
-  })
-  .catch(function(err) {
-    console.error("Failed to sync connection status:", err);
-  });
+  }).catch(() => {});
 }
-
-// --- Heartbeat Function ---
-// Sends status updates periodically (e.g., every 30 seconds)
-function startHeartbeat() {
-  // Ensure heartbeat is only set up once
-  if (window.heartbeatInterval) {
-      clearInterval(window.heartbeatInterval);
-  }
-  window.heartbeatInterval = setInterval(() => {
-    const currentStatus = navigator.onLine ? "آنلاین" : "آفلاین";
-    sendConnectionStatus(currentStatus);
-  }, 30000); // 30000 milliseconds = 30 seconds
-}
-
-// --- Event Listeners ---
-// Send status immediately when the browser's online/offline status changes
-window.addEventListener('online', () => {
-  console.log("Browser detected ONLINE");
-  sendConnectionStatus("آنلاین");
-});
-
-window.addEventListener('offline', () => {
-  console.log("Browser detected OFFLINE");
-  sendConnectionStatus("آفلاین");
-});
-
-// --- Initial Setup ---
-// Run when the DOM is fully loaded
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("DOM fully loaded. Initializing status and heartbeat.");
-
-  // Send the initial status (online/offline) when the PWA loads
-  const initialStatus = navigator.onLine ? "آنلاین" : "آفلاین";
-  sendConnectionStatus(initialStatus);
-
-  // Start the heartbeat to keep the status updated
-  startHeartbeat();
-});
-
-// --- Note on `currentUser` ---
-// This code assumes `currentUser` is a global JavaScript object that gets populated
-// when the user logs in or is identified. If `currentUser` is not always available
-// immediately, the fallback to `localStorage` in `sendConnectionStatus` is crucial.

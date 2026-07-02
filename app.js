@@ -1586,4 +1586,4 @@ window.addEventListener("offline", () => {
 });
 
 // Helper for manual console testing
-window.testStatus = () => sendConnectionStatus("تست آنلاین");
+window.testStatus = () => sendConnectionStatus("Test Online");

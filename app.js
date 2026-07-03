@@ -1,1363 +1,605 @@
-/* =========================
-   Attendance PWA - Clean Client Code
-   Fix: CORS preflight error on Apps Script by using:
-   - POST with Content-Type: text/plain (no preflight)
-   - mode: "no-cors" (so browser won't block; response is opaque)
-   - treat success as "queued/sent" and rely on server-side Debug sheet
-   ========================= */
+/* =============================================================
+   ATTENDANCE SYSTEM - CORE ENGINE (PART 1)
+   ============================================================= */
 
-const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 3;
+// --- SHEET NAMES ---
+var RECORDS_SHEET_NAME       = "Records";
+var MESSAGES_SHEET_NAME      = "Messages";
+var RECORD_INDEX_SHEET_NAME  = "RecordIndex";
+var MATCHING_SHEET_NAME      = "Matching";
+var USERS_SHEET_NAME         = "Users";
+var USER_STATUS_SHEET_NAME   = "UserStatus";
+var ONLINE_LOG_SHEET_NAME    = "OnlineLog"; // NEW
 
-const STORE_RECORDS = "records";
-const STORE_PROFILE = "profile";
-const STORE_CONFIG = "config";
+// --- HEADERS ---
+var RECORD_HEADERS = [
+  "Timestamp", "PersonnelCode", "FullName", "Status", 
+  "Latitude", "Longitude", "Accuracy", "Source", "DateTimeStr"
+];
 
-const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbxweP2zcSrJd3HNdoQm_3f-5PQk6_S_qAxL__WDgcYqht0jLti93LmNhJnktbjtpmpZ/exec";
+var USER_STATUS_HEADERS = [
+  "PersonnelCode", "FullName", "LastStatus", 
+  "LastOnline", "LastOffline", "LastSeen"
+];
 
-const GPS_RETRY_MS = 30000;
-const GOOD_ACCURACY_METERS = 1000;
-const GPS_REQUIRED = true;
+var ONLINE_LOG_HEADERS = [
+  "Timestamp", "Date", "Time", "PersonnelCode", "FullName", "Status"
+];
 
-const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
+var USERS_HEADERS = ["PersonnelCode", "FullName", "Department", "Role", "Active"];
+var RECORD_INDEX_HEADERS = ["PersonnelCode", "LastRecordTime", "LastStatus", "LastLatitude", "LastLongitude"];
+var MATCHING_HEADERS = ["Timestamp", "PersonnelCode", "FullName", "MatchedCode", "MatchedName", "Score"];
 
-const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
-const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
-const POLICY_ONLINE_ONLY = "ONLINE_ONLY";
-const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
-const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
-const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
-const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
+// --- POLICIES ---
+var MIN_ACCURACY_METERS = 100;
+var MAX_GEOFENCE_RADIUS_METERS = 200;
 
-const APP_SESSION_START_WALL_MS = Date.now();
-const APP_SESSION_START_PERF_MS = performance.now();
+/**
+ * ENTRY POINT: GET
+ */
+function doGet(e) {
+  var template = HtmlService.createTemplateFromFile('AdminPanel');
+  return template.evaluate()
+    .setTitle('سیستم مدیریت تردد')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
 
-let db = null;
-let currentPhoto = "";
-let pendingLocation = null;
-
-let syncRunning = false;
-let syncTimer = null;
-
-let adminMessageShownOnEntry = false;
-let lastAdminMessage = "";
-
-let captureStartedAtMs = 0;
-let photoSelectedAtMs = 0;
-let photoCompressedAtMs = 0;
-
-const $ = (id) => document.getElementById(id);
-
-/* =========================
-   Boot
-========================= */
-
-document.addEventListener("DOMContentLoaded", async () => {
+/**
+ * ENTRY POINT: POST
+ */
+function doPost(e) {
+  var result;
   try {
-    showGpsToast(
-      "★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند",
-      5000,
-      "error"
-    );
-  } catch (_) {}
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var action = e.parameter.action;
+    var data = e.parameter;
 
-  try {
-    db = await openDb();
-  } catch (e) {
-    console.error("DB init error", e);
-  }
-
-  try {
-    bindEvents();
-  } catch (_) {}
-
-  try {
-    await loadProfile();
-  } catch (_) {}
-
-  try {
-    await ensurePolicyLoadedAtStartup();
-  } catch (_) {}
-
-  try {
-    await refreshUi();
-  } catch (_) {}
-
-  try {
-    await fetchMessages();
-  } catch (_) {}
-
-  try {
-    setupAutoSync();
-  } catch (_) {}
-
-  try {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
+    if (action === "syncOffline") {
+      result = handleOfflineSync(ss, data);
+    } else if (action === "statusUpdate") {
+      result = handleStatusSummary(ss, data);
+    } else {
+      result = processAttendance(ss, data);
     }
-  } catch (_) {}
-});
-
-/* =========================
-   UI Helpers
-========================= */
-
-function showGpsToast(message, duration = 3000, type = "success") {
-  const oldToast = document.getElementById("gps-toast");
-  if (oldToast) oldToast.remove();
-
-  const toast = document.createElement("div");
-  toast.id = "gps-toast";
-  toast.textContent = message;
-
-  const isSuccess = type === "success";
-
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%) scale(0.8)",
-    backgroundColor: isSuccess
-      ? "rgba(22, 163, 74, 0.96)"
-      : "rgba(220, 38, 38, 0.95)",
-    color: "#ffffff",
-    padding: "25px 40px",
-    borderRadius: "20px",
-    fontSize: "22px",
-    fontWeight: "bold",
-    fontFamily: "Tahoma, sans-serif",
-    boxShadow: isSuccess
-      ? "0 15px 50px rgba(22, 163, 74, 0.45)"
-      : "0 15px 50px rgba(0, 0, 0, 0.5)",
-    zIndex: "10000",
-    opacity: "0",
-    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-    direction: "rtl",
-    textAlign: "center",
-    width: "80%",
-    maxWidth: "400px",
-    border: "3px solid #ffffff"
-  });
-
-  document.body.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 100);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
-    setTimeout(() => toast.remove(), 400);
-  }, duration);
-}
-
-function setStatus(m) {
-  const el = $("captureStatus");
-  if (el) el.textContent = m;
-}
-
-function setSyncStatus(m) {
-  const el = $("syncStatus");
-  if (el) el.textContent = m;
-}
-
-function updateOnlineBadge() {
-  const el = $("onlineBadge");
-  if (!el) return;
-
-  if (navigator.onLine) {
-    el.textContent = "آنلاین";
-    el.className = "status online";
-  } else {
-    el.textContent = "آفلاین";
-    el.className = "status offline";
-  }
-}
-
-function escapeHtml(v) {
-  if (!v) return "";
-  return String(v)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-/* =========================
-   Events
-========================= */
-
-function bindEvents() {
-  $("saveProfileBtn")?.addEventListener("click", saveProfile);
-  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
-  $("photoInput")?.addEventListener("change", handlePhotoSelected);
-}
-
-/* =========================
-   Auto Sync
-========================= */
-
-function setupAutoSync() {
-  updateOnlineBadge();
-
-  window.addEventListener("online", async () => {
-    updateOnlineBadge();
-    await refreshPolicyIfPossible();
-    await markFirstConnectionForOfflineRecords();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  window.addEventListener("offline", updateOnlineBadge);
-
-  window.addEventListener("focus", async () => {
-    if (!navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  document.addEventListener("visibilitychange", async () => {
-    if (document.hidden || !navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.addEventListener("message", async (event) => {
-      if (!event.data) return;
-
-      if (event.data.type === "SYNC_COMPLETE") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار انجام شد");
-      }
-
-      if (event.data.type === "SYNC_FAILED") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار کامل نشد");
-      }
-    });
-  }
-
-  setInterval(() => {
-    if (navigator.onLine) scheduleSyncPendingRecords(0);
-  }, 60000);
-
-  if (navigator.onLine) {
-    refreshPolicyIfPossible().finally(() => scheduleSyncPendingRecords(1000));
-  }
-}
-
-function scheduleSyncPendingRecords(delay = 0) {
-  if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => syncPendingRecords(), delay);
-}
-
-/* =========================
-   IndexedDB
-========================= */
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = (e) => {
-      const openedDb = e.target.result;
-
-      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = openedDb.createObjectStore(STORE_RECORDS, {
-          keyPath: "id",
-          autoIncrement: true
-        });
-        store.createIndex("status", "status");
-        store.createIndex("clientRecordId", "clientRecordId", { unique: false });
-      } else {
-        const tx = e.target.transaction;
-        const store = tx.objectStore(STORE_RECORDS);
-
-        if (!store.indexNames.contains("status")) store.createIndex("status", "status");
-        if (!store.indexNames.contains("clientRecordId")) {
-          store.createIndex("clientRecordId", "clientRecordId", { unique: false });
-        }
-      }
-
-      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
-        openedDb.createObjectStore(STORE_PROFILE, { keyPath: "id" });
-      }
-
-      if (!openedDb.objectStoreNames.contains(STORE_CONFIG)) {
-        openedDb.createObjectStore(STORE_CONFIG, { keyPath: "id" });
-      }
-    };
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbPut(store, value) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readwrite");
-    const st = tx.objectStore(store);
-    const req = st.put(value);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbGet(store, key) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function dbGetAll(store) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/* =========================
-   Profile
-========================= */
-
-function getProfileFromInputs() {
-  return {
-    personnelCode: $("personnelCode")?.value.trim() || "",
-    firstName: $("firstName")?.value.trim() || "",
-    lastName: $("lastName")?.value.trim() || ""
-  };
-}
-
-async function loadProfile() {
-  const p = await dbGet(STORE_PROFILE, "main");
-  if (!p) return;
-
-  if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
-  if ($("firstName")) $("firstName").value = p.firstName || "";
-  if ($("lastName")) $("lastName").value = p.lastName || "";
-}
-
-async function saveProfileSilent() {
-  const profile = getProfileFromInputs();
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
-  }
-  await dbPut(STORE_PROFILE, { id: "main", ...profile });
-}
-
-async function getProfile() {
-  const saved = await dbGet(STORE_PROFILE, "main");
-  const inputProfile = getProfileFromInputs();
-
-  const profile = {
-    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
-    firstName: inputProfile.firstName || saved?.firstName || "",
-    lastName: inputProfile.lastName || saved?.lastName || ""
-  };
-
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
-  }
-
-  await dbPut(STORE_PROFILE, { id: "main", ...profile });
-  return profile;
-}
-
-async function saveProfile() {
-  if (!db) db = await openDb();
-
-  const btn = $("saveProfileBtn");
-  if (!btn) return;
-
-  const originalText = "ذخیره مشخصات";
-  const originalBg = "#ff9800";
-
-  btn.disabled = true;
-  btn.style.backgroundColor = "#6c757d";
-  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
-
-  try {
-    const profile = getProfileFromInputs();
-
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      btn.classList.add("shake");
-      setTimeout(() => btn.classList.remove("shake"), 500);
-
-      setStatus("اطلاعات پرسنلی کامل نیست.");
-
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-      return;
-    }
-
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    await refreshPolicyIfPossible();
-
-    btn.style.backgroundColor = "#28a745";
-    btn.textContent = "ذخیره شد";
-    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
-
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-    }, 2500);
-  } catch (_) {
-    btn.disabled = false;
-    btn.style.backgroundColor = originalBg;
-    btn.textContent = originalText;
-    setStatus("خطا در ذخیره مشخصات");
-  }
-}
-
-/* =========================
-   Policy
-========================= */
-
-function normalizeAttendancePolicy(policy) {
-  const p = String(policy || "").trim().toUpperCase();
-
-  if (
-    p === POLICY_NOT_ALLOWED ||
-    p === POLICY_ONLINE_ONLY ||
-    p === POLICY_OFFLINE_ONLY ||
-    p === POLICY_ONLINE_PREFERRED ||
-    p === POLICY_ONLINE_OR_OFFLINE ||
-    p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
-  ) {
-    return p;
-  }
-
-  return DEFAULT_ATTENDANCE_POLICY;
-}
-
-function evaluateAttendancePolicy(policy, isOnline) {
-  const normalized = normalizeAttendancePolicy(policy);
-
-  if (normalized === POLICY_NOT_ALLOWED) {
-    return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
-  }
-
-  if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
-  }
-
-  if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
-  }
-
-  return { ok: true, message: "" };
-}
-
-async function getAttendancePolicyInfo() {
-  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
-  if (!policy) {
-    return {
-      id: "attendancePolicy",
-      personnelCode: "",
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      policyFetchedAt: "",
-      policySource: "default"
-    };
-  }
-  return policy;
-}
-
-async function saveAttendancePolicyInfo(data) {
-  await dbPut(STORE_CONFIG, {
-    id: "attendancePolicy",
-    personnelCode: data.personnelCode || "",
-    attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
-    policyVersion: Number(data.policyVersion || 0),
-    policyFetchedAt: data.policyFetchedAt || "",
-    policySource: data.policySource || ""
-  });
-}
-
-async function ensurePolicyLoadedAtStartup() {
-  const profile = await dbGet(STORE_PROFILE, "main");
-  if (!profile?.personnelCode) return;
-
-  const cached = await getAttendancePolicyInfo();
-  if (cached?.personnelCode === profile.personnelCode) {
-    if (navigator.onLine) await refreshPolicyIfPossible();
-    return;
-  }
-
-  if (navigator.onLine) {
-    await refreshPolicyIfPossible();
-  } else {
-    await saveAttendancePolicyInfo({
-      personnelCode: profile.personnelCode,
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      policyFetchedAt: "",
-      policySource: "default_offline"
-    });
-  }
-}
-
-async function refreshPolicyIfPossible() {
-  if (!navigator.onLine) return null;
-
-  const profile = await getProfile().catch(() => null);
-  if (!profile?.personnelCode) return null;
-
-  try {
-    const url =
-      `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
-      encodeURIComponent(profile.personnelCode);
-
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
-    if (!res.ok) return null;
-
-    const result = await res.json().catch(() => null);
-    if (!result || result.ok !== true) return null;
-
-    const policyInfo = {
-      personnelCode: profile.personnelCode,
-      attendancePolicy: normalizeAttendancePolicy(result.attendancePolicy),
-      policyVersion: Number(result.policyVersion || 0),
-      policyFetchedAt: new Date().toISOString(),
-      policySource: "server"
-    };
-
-    await saveAttendancePolicyInfo(policyInfo);
-    return policyInfo;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function getCurrentAttendanceGate() {
-  if (navigator.onLine) await refreshPolicyIfPossible();
-  const policyInfo = await getAttendancePolicyInfo();
-  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-  return {
-    policyInfo,
-    gate: evaluateAttendancePolicy(policy, navigator.onLine)
-  };
-}
-
-/* =========================
-   Attendance Capture
-========================= */
-
-async function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    return;
-  }
-
-  await saveProfileSilent();
-
-  const { gate } = await getCurrentAttendanceGate();
-  if (!gate.ok) {
-    setStatus(gate.message);
-    return;
-  }
-
-  captureStartedAtMs = Date.now();
-  photoSelectedAtMs = 0;
-  photoCompressedAtMs = 0;
-  currentPhoto = "";
-  pendingLocation = null;
-
-  const preview = $("photoPreview");
-  if (preview) {
-    preview.removeAttribute("src");
-    preview.style.display = "none";
-  }
-
-  const photoInput = $("photoInput");
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
-    return;
-  }
-
-  photoInput.value = "";
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-  photoInput.click();
-}
-
-async function handlePhotoSelected() {
-  const file = $("photoInput")?.files?.[0];
-
-  if (!file) {
-    setStatus("عکسی انتخاب نشد.");
-    return;
-  }
-
-  try {
-    photoSelectedAtMs = Date.now();
-
-    await saveProfileSilent();
-
-    const { gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setStatus(gate.message);
-      $("photoInput").value = "";
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
-
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = currentPhoto;
-      preview.style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setStatus(
-        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
-      );
-      return;
-    }
-
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(pendingLocation)) {
-      if (pendingLocation?.status === "denied") {
-        setStatus(
-          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
-        );
-        return;
-      }
-
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-        return;
-      }
-
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-      return;
-    }
-
-    await createRecord("تردد");
   } catch (err) {
-    console.error(err);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
-  }
-}
-
-/* =========================
-   Record Creation
-========================= */
-
-async function createRecord(type) {
-  const profile = await getProfile();
-
-  const { policyInfo, gate } = await getCurrentAttendanceGate();
-  if (!gate.ok) {
-    setStatus(gate.message);
-    return;
+    result = { ok: false, message: "Server Error: " + err.toString() };
   }
 
-  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+/* =============================================================
+   ATTENDANCE SYSTEM - CORE ENGINE (PART 2)
+   ============================================================= */
 
-  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
-    return;
+/**
+ * Handles summary updates for user status.
+ * If status is "Online", it calls writeOnlineLog.
+ */
+function handleStatusSummary(ss, data) {
+  var sh = getOrCreateSheet_(ss, USER_STATUS_SHEET_NAME, USER_STATUS_HEADERS);
+  var personnelCode = String(data.personnelCode || data.PersonnelCode || "").trim();
+  var fullName = String(data.fullName || data.FullName || "").trim();
+  var status = String(data.status || data.Status || "").trim();
+  var now = new Date();
+
+  if (!personnelCode) {
+    return { ok: false, message: "PersonnelCode is required" };
   }
 
-  const loc = hasValidLocation(pendingLocation)
-    ? pendingLocation
-    : emptyLocation("not_received", "GPS دریافت نشد");
-
-  const now = new Date();
-  const nowMs = now.getTime();
-
-  const clickMs = captureStartedAtMs || nowMs;
-  const photoMs = photoSelectedAtMs || "";
-  const photoCompressedMs = photoCompressedAtMs || "";
-  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
-
-  const deviceTime = now.toISOString();
-  const deviceTimeAtClick = new Date(clickMs).toISOString();
-  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
-  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
-  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
-  const gpsTimestamp = deviceTimeAtGps;
-
-  const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
-  const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
-  const submitDelayMs = Math.max(0, nowMs - clickMs);
-
-  const offlineCreated = !navigator.onLine;
-  const createdOnline = navigator.onLine;
-
-  const sessionClockDriftMs = getSessionClockDriftMs();
-  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
-
-  const risk = calculateClockRisk({
-    clickMs,
-    gpsMs,
-    offlineCreated,
-    locationStatus: loc.status,
-    sessionClockDriftMs
-  });
-
-  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
-  const record = {
-    clientRecordId,
-    personnelCode: profile.personnelCode,
-    firstName: profile.firstName,
-    lastName: profile.lastName,
-    type,
-    recordType: type,
-    recordDate: getPersianDate(now),
-    recordHour: getTime(now),
-    recordTime: getTime(now),
-    latitude: loc.latitude || "",
-    longitude: loc.longitude || "",
-    accuracy: loc.accuracy || "",
-    locationStatus: loc.status || "",
-    locationError: loc.error || "",
-    deviceTime,
-    deviceTimeAtClick,
-    deviceTimeAtPhoto,
-    deviceTimeAtPhotoCompressed,
-    deviceTimeAtGps,
-    gpsTimestamp,
-    gpsWaitMs,
-    photoDelayMs,
-    submitDelayMs,
-    offlineCreated,
-    createdOnline,
-    connectionStatus: offlineCreated ? "offline" : "online",
-    connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
-    firstConnectionAfterOfflineRecord: "",
-    lastConnectionBeforeUpload: "",
-    uploadedAt: "",
-    delayAfterFirstConnectionMs: "",
-    clockRisk: risk.clockRisk,
-    clockRiskReason: risk.clockRiskReason,
-    sessionClockDriftMs,
-    networkClockDriftMs: networkClockDriftMs ?? "",
-    attendancePolicy,
-    policyVersion: Number(policyInfo.policyVersion || 0),
-    policyFetchedAt: policyInfo.policyFetchedAt || "",
-    policySource: policyInfo.policySource || "",
-    photo: currentPhoto || "",
-    status: "pending",
-    createdAt: now.toISOString(),
-    lastSyncTryAt: "",
-    syncTryCount: 0,
-    syncedAt: "",
-    serverResponse: ""
-  };
-
-  await dbPut(STORE_RECORDS, record);
-
-  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-  setStatus("تردد با GPS ذخیره شد.");
-  await refreshUi();
-
-  if (navigator.onLine) scheduleSyncPendingRecords(500);
-}
-
-function createClientRecordId(personnelCode, baseMs) {
-  const randomPart = Math.random().toString(36).slice(2, 10);
-  return `${personnelCode}-${baseMs}-${randomPart}`;
-}
-
-/* =========================
-   Sync (CORS-SAFE)
-   - Uses text/plain + no-cors to avoid preflight
-   - Result is opaque; success means "request was sent"
-   - Debug on server side in Debug sheet
-========================= */
-
-async function markFirstConnectionForOfflineRecords() {
-  if (!db || !navigator.onLine) return;
-
-  try {
-    const nowIso = new Date().toISOString();
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter(
-      (r) =>
-        r.offlineCreated === true &&
-        (r.status === "pending" || r.status === "failed") &&
-        !r.firstConnectionAfterOfflineRecord
-    );
-
-    for (const r of list) {
-      r.firstConnectionAfterOfflineRecord = nowIso;
-      await dbPut(STORE_RECORDS, r);
-    }
-
-    if (list.length) await refreshUi();
-  } catch (_) {}
-}
-
-async function syncPendingRecords() {
-  if (syncRunning || !navigator.onLine) return;
-  syncRunning = true;
-
-  try {
-    const policyInfo = (await refreshPolicyIfPossible()) || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
-
-    if (!syncGate.ok) {
-      setSyncStatus(syncGate.message);
-      return;
-    }
-
-    await markFirstConnectionForOfflineRecords();
-
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
-
-    if (!list.length) {
-      setSyncStatus("چیزی برای ارسال نیست");
-      return;
-    }
-
-    setSyncStatus("در حال ارسال...");
-
-    for (const r of list) {
-      if (r.status === "sent" || r.status === "syncing") continue;
-
-      const uploadStartIso = new Date().toISOString();
-      const uploadStartMs = new Date(uploadStartIso).getTime();
-
-      r.status = "syncing";
-      r.lastSyncTryAt = uploadStartIso;
-      r.lastConnectionBeforeUpload = uploadStartIso;
-      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
-
-      if (!r.connectionStatus) {
-        r.connectionStatus = r.offlineCreated ? "offline" : "online";
-        r.connectionStatusFa = r.offlineCreated ? "آفلاین" : "آنلاین";
-        r.createdOnline = !r.offlineCreated;
-      }
-
-      if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
-        r.firstConnectionAfterOfflineRecord = uploadStartIso;
-      }
-
-      if (r.firstConnectionAfterOfflineRecord) {
-        const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
-        if (firstConnectionMs && !isNaN(firstConnectionMs)) {
-          r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
-        }
-      }
-
-      await dbPut(STORE_RECORDS, r);
-      await refreshUi();
-
-      try {
-        const payload = buildServerPayload(r);
-
-        await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        const sentIso = new Date().toISOString();
-        r.status = "sent";
-        r.syncedAt = sentIso;
-        r.uploadedAt = sentIso;
-        r.serverResponse = "opaque_no_cors";
-        await dbPut(STORE_RECORDS, r);
-      } catch (err) {
-        r.status = "failed";
-        r.serverResponse = JSON.stringify({
-          ok: false,
-          error: err?.message || "network_error"
-        });
-        await dbPut(STORE_RECORDS, r);
-      }
-    }
-
-    setSyncStatus("ارسال انجام شد");
-    await refreshUi();
-    await fetchMessages();
-  } finally {
-    syncRunning = false;
-  }
-}
-
-function buildServerPayload(record) {
-  return {
-    clientRecordId: record.clientRecordId || "",
-    personnelCode: record.personnelCode || "",
-    firstName: record.firstName || "",
-    lastName: record.lastName || "",
-    type: record.type || record.recordType || "",
-    recordType: record.recordType || record.type || "",
-    recordDate: record.recordDate || "",
-    recordHour: record.recordHour || record.recordTime || "",
-    recordTime: record.recordTime || record.recordHour || "",
-    latitude: record.latitude || "",
-    longitude: record.longitude || "",
-    accuracy: record.accuracy || "",
-    locationStatus: record.locationStatus || "",
-    locationError: record.locationError || "",
-    deviceTime: record.deviceTime || "",
-    deviceTimeAtClick: record.deviceTimeAtClick || "",
-    deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
-    deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
-    deviceTimeAtGps: record.deviceTimeAtGps || "",
-    gpsTimestamp: record.gpsTimestamp || "",
-    gpsWaitMs: record.gpsWaitMs ?? "",
-    photoDelayMs: record.photoDelayMs ?? "",
-    submitDelayMs: record.submitDelayMs ?? "",
-    offlineCreated: !!record.offlineCreated,
-    createdOnline: record.createdOnline === true,
-    connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
-    connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
-    firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
-    lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
-    uploadedAt: record.uploadedAt || "",
-    delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
-    clockRisk: record.clockRisk || "",
-    clockRiskReason: record.clockRiskReason || "",
-    sessionClockDriftMs: record.sessionClockDriftMs ?? "",
-    networkClockDriftMs: record.networkClockDriftMs ?? "",
-    attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-    policyVersion: Number(record.policyVersion || 0),
-    policyFetchedAt: record.policyFetchedAt || "",
-    policySource: record.policySource || "",
-    photo: record.photo || "",
-    createdAt: record.createdAt || "",
-    lastSyncTryAt: record.lastSyncTryAt || "",
-    syncTryCount: Number(record.syncTryCount || 0)
-  };
-}
-
-/* =========================
-   Records UI
-========================= */
-
-async function refreshUi() {
-  const rec = await dbGetAll(STORE_RECORDS);
-
-  if ($("pendingCount")) $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
-  if ($("sentCount")) $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
-  if ($("failedCount")) $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
-
-  renderRecords(rec);
-}
-
-function renderRecords(records) {
-  const el = $("recordsList");
-  if (!el) return;
-
-  if (!records.length) {
-    el.innerHTML = "<p>ترددی ثبت نشده</p>";
-    return;
-  }
-
-  const sorted = [...records].sort((a, b) =>
-    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-  );
-
-  el.innerHTML = sorted
-    .slice(0, 20)
-    .map((r) => {
-      const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
-      const connectionText = r.connectionStatusFa
-        ? ` - ${escapeHtml(r.connectionStatusFa)}`
-        : r.offlineCreated
-          ? " - آفلاین"
-          : " - آنلاین";
-
-      return `
-        <div class="record-item compact-record">
-          <span>${escapeHtml(r.recordDate || "")}</span>
-          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-/* =========================
-   Admin Messages
-========================= */
-
-function showAdminMessage(m) {
-  if (!m || String(m).trim() === "" || m === "undefined" || m === "null") return;
-
-  const msg = String(m).trim();
-
-  const overlay = document.createElement("div");
-  overlay.style =
-    "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
-
-  const modal = document.createElement("div");
-  modal.style =
-    "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
-
-  modal.innerHTML = `
-    <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
-    <p style="color:#555; line-height:1.6;">${escapeHtml(msg)}</p>
-    <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
-  `;
-
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-
-  document.getElementById("closeAdminMsg").onclick = function () {
-    document.body.removeChild(overlay);
-  };
-}
-
-async function fetchMessages() {
-  if (!navigator.onLine) return;
-
-  try {
-    const profile = await getProfile().catch(() => null);
-    if (!profile?.personnelCode) return;
-
-    const url =
-      APPS_SCRIPT_URL +
-      "?action=getMessages&personnelCode=" +
-      encodeURIComponent(profile.personnelCode);
-
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
-    if (!res.ok) return;
-
-    const result = await res.json().catch(() => null);
-    if (!result || result.ok !== true) return;
-
-    const messages = Array.isArray(result.messages) ? result.messages : [];
-    const cleaned = messages
-      .map((m) => String(m ?? "").trim())
-      .filter(
-        (m) =>
-          m &&
-          m !== "false" &&
-          m !== "null" &&
-          m !== "undefined" &&
-          m !== "0" &&
-          m !== "تردد"
-      );
-
-    if (!cleaned.length) return;
-
-    const msg = cleaned.join(" | ");
-    if (!adminMessageShownOnEntry && msg !== lastAdminMessage) {
-      lastAdminMessage = msg;
-      adminMessageShownOnEntry = true;
-      showAdminMessage(msg);
-    }
-  } catch (e) {
-    console.error("Error fetching messages:", e);
-  }
-}
-
-/* =========================
-   Time / Date
-========================= */
-
-function getPersianDate(d) {
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(d);
-}
-
-function getTime(d) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(d);
-}
-
-/* =========================
-   Clock Risk
-========================= */
-
-function getSessionClockDriftMs() {
-  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
-  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
-  return Math.round(wallElapsedMs - realElapsedMs);
-}
-
-async function getNetworkTimeDriftMs(deviceNowMs) {
-  try {
-    const networkMs = Date.now();
-    if (!networkMs || isNaN(networkMs)) return null;
-    return Math.abs(networkMs - deviceNowMs);
-  } catch (_) {
-    return null;
-  }
-}
-
-function calculateClockRisk(data) {
-  const reasons = [];
-  let score = 0;
-
-  const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
-  if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
-    score += 6;
-    reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
-  }
-
-  if (data.offlineCreated) {
-    score += 1;
-    reasons.push("ثبت آفلاین");
-  }
-
-  if (String(data.locationStatus || "").toLowerCase() !== "ok") {
-    score += 4;
-    reasons.push("GPS نامعتبر/خاموش");
-  }
-
-  return {
-    clockRisk: score >= 6 ? "high" : score >= 3 ? "medium" : "low",
-    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
-  };
-}
-
-/* =========================
-   Geolocation
-========================= */
-
-function isGeolocationUsable() {
-  return !!navigator.geolocation && window.isSecureContext;
-}
-
-function hasValidLocation(l) {
-  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
-}
-
-function emptyLocation(status, error) {
-  return {
-    latitude: "",
-    longitude: "",
-    accuracy: "",
-    timestamp: null,
+  var values = [
+    personnelCode,
+    fullName,
     status,
-    error
-  };
+    "", // Placeholder for LastOnline
+    "", // Placeholder for LastOffline
+    now
+  ];
+
+  var row = findRowByPersonnelCode_(sh, personnelCode);
+  if (row) {
+    sh.getRange(row, 1, 1, values.length).setValues([values]);
+  } else {
+    sh.appendRow(values);
+  }
+
+  // Log online status
+  if (status.toLowerCase() === "online") {
+    writeOnlineLog(ss, personnelCode, fullName);
+  }
+
+  return { ok: true };
 }
 
-function chooseBetterLocation(a, b) {
-  if (!a) return b;
-  if (!b) return a;
+/**
+ * Writes an entry to the OnlineLog sheet.
+ */
+function writeOnlineLog(ss, personnelCode, fullName) {
+  try {
+    var sh = getOrCreateSheet_(ss, ONLINE_LOG_SHEET_NAME, ONLINE_LOG_HEADERS);
+    var now = new Date();
+    var date = Utilities.formatDate(now, "Asia/Tehran", "yyyy-MM-dd");
+    var time = Utilities.formatDate(now, "Asia/Tehran", "HH:mm:ss");
 
-  if (!hasValidLocation(a)) return b;
-  if (!hasValidLocation(b)) return a;
-
-  return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
+    sh.appendRow([
+      now,
+      date,
+      time,
+      String(personnelCode || "").trim(),
+      String(fullName || "").trim(),
+      "Online" // Explicitly set status to Online
+    ]);
+    Logger.log("Online log entry created for: " + personnelCode);
+  } catch (err) {
+    Logger.log("Error writing to OnlineLog: " + err.toString());
+  }
 }
 
-function geoErrorToLocation(err) {
-  if (err.code === 1) return emptyLocation("denied", "دسترسی رد شد");
-  if (err.code === 2) return emptyLocation("unavailable", "موقعیت در دسترس نیست");
-  if (err.code === 3) return emptyLocation("timeout", "زمان تمام شد");
-  return emptyLocation("error", "خطای GPS");
-}
 
-function getCurrentPositionSafe(options) {
-  return new Promise((resolve) => {
-    let done = false;
+/**
+ * Main function to process attendance data.
+ * This is the primary handler for incoming attendance records.
+ */
+function processAttendance(ss, data) {
+  var recordsSheet = getOrCreateSheet_(ss, RECORDS_SHEET_NAME, RECORD_HEADERS);
+  var recordIndexSheet = getOrCreateSheet_(ss, RECORD_INDEX_SHEET_NAME, RECORD_INDEX_HEADERS);
 
-    const timeoutId = setTimeout(() => {
-      if (done) return;
-      done = true;
-      resolve(emptyLocation("timeout", "زمان تمام شد"));
-    }, (options.timeout || 20000) + 3000);
+  var timestamp = new Date();
+  var personnelCode = String(data.personnelCode || data.PersonnelCode || "").trim();
+  var fullName = String(data.fullName || data.FullName || "").trim();
+  var status = String(data.status || data.Status || "").trim().toLowerCase();
+  var latitude = parseFloat(data.latitude || data.Latitude || 0);
+  var longitude = parseFloat(data.longitude || data.Longitude || 0);
+  var accuracy = parseFloat(data.accuracy || data.Accuracy || 0);
+  var source = String(data.source || data.Source || "Unknown");
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
+  // --- Basic Validations ---
+  if (!personnelCode) {
+    return { ok: false, message: "Personnel code is required." };
+  }
+  if (!status) {
+    return { ok: false, message: "Status is required." };
+  }
+  if (accuracy > MIN_ACCURACY_METERS) {
+    // Optionally log or handle inaccurate data
+    Logger.log("Inaccurate GPS data for " + personnelCode + ": Accuracy " + accuracy + "m");
+  }
+  // --- End Validations ---
 
-        resolve({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-          status: "ok",
-          error: ""
-        });
-      },
-      (err) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
-        resolve(geoErrorToLocation(err));
-      },
-      options
-    );
+  var dateTimeStr = Utilities.formatDate(timestamp, "Asia/Tehran", "yyyy-MM-dd HH:mm:ss");
+
+  // Append to Records sheet
+  recordsSheet.appendRow([
+    timestamp,
+    personnelCode,
+    fullName,
+    status,
+    latitude,
+    longitude,
+    accuracy,
+    source,
+    dateTimeStr
+  ]);
+
+  // Update RecordIndex sheet
+  var rowIndex = findRowByPersonnelCode_(recordIndexSheet, personnelCode);
+  var recordIndexValues = [
+    personnelCode,
+    timestamp,
+    status,
+    latitude,
+    longitude
+  ];
+
+  if (rowIndex > 0) {
+    recordIndexSheet.getRange(rowIndex, 1, 1, recordIndexValues.length).setValues([recordIndexValues]);
+  } else {
+    recordIndexSheet.appendRow(recordIndexValues);
+  }
+  
+  // Update UserStatus sheet
+  handleStatusSummary(ss, {
+    personnelCode: personnelCode,
+    fullName: fullName,
+    status: status // Pass the raw status to handleStatusSummary for logging
   });
+
+  return { ok: true, message: "Attendance recorded successfully." };
 }
+/* =============================================================
+   ATTENDANCE SYSTEM - CORE ENGINE (PART 3)
+   ============================================================= */
 
-function getLocationWithWatch(waitMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    let best = null;
+/**
+ * Handles synchronization of offline attendance data.
+ */
+function handleOfflineSync(ss, data) {
+  var recordsSheet = getOrCreateSheet_(ss, RECORDS_SHEET_NAME, RECORD_HEADERS);
+  var recordIndexSheet = getOrCreateSheet_(ss, RECORD_INDEX_SHEET_NAME, RECORD_INDEX_HEADERS);
 
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const loc = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-          status: "ok",
-          error: ""
-        };
+  var offlineEntries = data.entries;
+  if (!offlineEntries || !Array.isArray(offlineEntries)) {
+    return { ok: false, message: "Invalid offline entries data." };
+  }
 
-        best = chooseBetterLocation(best, loc);
-        if (loc.accuracy <= GOOD_ACCURACY_METERS) finish(loc);
-      },
-      (err) => finish(geoErrorToLocation(err)),
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: waitMs
-      }
-    );
+  var processedCount = 0;
+  var timestamp = new Date(); // Use a single timestamp for the sync operation
 
-    const timeoutId = setTimeout(() => finish(best), waitMs + 3000);
+  for (var i = 0; i < offlineEntries.length; i++) {
+    var entry = offlineEntries[i];
+    var personnelCode = String(entry.personnelCode || entry.PersonnelCode || "").trim();
+    var fullName = String(entry.fullName || entry.FullName || "").trim();
+    var status = String(entry.status || entry.Status || "").trim().toLowerCase();
+    var latitude = parseFloat(entry.latitude || entry.Latitude || 0);
+    var longitude = parseFloat(entry.longitude || entry.Longitude || 0);
+    var accuracy = parseFloat(entry.accuracy || entry.Accuracy || 0);
+    var source = String(entry.source || entry.Source || "Offline");
+    var entryTimestamp = new Date(entry.timestamp || entry.Timestamp || timestamp); // Use entry timestamp if available, else sync timestamp
+    var dateTimeStr = Utilities.formatDate(entryTimestamp, "Asia/Tehran", "yyyy-MM-dd HH:mm:ss");
 
-    function finish(loc) {
-      if (done) return;
-      done = true;
-      navigator.geolocation.clearWatch(watchId);
-      clearTimeout(timeoutId);
-      resolve(loc || emptyLocation("timeout", "GPS دریافت نشد"));
+    // --- Basic Validations ---
+    if (!personnelCode) continue; // Skip if no personnel code
+    if (!status) continue; // Skip if no status
+    if (accuracy > MIN_ACCURACY_METERS) {
+       Logger.log("Inaccurate GPS data during offline sync for " + personnelCode + ": Accuracy " + accuracy + "m");
     }
-  });
-}
+    // --- End Validations ---
 
-async function getLocationIOSFriendly() {
-  if (!isGeolocationUsable()) return emptyLocation("unavailable", "GPS در دسترس نیست");
+    // Append to Records sheet
+    recordsSheet.appendRow([
+      entryTimestamp,
+      personnelCode,
+      fullName,
+      status,
+      latitude,
+      longitude,
+      accuracy,
+      source,
+      dateTimeStr
+    ]);
 
-  const firstLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 25000
-  });
+    // Update RecordIndex sheet
+    var rowIndex = findRowByPersonnelCode_(recordIndexSheet, personnelCode);
+    var recordIndexValues = [
+      personnelCode,
+      entryTimestamp, // Use the entry's timestamp for the index
+      status,
+      latitude,
+      longitude
+    ];
 
-  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return firstLocation;
+    if (rowIndex > 0) {
+      recordIndexSheet.getRange(rowIndex, 1, 1, recordIndexValues.length).setValues([recordIndexValues]);
+    } else {
+      recordIndexSheet.appendRow(recordIndexValues);
+    }
+    
+    // Update UserStatus sheet for each entry
+    handleStatusSummary(ss, {
+      personnelCode: personnelCode,
+      fullName: fullName,
+      status: status
+    });
+
+    processedCount++;
   }
 
-  if (firstLocation?.status === "denied") return firstLocation;
-
-  const secondLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: false,
-    maximumAge: 0,
-    timeout: 15000
-  });
-
-  if (secondLocation?.status === "denied") return secondLocation;
-
-  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
-
-  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return bestLocation;
-  }
-
-  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
-  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
-
-  return bestLocation;
+  return { ok: true, message: "Offline sync completed. Processed " + processedCount + " entries." };
 }
 
-/* =========================
-   Image
-========================= */
+/**
+ * Gets or creates a sheet with the given name and headers.
+ * If headers are provided and the sheet is new or empty, it sets them.
+ */
+function getOrCreateSheet_(ss, sheetName, headers) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    Logger.log("Sheet created: " + sheetName);
+  }
 
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+  // Set headers if provided and the sheet is empty (last row is 0)
+  if (headers && headers.length > 0 && sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    Logger.log("Headers set for new sheet: " + sheetName);
+  }
+  
+  // Ensure headers are present if they were missing (e.g., sheet existed but was empty)
+  if (headers && headers.length > 0 && sheet.getLastRow() > 0 && sheet.getRange(1, 1).getValue() === "") {
+     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+     Logger.log("Headers were missing, now set for sheet: " + sheetName);
+  }
 
-    reader.onload = (e) => {
-      const img = new Image();
+  return sheet;
+}
 
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const MAX = 400;
+/**
+ * Finds the row number for a given personnel code in a sheet.
+ * Assumes personnel code is in the first column and data starts from row 2.
+ */
+function findRowByPersonnelCode_(sh, personnelCode) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return 0; // No data rows
 
-        let w = img.width;
-        let h = img.height;
+  var personnelCodeStr = String(personnelCode).trim();
+  var dataRange = sh.getRange(2, 1, lastRow - 1, 1); // Column A, starting from row 2
+  var values = dataRange.getValues();
 
-        if (w > h) {
-          if (w > MAX) {
-            h = h * (MAX / w);
-            w = MAX;
-          }
-        } else {
-          if (h > MAX) {
-            w = w * (MAX / h);
-            h = MAX;
-          }
-        }
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === personnelCodeStr) {
+      return i + 2; // Row number is index + 2 (because data starts from row 2)
+    }
+  }
+  return 0; // Not found
+}
 
-        canvas.width = w;
-        canvas.height = h;
+/**
+ * Retrieves user details from the Users sheet.
+ */
+function getUserDetails_(ss, personnelCode) {
+  var usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
+  if (!usersSheet) return null;
 
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
+  var lastRow = usersSheet.getLastRow();
+  if (lastRow < 2) return null;
 
-        canvas.toBlob(
-          (blob) => {
-            const r = new FileReader();
+  var dataRange = usersSheet.getRange(2, 1, lastRow - 1, 5); // Assuming 5 columns: Code, Name, Dept, Role, Active
+  var values = dataRange.getValues();
+  var targetCode = String(personnelCode).trim();
 
-            r.onloadend = () => resolve(r.result);
-            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.3
-        );
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === targetCode) {
+      return {
+        personnelCode: values[i][0],
+        fullName: values[i][1],
+        department: values[i][2],
+        role: values[i][3],
+        active: String(values[i][4]).toLowerCase() === "true" || values[i][4] === true
       };
+    }
+  }
+  return null; // User not found
+}
+/* =============================================================
+   ATTENDANCE SYSTEM - ADMIN PANEL & UTILITIES (PART 4)
+   ============================================================= */
 
-      img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
-      img.src = e.target.result;
-    };
+/**
+ * Creates custom menus in the Google Sheet UI.
+ */
+function onOpen(e) {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('سیستم تردد')
+    .addItem('رفرش داده‌ها', 'refreshData')
+    .addItem('مدیریت کاربران', 'openUserManagement')
+    .addItem('گزارش تطبیق', 'openMatchingReport')
+    .addToUi();
 
-    reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
-    reader.readAsDataURL(file);
-  });
+  // Check if sheets are set up, prompt if not
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss.getSheetByName(RECORDS_SHEET_NAME) === null) {
+    ui.alert('نیاز به راه‌اندازی اولیه سیستم وجود دارد.', 'لطفاً برای ایجاد شیت‌های لازم، روی "OK" کلیک کنید.', ui.ButtonSet.OK);
+    setupAttendanceSheets(); // Initial setup
+  }
+}
+
+/**
+ * Placeholder function to refresh data - needs implementation.
+ */
+function refreshData() {
+  SpreadsheetApp.getUi().alert('تابع "رفرش داده‌ها" هنوز پیاده‌سازی نشده است.');
+  // Example: Fetch latest data from sheets or external sources
+}
+
+/**
+ * Opens the user management interface.
+ */
+function openUserManagement() {
+  var html = HtmlService.createTemplateFromFile('UserManagement').evaluate()
+    .setWidth(800)
+    .setHeight(600);
+  SpreadsheetApp.getUi().showModalDialog(html, 'مدیریت کاربران');
+}
+
+/**
+ * Opens the matching report interface.
+ */
+function openMatchingReport() {
+  var html = HtmlService.createTemplateFromFile('MatchingReport').evaluate()
+    .setWidth(900)
+    .setHeight(700);
+  SpreadsheetApp.getUi().showModalDialog(html, 'گزارش تطبیق تردد');
+}
+
+/**
+ * Initiates the setup of attendance sheets.
+ */
+function setupAttendanceSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  getOrCreateSheet_(ss, RECORDS_SHEET_NAME, RECORD_HEADERS);
+  getOrCreateSheet_(ss, USERS_SHEET_NAME, USERS_HEADERS);
+  getOrCreateSheet_(ss, RECORD_INDEX_SHEET_NAME, RECORD_INDEX_HEADERS);
+  getOrCreateSheet_(ss, MATCHING_SHEET_NAME, MATCHING_HEADERS);
+  getOrCreateSheet_(ss, USER_STATUS_SHEET_NAME, USER_STATUS_HEADERS);
+  getOrCreateSheet_(ss, ONLINE_LOG_SHEET_NAME, ONLINE_LOG_HEADERS); // Ensure OnlineLog sheet is created
+
+  SpreadsheetApp.getUi().alert('شیت‌های سیستم با موفقیت ایجاد یا تأیید شدند.');
+  return { ok: true, message: "Attendance sheets setup complete." };
+}
+
+/**
+ * Fetches all records from the Records sheet.
+ */
+function getAllRecords() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(RECORDS_SHEET_NAME);
+  if (!sheet) return [];
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  return data;
+}
+
+/**
+ * Fetches all user statuses from the UserStatus sheet.
+ */
+function getAllUserStatuses() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(USER_STATUS_SHEET_NAME);
+  if (!sheet) return [];
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  return data;
+}
+
+/**
+ * Fetches all entries from the OnlineLog sheet.
+ */
+function getAllOnlineLogs() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(ONLINE_LOG_SHEET_NAME);
+  if (!sheet) return [];
+  // Adjust range if needed based on actual columns in OnlineLog
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  return data;
+}
+
+/**
+ * Fetches all user data from the Users sheet.
+ */
+function getAllUsers() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(USERS_SHEET_NAME);
+  if (!sheet) return [];
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  return data;
+}
+/* =============================================================
+   ATTENDANCE SYSTEM - UTILITIES & MATCHING LOGIC (PART 5)
+   ============================================================= */
+
+/**
+ * Calculates the distance between two lat/lon points in meters.
+ * Uses the Haversine formula.
+ */
+function calculateDistance_(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI / 180; // φ, λ in radians
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  const d = R * c; // distance in metres
+  return d;
+}
+
+/**
+ * Checks if a given lat/lon is within a specified radius of a reference point.
+ */
+function isWithinRadius_(refLat, refLon, checkLat, checkLon, radiusMeters) {
+  var distance = calculateDistance_(refLat, refLon, checkLat, checkLon);
+  return distance <= radiusMeters;
+}
+
+/**
+ * Finds potential matches for attendance records based on proximity and time.
+ * This function is a placeholder and needs detailed implementation based on specific matching rules.
+ */
+function findPotentialMatches(ss, record) {
+  var usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
+  var recordIndexSheet = ss.getSheetByName(RECORD_INDEX_SHEET_NAME);
+  var matchingSheet = getOrCreateSheet_(ss, MATCHING_SHEET_NAME, MATCHING_HEADERS);
+
+  if (!usersSheet || !recordIndexSheet) {
+    Logger.log("Required sheets for matching not found.");
+    return [];
+  }
+
+  var allUsers = usersSheet.getRange(2, 1, usersSheet.getLastRow() - 1, usersSheet.getLastColumn()).getValues();
+  var allRecordIndexes = recordIndexSheet.getRange(2, 1, recordIndexSheet.getLastRow() - 1, recordIndexSheet.getLastColumn()).getValues();
+
+  var recordTimestamp = new Date(record[0]); // Assuming record[0] is Timestamp
+  var recordPersonnelCode = String(record[1]).trim();
+  var recordFullName = String(record[2]).trim();
+  var recordLatitude = parseFloat(record[4]);
+  var recordLongitude = parseFloat(record[5]);
+
+  var matches = [];
+
+  // Iterate through other records (or users) to find matches
+  // This is a simplified example - real matching logic would be more complex
+  for (var i = 0; i < allRecordIndexes.length; i++) {
+    var otherRecordIndex = allRecordIndexes[i];
+    var otherPersonnelCode = String(otherRecordIndex[0]).trim();
+
+    // Skip self-comparison
+    if (recordPersonnelCode === otherPersonnelCode) continue;
+
+    var otherRecordTime = new Date(otherRecordIndex[1]);
+    var otherLatitude = parseFloat(otherRecordIndex[3]);
+    var otherLongitude = parseFloat(otherRecordIndex[4]);
+
+    // Check time proximity (e.g., within 5 minutes)
+    var timeDiffMinutes = Math.abs(recordTimestamp.getTime() - otherRecordTime.getTime()) / (1000 * 60);
+    if (timeDiffMinutes > 5) continue;
+
+    // Check location proximity (e.g., within 50 meters)
+    if (isWithinRadius_(recordLatitude, recordLongitude, otherLatitude, otherLongitude, 50)) {
+      // Find user details for the matched record index
+      var matchedUserDetails = getUserDetails_(ss, otherPersonnelCode); // Need ss here
+      if (matchedUserDetails) {
+        matches.push({
+          timestamp: recordTimestamp,
+          personnelCode: recordPersonnelCode,
+          fullName: recordFullName,
+          matchedCode: otherPersonnelCode,
+          matchedName: matchedUserDetails.fullName,
+          score: 100 // Placeholder score
+        });
+        // Optionally, log the match to the Matching sheet
+        matchingSheet.appendRow([recordTimestamp, recordPersonnelCode, recordFullName, otherPersonnelCode, matchedUserDetails.fullName, 100]);
+      }
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Helper to get user details, passing Spreadsheet object.
+ */
+function getUserDetails_(ss, personnelCode) {
+  var usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
+  if (!usersSheet) return null;
+
+  var lastRow = usersSheet.getLastRow();
+  if (lastRow < 2) return null;
+
+  var dataRange = usersSheet.getRange(2, 1, lastRow - 1, usersSheet.getLastColumn());
+  var values = dataRange.getValues();
+  var targetCode = String(personnelCode).trim();
+
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === targetCode) {
+      return {
+        personnelCode: values[i][0],
+        fullName: values[i][1],
+        department: values[i][2],
+        role: values[i][3],
+        active: String(values[i][4]).toLowerCase() === "true" || values[i][4] === true
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Final setup routine called during initial setup or when needed.
+ */
+function initializeSystem() {
+  setupAttendanceSheets();
+  // Add any other initialization tasks here
 }

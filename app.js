@@ -196,14 +196,24 @@ function bindEvents() {
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
 
   const cameraBtn = $("cameraBtn");
-  const photoInput = $("photoInput");
 
-  if (cameraBtn && photoInput) {
-    const openCamera = (e) => {
+  if (cameraBtn) {
+    let openingCamera = false;
+
+    const openCamera = async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      photoInput.value = "";
-      photoInput.click();
+
+      if (openingCamera) return;
+      openingCamera = true;
+
+      try {
+        await startAttendanceCapture();
+      } finally {
+        setTimeout(() => {
+          openingCamera = false;
+        }, 1000);
+      }
     };
 
     cameraBtn.addEventListener("click", openCamera);
@@ -583,11 +593,18 @@ async function startAttendanceCapture() {
     return;
   }
 
-  await saveProfileSilent();
+  try {
+    await saveProfileSilent();
+  } catch (_) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
+    return;
+  }
 
   const { gate } = await getCurrentAttendanceGate();
+
   if (!gate.ok) {
     setStatus(gate.message);
+    showGpsToast(gate.message, 4000, "error");
     return;
   }
 
@@ -613,6 +630,7 @@ async function startAttendanceCapture() {
   setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
   photoInput.click();
 }
+
 
 async function handlePhotoSelected() {
   const file = $("photoInput")?.files?.[0];

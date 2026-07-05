@@ -1,106 +1,169 @@
+<!-- File: index.html (replace entire file with this) -->
 <!doctype html>
-<html lang="fa" dir="rtl"> 
+<html lang="fa" dir="rtl">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0f766e" />
-<link rel="manifest" href="manifest.json" />
-<link rel="stylesheet" href="styles.css?v=6" />
-<title>ثبت تردد</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f766e" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css?v=6" />
+  <title>ثبت تردد</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
-<style>
-  /* استایل‌های مربوط به انیمیشن دکمه ذخیره */
-  #saveProfileBtn {
-    transition: all 0.4s ease;
-    position: relative;
-    font-weight: bold;
-    border: none;
-    cursor: pointer;
-  }
 
-  /* انیمیشن نقطه چین در حال ذخیره */
-  .dots::after {
-    content: '';
-    animation: dots 1.5s infinite;
-  }
+  <style>
+    /* ====== فقط CSS/HTML برای دکمه دوربین (بدون دست زدن به منطق JS) ====== */
+    #photoInput{
+      position:absolute !important;
+      width:1px !important;
+      height:1px !important;
+      padding:0 !important;
+      margin:-1px !important;
+      overflow:hidden !important;
+      clip:rect(0,0,0,0) !important;
+      white-space:nowrap !important;
+      border:0 !important;
+      opacity:0 !important;
+      pointer-events:none !important;
+    }
 
-  @keyframes dots {
-    0% { content: ''; }
-    25% { content: '.'; }
-    50% { content: '..'; }
-    75% { content: '...'; }
-    100% { content: ''; }
-  }
+    .camera-row{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      margin:10px 0 12px;
+    }
 
-  /* افکت لرزش ملایم در صورت خطا */
-  .shake {
-    animation: shake 0.5s;
-  }
+    .camera-btn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      padding:10px 14px;
+      border:1px solid #d1d5db;
+      background:#fff;
+      color:#111827;
+      border-radius:10px;
+      cursor:pointer;
+      user-select:none;
+      -webkit-tap-highlight-color:transparent;
+      touch-action:manipulation;
+      font-weight:700;
+      line-height:1;
+      min-height:44px;
+    }
 
-  @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-5px); }
-    75% { transform: translateX(5px); }
-  }
-</style>
+    .camera-btn:active{
+      transform:scale(0.99);
+    }
+
+    .camera-btn .cam-ico{
+      width:18px;
+      height:18px;
+      display:inline-block;
+      flex:0 0 auto;
+      background:#111827;
+      -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-2.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z'/%3E%3C/svg%3E") center/contain no-repeat;
+              mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-2.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    /* ====== استایل‌های مربوط به انیمیشن دکمه ذخیره (همان قبلی) ====== */
+    #saveProfileBtn {
+      transition: all 0.4s ease;
+      position: relative;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+    }
+
+    .dots::after {
+      content: '';
+      animation: dots 1.5s infinite;
+    }
+
+    @keyframes dots {
+      0% { content: ''; }
+      25% { content: '.'; }
+      50% { content: '..'; }
+      75% { content: '...'; }
+      100% { content: ''; }
+    }
+
+    .shake {
+      animation: shake 0.5s;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+  </style>
 </head>
 
 <body>
 <main class="app">
 
-<p id="onlineBadge" class="status top-status"></p>
+  <p id="onlineBadge" class="status top-status"></p>
 
-<section class="card warning compact-warning">
-<strong>هشدار مهم</strong>
-<p>
-پاک کردن حافظه مرورگر، حذف برنامه یا زدن گزینه Clear data / Clear storage باعث حذف اطلاعات تردد ارسال‌نشده می‌شود.
-ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد و عواقب حذف آن به عهده کاربر است.
-</p>
-</section>
+  <section class="card warning compact-warning">
+    <strong>هشدار مهم</strong>
+    <p>
+      پاک کردن حافظه مرورگر، حذف برنامه یا زدن گزینه Clear data / Clear storage باعث حذف اطلاعات تردد ارسال‌نشده می‌شود.
+      ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد و عواقب حذف آن به عهده کاربر است.
+    </p>
+  </section>
 
-<section class="card profile-card">
-<h2>مشخصات پرسنلی</h2>
+  <section class="card profile-card">
+    <h2>مشخصات پرسنلی</h2>
 
-<input id="personnelCode" inputmode="numeric" autocomplete="off" placeholder="شماره پرسنلی" />
-<input id="firstName" autocomplete="given-name" placeholder="نام" />
-<input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
+    <input id="personnelCode" inputmode="numeric" autocomplete="off" placeholder="شماره پرسنلی" />
+    <input id="firstName" autocomplete="given-name" placeholder="نام" />
+    <input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
 
-<button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
-<p id="profileStatus" class="status small-status"></p>
-<div id="saveLoading" class="inline-loading"></div>
-</section>
+    <button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
+    <p id="profileStatus" class="status small-status"></p>
+    <div id="saveLoading" class="inline-loading"></div>
+  </section>
 
-<section class="card attendance-card">
-<h2>ثبت تردد</h2>
+  <section class="card attendance-card">
+    <h2>ثبت تردد</h2>
 
-<input id="photoInput" type="file" accept="image/*" capture="user" style="display:none" />
+    <input id="photoInput" type="file" accept="image/*" capture="user" />
 
-<div class="photo-row">
-<img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
-</div>
+    <div class="camera-row">
+      <label for="photoInput" class="camera-btn" id="cameraBtn">
+        <span class="cam-ico" aria-hidden="true"></span>
+        <span>عکس سلفی خود را بگیرید</span>
+      </label>
+    </div>
 
-<button id="recordBtn" class="primary">ثبت تردد</button>
+    <div class="photo-row">
+      <img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
+    </div>
 
-<p id="captureStatus" class="status small-status"></p>
-<div id="recordLoading" class="inline-loading"></div>
-</section>
+    <button id="recordBtn" class="primary">ثبت تردد</button>
 
-<section class="card status-card">
-<h2>وضعیت</h2>
+    <p id="captureStatus" class="status small-status"></p>
+    <div id="recordLoading" class="inline-loading"></div>
+  </section>
 
-<div class="stats">
-<div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
-<div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
-<div><span id="failedCount">0</span><small>ناموفق</small></div>
-</div>
+  <section class="card status-card">
+    <h2>وضعیت</h2>
 
-<p id="syncStatus" class="status small-status"></p>
-</section>
+    <div class="stats">
+      <div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
+      <div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
+      <div><span id="failedCount">0</span><small>ناموفق</small></div>
+    </div>
 
-<section class="card records-card">
-<h2>ترددهای ثبت شده</h2>
-<div id="recordsList" class="records"></div>
-</section>
+    <p id="syncStatus" class="status small-status"></p>
+  </section>
+
+  <section class="card records-card">
+    <h2>ترددهای ثبت شده</h2>
+    <div id="recordsList" class="records"></div>
+  </section>
 
 </main>
 

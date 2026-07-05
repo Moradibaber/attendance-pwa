@@ -54,6 +54,8 @@ const $ = (id) => document.getElementById(id);
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
+   document.getElementById("recordBtn").textContent = "عکس سلفی خود را بگیرید";
+});
   try {
     showGpsToast(
       "★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند",

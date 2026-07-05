@@ -785,16 +785,33 @@ async function refreshPolicyIfPossible() {
 
 async function getCurrentAttendanceGate(forceOffline = null) {
   const onlineState = forceOffline === null ? navigator.onLine : !forceOffline;
-  const policyInfo = onlineState
-    ? await refreshPolicyIfPossible()
-    : await getAttendancePolicyInfo();
+  let policyInfo;
 
-  const gate = evaluateAttendancePolicy(
-    policyInfo?.attendancePolicy,
-    !onlineState
-  );
+  if (onlineState) {
+    // Try to refresh, but fall back to cached/default if it fails
+    policyInfo = await refreshPolicyIfPossible().catch(e => {
+      console.error("Failed to refresh policy, falling back to cached/default:", e);
+      return getAttendancePolicyInfo(); // Return cached/default policy
+    });
+  } else {
+    policyInfo = await getAttendancePolicyInfo();
+  }
 
-  return { policyInfo, gate };
+  // Ensure policyInfo is a valid object before proceeding
+  if (!policyInfo) {
+      console.error("policyInfo is null after attempting to fetch/cache.");
+      policyInfo = await getAttendancePolicyInfo(); // Final fallback
+  }
+
+  // Ensure policyInfo has attendancePolicy, defaulting if necessary
+  const policy = policyInfo?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+  const gate = evaluateAttendancePolicy(policy, onlineState); // Use calculated onlineState
+
+  return {
+    policyInfo: policyInfo, // Return the potentially updated policyInfo
+    gate
+  };
 }
 async function createRecord(type) {
   const profile = await getProfile();

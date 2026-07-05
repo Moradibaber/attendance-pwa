@@ -1347,7 +1347,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.9
+          0.7
         );
       };
 

@@ -1,11 +1,3 @@
-/* =========================
-   Attendance PWA - Clean Client Code
-   Fix: CORS preflight error on Apps Script by using:
-   - POST with Content-Type: text/plain (no preflight)
-   - mode: "no-cors" (so browser won't block; response is opaque)
-   - treat success as "queued/sent" and rely on server-side Debug sheet
-   ========================= */
-
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 
@@ -55,11 +47,17 @@ const $ = (id) => document.getElementById(id);
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    showGpsToast(
-      "★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند",
-      5000,
-      "error"
-    );
+    bindEvents();
+  } catch (e) {
+    console.error("bindEvents error", e);
+  }
+
+  try {
+    updateOnlineBadge();
+  } catch (_) {}
+
+  try {
+    showStartupNotice();
   } catch (_) {}
 
   try {
@@ -69,28 +67,34 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   try {
-    bindEvents();
-  } catch (_) {}
-
-  try {
     await loadProfile();
-  } catch (_) {}
+  } catch (e) {
+    console.error("loadProfile error", e);
+  }
 
   try {
     await ensurePolicyLoadedAtStartup();
-  } catch (_) {}
+  } catch (e) {
+    console.error("ensurePolicyLoadedAtStartup error", e);
+  }
 
   try {
     await refreshUi();
-  } catch (_) {}
+  } catch (e) {
+    console.error("refreshUi error", e);
+  }
 
   try {
     await fetchMessages();
-  } catch (_) {}
+  } catch (e) {
+    console.error("fetchMessages error", e);
+  }
 
   try {
     setupAutoSync();
-  } catch (_) {}
+  } catch (e) {
+    console.error("setupAutoSync error", e);
+  }
 
   try {
     if ("serviceWorker" in navigator) {
@@ -142,16 +146,26 @@ function showGpsToast(message, duration = 3000, type = "success") {
 
   document.body.appendChild(toast);
 
-  setTimeout(() => {
+  requestAnimationFrame(() => {
     toast.style.opacity = "1";
     toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 100);
+  });
 
   setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translate(-50%, -50%) scale(0.8)";
     setTimeout(() => toast.remove(), 400);
   }, duration);
+}
+
+function showStartupNotice() {
+  const onlineText = navigator.onLine ? "اینترنت: روشن" : "اینترنت: خاموش";
+  const gpsText = isGeolocationUsable() ? "GPS: در دسترس" : "GPS: غیرفعال یا بدون دسترسی";
+  showGpsToast(
+    `★ حتما جی پی اس و اینترنت خود را روشن کنید\n${onlineText}\n${gpsText}`,
+    5000,
+    "error"
+  );
 }
 
 function setStatus(m) {
@@ -220,19 +234,23 @@ function bindEvents() {
   cameraBtn.addEventListener("touchend", openCamera, { passive: false });
 }
 
-/* ------- startAttendanceCapture (FULL REPLACE) ------- */
 function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
   const lastName = $("lastName")?.value.trim() || "";
 
   if (!personnelCode || !firstName || !lastName) {
-    setStatus("لطفاً ابتدا فرم مشخصات را کامل کنید.");
-    showGpsToast("کد پرسنلی، نام و نام خانوادگی را وارد کنید.", 3500, "error");
+    setStatus("لطفاً ابتدا فرم مشخصات را کامل و ذخیره کنید.");
+    showGpsToast("کد پرسنلی، نام و نام خانوادگی را وارد و ذخیره کنید.", 3500, "error");
     return;
   }
 
-  saveProfileSilent();
+  const saved = saveProfileToLocal();
+  if (!saved) {
+    setStatus("ذخیره مشخصات انجام نشد.");
+    showGpsToast("ابتدا مشخصات را ذخیره کنید.", 3500, "error");
+    return;
+  }
 
   captureStartedAtMs = Date.now();
   photoSelectedAtMs = 0;
@@ -257,7 +275,6 @@ function startAttendanceCapture() {
   photoInput.click();
 }
 
-/* ------- handlePhotoSelected (FULL REPLACE) ------- */
 async function handlePhotoSelected() {
   const file = $("photoInput")?.files?.[0];
   photoSelectedAtMs = Date.now();
@@ -268,17 +285,14 @@ async function handlePhotoSelected() {
   }
 
   try {
-    const personnelCode = $("personnelCode")?.value.trim() || "";
-    const firstName = $("firstName")?.value.trim() || "";
-    const lastName = $("lastName")?.value.trim() || "";
+    const profile = await getProfile();
 
-    if (!personnelCode || !firstName || !lastName) {
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
       setStatus("مشخصات پرسنلی ناقص است.");
       showGpsToast("مشخصات پرسنلی ناقص است.", 3000, "error");
+      $("photoInput").value = "";
       return;
     }
-
-    await saveProfileSilent();
 
     setStatus("در حال بررسی دسترسی...");
     const { gate } = await getCurrentAttendanceGate();
@@ -327,6 +341,7 @@ async function handlePhotoSelected() {
     setStatus("خطا در پردازش: " + (e?.message || "unknown"));
   }
 }
+
 /* =========================
    Auto Sync
 ========================= */
@@ -336,26 +351,35 @@ function setupAutoSync() {
 
   window.addEventListener("online", async () => {
     updateOnlineBadge();
+    showStartupNotice();
     await refreshPolicyIfPossible();
     await markFirstConnectionForOfflineRecords();
     scheduleSyncPendingRecords(500);
     await fetchMessages();
   });
 
-  window.addEventListener("offline", updateOnlineBadge);
+  window.addEventListener("offline", () => {
+    updateOnlineBadge();
+    showStartupNotice();
+  });
 
   window.addEventListener("focus", async () => {
-    if (!navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
+    updateOnlineBadge();
+    if (navigator.onLine) {
+      await refreshPolicyIfPossible();
+      scheduleSyncPendingRecords(500);
+      await fetchMessages();
+    }
   });
 
   document.addEventListener("visibilitychange", async () => {
-    if (document.hidden || !navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
+    if (document.hidden) return;
+    updateOnlineBadge();
+    if (navigator.onLine) {
+      await refreshPolicyIfPossible();
+      scheduleSyncPendingRecords(500);
+      await fetchMessages();
+    }
   });
 
   if ("serviceWorker" in navigator) {
@@ -432,31 +456,52 @@ function openDb() {
 
 function dbPut(store, value) {
   return new Promise((resolve, reject) => {
+    if (!db) {
+      reject(new Error("DB_NOT_READY"));
+      return;
+    }
+
     const tx = db.transaction(store, "readwrite");
     const st = tx.objectStore(store);
     const req = st.put(value);
+
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error || new Error("DB_TX_ERROR"));
   });
 }
 
 function dbGet(store, key) {
   return new Promise((resolve, reject) => {
+    if (!db) {
+      reject(new Error("DB_NOT_READY"));
+      return;
+    }
+
     const tx = db.transaction(store, "readonly");
     const st = tx.objectStore(store);
     const req = st.get(key);
+
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error || new Error("DB_TX_ERROR"));
   });
 }
 
 function dbGetAll(store) {
   return new Promise((resolve, reject) => {
+    if (!db) {
+      reject(new Error("DB_NOT_READY"));
+      return;
+    }
+
     const tx = db.transaction(store, "readonly");
     const st = tx.objectStore(store);
     const req = st.getAll();
+
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error || new Error("DB_TX_ERROR"));
   });
 }
 
@@ -472,26 +517,129 @@ function getProfileFromInputs() {
   };
 }
 
+function saveProfileToLocal() {
+  const profile = getProfileFromInputs();
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    return false;
+  }
+
+  try {
+    localStorage.setItem("attendance_profile_main", JSON.stringify(profile));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function loadProfileFromLocal() {
+  try {
+    const raw = localStorage.getItem("attendance_profile_main");
+    if (!raw) return null;
+
+    const p = JSON.parse(raw);
+    if (!p) return null;
+
+    return {
+      personnelCode: String(p.personnelCode || "").trim(),
+      firstName: String(p.firstName || "").trim(),
+      lastName: String(p.lastName || "").trim()
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 async function loadProfile() {
-  const p = await dbGet(STORE_PROFILE, "main");
+  let p = null;
+
+  try {
+    p = await dbGet(STORE_PROFILE, "main");
+  } catch (_) {}
+
+  if (!p) {
+    p = loadProfileFromLocal();
+  }
+
   if (!p) return;
 
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
   if ($("firstName")) $("firstName").value = p.firstName || "";
   if ($("lastName")) $("lastName").value = p.lastName || "";
+
+  if (p.personnelCode && p.firstName && p.lastName) {
+    try {
+      await dbPut(STORE_PROFILE, { id: "main", ...p });
+    } catch (_) {}
+  }
 }
 
 async function saveProfileSilent() {
   const profile = getProfileFromInputs();
+
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
+    return false;
   }
-  await dbPut(STORE_PROFILE, { id: "main", ...profile });
+
+  const localOk = saveProfileToLocal();
+
+  try {
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    return true;
+  } catch (e) {
+    console.error("saveProfileSilent error:", e);
+    return localOk;
+  }
+}
+
+async function saveProfile() {
+  const profile = getProfileFromInputs();
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    showGpsToast("کد پرسنلی، نام و نام خانوادگی را کامل کنید.", 3500, "error");
+    setStatus("مشخصات کامل نیست.");
+    return false;
+  }
+
+  const localOk = saveProfileToLocal();
+
+  try {
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    showGpsToast("مشخصات با موفقیت ذخیره شد.", 2500, "success");
+    setStatus("مشخصات ذخیره شد.");
+    return true;
+  } catch (e) {
+    console.error("saveProfile error:", e);
+
+    if (localOk) {
+      showGpsToast("مشخصات روی دستگاه ذخیره شد.", 2500, "success");
+      setStatus("مشخصات روی دستگاه ذخیره شد.");
+      return true;
+    }
+
+    showGpsToast("خطا در ذخیره مشخصات.", 3500, "error");
+    setStatus("ذخیره مشخصات انجام نشد.");
+    return false;
+  }
 }
 
 async function getProfile() {
-  const saved = await dbGet(STORE_PROFILE, "main");
   const inputProfile = getProfileFromInputs();
+
+  if (inputProfile.personnelCode && inputProfile.firstName && inputProfile.lastName) {
+    await saveProfileSilent();
+    return inputProfile;
+  }
+
+  let saved = null;
+
+  try {
+    saved = await dbGet(STORE_PROFILE, "main");
+  } catch (_) {}
+
+  if (!saved) {
+    saved = loadProfileFromLocal();
+  }
 
   const profile = {
     personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
@@ -503,271 +651,103 @@ async function getProfile() {
     throw new Error("مشخصات پرسنلی کامل نیست.");
   }
 
-  await dbPut(STORE_PROFILE, { id: "main", ...profile });
-  return pasync function saveProfileSilent() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) return false;
-
-  try {
-    await dbPut(STORE_PROFILE, {
-      id: "main",
-      personnelCode,
-      firstName,
-      lastName
-    });
-    return true;
-  } catch (e) {
-    console.error("saveProfileSilent error:", e);
-    return false;
-  }
-}
-rofile;
-}
-
-async function saveProfile() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    showGpsToast("کد پرسنلی، نام و نام خانوادگی الزامی است.", 4000, "error");
-    return false;
-  }
-
-  try {
-    await dbPut(STORE_PROFILE, {
-      id: "main",
-      personnelCode,
-      firstName,
-      lastName
-    });
-
-    setStatus("مشخصات پرسنلی ذخیره شد.");
-    showGpsToast("مشخصات پرسنلی ذخیره شد.", 2500, "success");
-    return true;
-  } catch (e) {
-    console.error(e);
-    setStatus("خطا در ذخیره مشخصات.");
-    showGpsToast("خطا در ذخیره مشخصات پرسنلی.", 4000, "error");
-    return false;
-  }
+  await saveProfileSilent();
+  return profile;
 }
 
 /* =========================
-   Policy
+   Attendance Policy
 ========================= */
 
-function normalizeAttendancePolicy(policy) {
-  const p = String(policy || "").trim().toUpperCase();
+async function ensurePolicyLoadedAtStartup() {
+  try {
+    const saved = await dbGet(STORE_CONFIG, "attendancePolicy");
+    if (saved && saved.attendancePolicy) return saved;
+  } catch (_) {}
 
-  if (
-    p === POLICY_NOT_ALLOWED ||
-    p === POLICY_ONLINE_ONLY ||
-    p === POLICY_OFFLINE_ONLY ||
-    p === POLICY_ONLINE_PREFERRED ||
-    p === POLICY_ONLINE_OR_OFFLINE ||
-    p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
-  ) {
-    return p;
-  }
-
-  return DEFAULT_ATTENDANCE_POLICY;
-}
-
-function evaluateAttendancePolicy(policy, isOnline) {
-  const normalized = normalizeAttendancePolicy(policy);
-
-  if (normalized === POLICY_NOT_ALLOWED) {
-    return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
-  }
-
-  if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
-  }
-
-  if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
-  }
-
-  return { ok: true, message: "" };
+  return await refreshPolicyIfPossible();
 }
 
 async function getAttendancePolicyInfo() {
-  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
-  if (!policy) {
-    return {
-      id: "attendancePolicy",
-      personnelCode: "",
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      policyFetchedAt: "",
-      policySource: "default"
-    };
-  }
-  return policy;
-}
+  let saved = null;
 
-async function saveAttendancePolicyInfo(data) {
-  await dbPut(STORE_CONFIG, {
+  try {
+    saved = await dbGet(STORE_CONFIG, "attendancePolicy");
+  } catch (_) {}
+
+  if (saved && saved.attendancePolicy) {
+    return saved;
+  }
+
+  return {
     id: "attendancePolicy",
-    personnelCode: data.personnelCode || "",
-    attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
-    policyVersion: Number(data.policyVersion || 0),
-    policyFetchedAt: data.policyFetchedAt || "",
-    policySource: data.policySource || ""
-  });
+    attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+    policyVersion: 0,
+    policyFetchedAt: "",
+    policySource: "default"
+  };
 }
 
-async function ensurePolicyLoadedAtStartup() {
-  const profile = await dbGet(STORE_PROFILE, "main");
-  if (!profile?.personnelCode) return;
+function evaluateAttendancePolicy(attendancePolicy, isOfflineAttempt) {
+  const policy = attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
-  const cached = await getAttendancePolicyInfo();
-  if (cached?.personnelCode === profile.personnelCode) {
-    if (navigator.onLine) await refreshPolicyIfPossible();
-    return;
+  if (policy === POLICY_NOT_ALLOWED) {
+    return { ok: false, message: "ثبت تردد برای این کاربر مجاز نیست." };
   }
 
-  if (navigator.onLine) {
-    await refreshPolicyIfPossible();
-  } else {
-    await saveAttendancePolicyInfo({
-      personnelCode: profile.personnelCode,
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      policyFetchedAt: "",
-      policySource: "default_offline"
-    });
+  if (policy === POLICY_ONLINE_ONLY && isOfflineAttempt) {
+    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
   }
+
+  if (policy === POLICY_OFFLINE_ONLY && !isOfflineAttempt) {
+    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
+  }
+
+  return { ok: true, message: "ok" };
 }
 
 async function refreshPolicyIfPossible() {
-  if (!navigator.onLine) return null;
-
-  const profile = await getProfile().catch(() => null);
-  if (!profile?.personnelCode) return null;
+  if (!navigator.onLine) {
+    return await getAttendancePolicyInfo();
+  }
 
   try {
+    const profile = await getProfile().catch(() => null);
+    const personnelCode = profile?.personnelCode || $("personnelCode")?.value.trim() || "";
+
     const url =
-      `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
-      encodeURIComponent(profile.personnelCode);
+      APPS_SCRIPT_URL +
+      "?action=getPolicy" +
+      (personnelCode ? "&personnelCode=" + encodeURIComponent(personnelCode) : "");
 
     const res = await fetch(url, { method: "GET", cache: "no-store" });
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error("policy_fetch_failed");
 
-    const result = await res.json().catch(() => null);
-    if (!result || result.ok !== true) return null;
-
-    const policyInfo = {
-      personnelCode: profile.personnelCode,
-      attendancePolicy: normalizeAttendancePolicy(result.attendancePolicy),
-      policyVersion: Number(result.policyVersion || 0),
+    const data = await res.json();
+    const normalized = {
+      id: "attendancePolicy",
+      attendancePolicy: data?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: Number(data?.policyVersion || 0),
       policyFetchedAt: new Date().toISOString(),
       policySource: "server"
     };
 
-    await saveAttendancePolicyInfo(policyInfo);
-    return policyInfo;
-  } catch (_) {
-    return null;
+    await dbPut(STORE_CONFIG, normalized);
+    return normalized;
+  } catch (e) {
+    console.error("refreshPolicyIfPossible error:", e);
+    return await getAttendancePolicyInfo();
   }
 }
 
 async function getCurrentAttendanceGate() {
-  if (navigator.onLine) await refreshPolicyIfPossible();
-  const policyInfo = await getAttendancePolicyInfo();
-  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+  const policyInfo = navigator.onLine
+    ? await refreshPolicyIfPossible()
+    : await getAttendancePolicyInfo();
 
-  return {
-    policyInfo,
-    gate: evaluateAttendancePolicy(policy, navigator.onLine)
-  };
+  const gate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, !navigator.onLine);
+  return { policyInfo, gate };
 }
-
-/* =========================
-   Attendance Capture
-========================= */
-
-function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    showGpsToast("لطفاً ابتدا مشخصات پرسنلی را تکمیل کنید.", 3000, "error");
-    return;
-  }
-
-  captureStartedAtMs = Date.now();
-  photoSelectedAtMs = 0;
-  photoCompressedAtMs = 0;
-  currentPhoto = "";
-  pendingLocation = null;
-
-  const prev = $("photoPreview");
-  if (prev) {
-    prev.removeAttribute("src");
-    prev.style.display = "none";
-  }
-
-  const photoInput = $("photoInput");
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد.");
-    return;
-  }
-
-  photoInput.value = "";
-
-  setStatus("دوربین باز می‌شود...");
-
-async function handlePhotoSelected() {
-  const file = $("photoInput")?.files?.[0];
-  photoSelectedAtMs = Date.now();
-
-  if (!file) {
-    setStatus("عکسی انتخاب نشد.");
-    return;
-  }
-
-  try {
-    const personnelCode = $("personnelCode")?.value.trim() || "";
-    const firstName = $("firstName")?.value.trim() || "";
-    const lastName = $("lastName")?.value.trim() || "";
-
-    if (!personnelCode || !firstName || !lastName) {
-      setStatus("مشخصات پرسنلی ناقص است.");
-      showGpsToast("مشخصات پرسنلی ناقص است.", 3000, "error");
-      return;
-    }
-
-    async function saveProfileSilent() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) return false;
-
-  try {
-    await dbPut(STORE_PROFILE, {
-      id: "main",
-      personnelCode,
-      firstName,
-      lastName
-    });
-    return true;
-  } catch (e) {
-    console.error("saveProfileSilent error:", e);
-    return false;
-  }
-}
-/* =========================
-   Record Creation
-========================= */
 
 async function createRecord(type) {
   const profile = await getProfile();
@@ -1451,9 +1431,10 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
+
 function jalaliToGregorian_(jy, jm, jd) {
   const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
-  const jy2 = (jy === 979) ? 0 : jy - 979;
+  const jy2 = jy === 979 ? 0 : jy - 979;
   let leapJ = -14;
   let jp = salA[0];
 
@@ -1500,7 +1481,7 @@ function jalaliToGregorian_(jy, jm, jd) {
   }
 
   let i = 0;
-  const salG = [0, 31, (leapG ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const salG = [0, 31, leapG ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   for (i = 1; i <= 12; i += 1) {
     if (gdm < salG[i]) break;
     gdm -= salG[i];

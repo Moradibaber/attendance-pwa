@@ -31,6 +31,9 @@ body.modal-open {
   padding: 8px;
   text-align: center;
 }
+#recordBtn {
+  display: none !important;
+}
 
 /* کارت‌ها جمع‌وجورتر */
 .card {

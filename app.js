@@ -196,29 +196,25 @@ function bindEvents() {
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
 
   const cameraBtn = $("cameraBtn");
+  if (!cameraBtn) return;
 
-  if (cameraBtn) {
-    let openingCamera = false;
+  let openingCamera = false;
 
-    const openCamera = async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+  const openCamera = (e) => {
+    if (e.type === "touchend") e.preventDefault();
+    if (openingCamera) return;
 
-      if (openingCamera) return;
-      openingCamera = true;
+    openingCamera = true;
 
-      try {
-        await startAttendanceCapture();
-      } finally {
-        setTimeout(() => {
-          openingCamera = false;
-        }, 1000);
-      }
-    };
+    startAttendanceCapture();
 
-    cameraBtn.addEventListener("click", openCamera);
-    cameraBtn.addEventListener("touchend", openCamera, { passive: false });
-  }
+    setTimeout(() => {
+      openingCamera = false;
+    }, 1000);
+  };
+
+  cameraBtn.addEventListener("click", openCamera);
+  cameraBtn.addEventListener("touchend", openCamera, { passive: false });
 }
 /* =========================
    Auto Sync
@@ -583,28 +579,14 @@ async function getCurrentAttendanceGate() {
    Attendance Capture
 ========================= */
 
-async function startAttendanceCapture() {
+function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
   const lastName = $("lastName")?.value.trim() || "";
 
   if (!personnelCode || !firstName || !lastName) {
     setStatus("مشخصات پرسنلی کامل نیست.");
-    return;
-  }
-
-  try {
-    await saveProfileSilent();
-  } catch (_) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    return;
-  }
-
-  const { gate } = await getCurrentAttendanceGate();
-
-  if (!gate.ok) {
-    setStatus(gate.message);
-    showGpsToast(gate.message, 4000, "error");
+    showGpsToast("لطفاً ابتدا مشخصات پرسنلی را تکمیل کنید.", 3000, "error");
     return;
   }
 
@@ -614,26 +596,25 @@ async function startAttendanceCapture() {
   currentPhoto = "";
   pendingLocation = null;
 
-  const preview = $("photoPreview");
-  if (preview) {
-    preview.removeAttribute("src");
-    preview.style.display = "none";
+  const prev = $("photoPreview");
+  if (prev) {
+    prev.removeAttribute("src");
+    prev.style.display = "none";
   }
 
   const photoInput = $("photoInput");
   if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
+    setStatus("ورودی عکس پیدا نشد.");
     return;
   }
 
   photoInput.value = "";
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-  photoInput.click();
-}
 
+  setStatus("دوربین باز می‌شود...");
 
 async function handlePhotoSelected() {
   const file = $("photoInput")?.files?.[0];
+  photoSelectedAtMs = Date.now();
 
   if (!file) {
     setStatus("عکسی انتخاب نشد.");
@@ -641,23 +622,35 @@ async function handlePhotoSelected() {
   }
 
   try {
-    await saveProfileSilent();
+    const profile = getProfileFromInputs();
 
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      setStatus("مشخصات پرسنلی ناقص است.");
+      showGpsToast("مشخصات پرسنلی ناقص است.", 3000, "error");
+      return;
+    }
+
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+
+    setStatus("در حال بررسی دسترسی...");
     const { gate } = await getCurrentAttendanceGate();
+
     if (!gate.ok) {
       setStatus(gate.message);
+      showGpsToast(gate.message, 4000, "error");
       $("photoInput").value = "";
       currentPhoto = "";
       return;
     }
 
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    setStatus("در حال آماده‌سازی عکس...");
     currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
 
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = currentPhoto;
-      preview.style.display = "block";
+    const prev = $("photoPreview");
+    if (prev) {
+      prev.src = currentPhoto;
+      prev.style.display = "block";
     }
 
     if (!isGeolocationUsable()) {
@@ -671,27 +664,22 @@ async function handlePhotoSelected() {
     if (!hasValidLocation(location)) {
       if (location?.status === "denied") {
         setStatus("دسترسی GPS رد شد.");
+        showGpsToast("دسترسی GPS را در تنظیمات مرورگر فعال کنید.", 5000, "error");
         return;
       }
-      if (location?.status === "unavailable") {
-        setStatus("GPS در دسترس نیست.");
-        return;
-      }
-      if (location?.status === "timeout") {
-        setStatus("زمان GPS تمام شد.");
-        return;
-      }
-      setStatus("GPS دریافت نشد.");
+      setStatus(location?.error || "GPS دریافت نشد.");
       return;
     }
 
     pendingLocation = location;
+
     await createRecord("تردد");
-  } catch (err) {
-    console.error(err);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
+  } catch (e) {
+    console.error(e);
+    setStatus("خطا در پردازش: " + e.message);
   }
 }
+
 /* =========================
    Record Creation
 ========================= */

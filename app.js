@@ -1,3 +1,13 @@
+/* =========================
+   Attendance PWA - Clean Client Code
+   Fix: CORS preflight error on Apps Script by using:
+   - POST with Content-Type: text/plain (no preflight)
+   - mode: "no-cors" (so browser won't block; response is opaque)
+   - treat success as "queued/sent" and rely on server-side Debug sheet
+   + NEW: Heartbeat - pings the server every 30s while online so the
+     server can accumulate how long each user stays online (OnlineTime sheet)
+   ========================= */
+
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 
@@ -21,6 +31,10 @@ const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
 const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
 const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
 const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
+
+// NEW: heartbeat config - must be <= the server's HEARTBEAT_GAP_THRESHOLD_MS (90s) with room to spare
+const HEARTBEAT_INTERVAL_MS = 30000;
+let heartbeatTimer = null;
 
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
@@ -47,17 +61,11 @@ const $ = (id) => document.getElementById(id);
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    bindEvents();
-  } catch (e) {
-    console.error("bindEvents error", e);
-  }
-
-  try {
-    updateOnlineBadge();
-  } catch (_) {}
-
-  try {
-    showStartupNotice();
+    showGpsToast(
+      "★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند",
+      5000,
+      "error"
+    );
   } catch (_) {}
 
   try {
@@ -67,34 +75,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   try {
+    bindEvents();
+  } catch (_) {}
+
+  try {
     await loadProfile();
-  } catch (e) {
-    console.error("loadProfile error", e);
-  }
+  } catch (_) {}
 
   try {
     await ensurePolicyLoadedAtStartup();
-  } catch (e) {
-    console.error("ensurePolicyLoadedAtStartup error", e);
-  }
+  } catch (_) {}
 
   try {
     await refreshUi();
-  } catch (e) {
-    console.error("refreshUi error", e);
-  }
+  } catch (_) {}
 
   try {
     await fetchMessages();
-  } catch (e) {
-    console.error("fetchMessages error", e);
-  }
+  } catch (_) {}
 
   try {
     setupAutoSync();
-  } catch (e) {
-    console.error("setupAutoSync error", e);
-  }
+  } catch (_) {}
+
+  try {
+    setupHeartbeat();
+  } catch (_) {}
 
   try {
     if ("serviceWorker" in navigator) {
@@ -146,26 +152,16 @@ function showGpsToast(message, duration = 3000, type = "success") {
 
   document.body.appendChild(toast);
 
-  requestAnimationFrame(() => {
+  setTimeout(() => {
     toast.style.opacity = "1";
     toast.style.transform = "translate(-50%, -50%) scale(1)";
-  });
+  }, 100);
 
   setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translate(-50%, -50%) scale(0.8)";
     setTimeout(() => toast.remove(), 400);
   }, duration);
-}
-
-function showStartupNotice() {
-  const onlineText = navigator.onLine ? "اینترنت: روشن" : "اینترنت: خاموش";
-  const gpsText = isGeolocationUsable() ? "GPS: در دسترس" : "GPS: غیرفعال یا بدون دسترسی";
-  showGpsToast(
-    `★ حتما جی پی اس و اینترنت خود را روشن کنید\n${onlineText}\n${gpsText}`,
-    5000,
-    "error"
-  );
 }
 
 function setStatus(m) {
@@ -206,140 +202,9 @@ function escapeHtml(v) {
 ========================= */
 
 function bindEvents() {
-  $("saveProfileBtn")?.addEventListener("click", async (e) => {
-    e.preventDefault();
-    await saveProfile();
-  });
-
+  $("saveProfileBtn")?.addEventListener("click", saveProfile);
+  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
-
-  const cameraBtn = $("cameraBtn");
-  if (!cameraBtn) return;
-
-  let cameraOpening = false;
-
-  const openCamera = (e) => {
-    if (e?.type === "touchend") e.preventDefault();
-    if (cameraOpening) return;
-    cameraOpening = true;
-
-    startAttendanceCapture();
-
-    setTimeout(() => {
-      cameraOpening = false;
-    }, 1000);
-  };
-
-  cameraBtn.addEventListener("click", openCamera);
-  cameraBtn.addEventListener("touchend", openCamera, { passive: false });
-}
-
-function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
-
-  if (!personnelCode || !firstName || !lastName) {
-    setStatus("لطفاً ابتدا فرم مشخصات را کامل و ذخیره کنید.");
-    showGpsToast("کد پرسنلی، نام و نام خانوادگی را وارد و ذخیره کنید.", 3500, "error");
-    return;
-  }
-
-  const saved = saveProfileToLocal();
-  if (!saved) {
-    setStatus("ذخیره مشخصات انجام نشد.");
-    showGpsToast("ابتدا مشخصات را ذخیره کنید.", 3500, "error");
-    return;
-  }
-
-  captureStartedAtMs = Date.now();
-  photoSelectedAtMs = 0;
-  photoCompressedAtMs = 0;
-  currentPhoto = "";
-  pendingLocation = null;
-
-  const preview = $("photoPreview");
-  if (preview) {
-    preview.removeAttribute("src");
-    preview.style.display = "none";
-  }
-
-  const photoInput = $("photoInput");
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد.");
-    return;
-  }
-
-  photoInput.value = "";
-  setStatus("دوربین باز می‌شود...");
-  photoInput.click();
-}
-
-async function handlePhotoSelected() {
-  const file = $("photoInput")?.files?.[0];
-  photoSelectedAtMs = Date.now();
-
-  if (!file) {
-    setStatus("عکسی انتخاب نشد.");
-    return;
-  }
-
-  try {
-    const profile = await getProfile();
-
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      setStatus("مشخصات پرسنلی ناقص است.");
-      showGpsToast("مشخصات پرسنلی ناقص است.", 3000, "error");
-      $("photoInput").value = "";
-      return;
-    }
-
-    setStatus("در حال بررسی دسترسی...");
-    const { gate } = await getCurrentAttendanceGate();
-
-    if (!gate.ok) {
-      setStatus(gate.message);
-      showGpsToast(gate.message, 4000, "error");
-      $("photoInput").value = "";
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس...");
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
-
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = currentPhoto;
-      preview.style.display = "block";
-    }
-
-    if (typeof isGeolocationUsable === "function" && !isGeolocationUsable()) {
-      setStatus("GPS در دسترس نیست.");
-      showGpsToast("GPS در این دستگاه در دسترس نیست.", 4000, "error");
-      return;
-    }
-
-    setStatus("در حال دریافت GPS...");
-    const location = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(location)) {
-      if (location?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.");
-        showGpsToast("دسترسی GPS را در تنظیمات مرورگر فعال کنید.", 5000, "error");
-        return;
-      }
-      setStatus(location?.error || "GPS دریافت نشد.");
-      return;
-    }
-
-    pendingLocation = location;
-    await createRecord("تردد");
-  } catch (e) {
-    console.error(e);
-    setStatus("خطا در پردازش: " + (e?.message || "unknown"));
-  }
 }
 
 /* =========================
@@ -351,35 +216,26 @@ function setupAutoSync() {
 
   window.addEventListener("online", async () => {
     updateOnlineBadge();
-    showStartupNotice();
     await refreshPolicyIfPossible();
     await markFirstConnectionForOfflineRecords();
     scheduleSyncPendingRecords(500);
     await fetchMessages();
   });
 
-  window.addEventListener("offline", () => {
-    updateOnlineBadge();
-    showStartupNotice();
-  });
+  window.addEventListener("offline", updateOnlineBadge);
 
   window.addEventListener("focus", async () => {
-    updateOnlineBadge();
-    if (navigator.onLine) {
-      await refreshPolicyIfPossible();
-      scheduleSyncPendingRecords(500);
-      await fetchMessages();
-    }
+    if (!navigator.onLine) return;
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
   });
 
   document.addEventListener("visibilitychange", async () => {
-    if (document.hidden) return;
-    updateOnlineBadge();
-    if (navigator.onLine) {
-      await refreshPolicyIfPossible();
-      scheduleSyncPendingRecords(500);
-      await fetchMessages();
-    }
+    if (document.hidden || !navigator.onLine) return;
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
   });
 
   if ("serviceWorker" in navigator) {
@@ -410,6 +266,60 @@ function setupAutoSync() {
 function scheduleSyncPendingRecords(delay = 0) {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => syncPendingRecords(), delay);
+}
+
+/* =========================
+   NEW: Heartbeat (online time tracking)
+   -------------------------------------------------
+   Sends a small "Heartbeat" ping to the server every
+   HEARTBEAT_INTERVAL_MS while the user is online, so the
+   server (OnlineTime sheet) can accumulate total online
+   seconds per user per day. Uses the same CORS-safe
+   text/plain + no-cors pattern as syncPendingRecords.
+========================= */
+
+function setupHeartbeat() {
+  // Fire one immediately (if possible), then on an interval.
+  sendHeartbeatIfPossible();
+
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(sendHeartbeatIfPossible, HEARTBEAT_INTERVAL_MS);
+
+  // Also fire right away whenever we come back online or the tab becomes visible,
+  // so a session resumes promptly instead of waiting for the next tick.
+  window.addEventListener("online", sendHeartbeatIfPossible);
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && navigator.onLine) sendHeartbeatIfPossible();
+  });
+}
+
+async function sendHeartbeatIfPossible() {
+  if (!navigator.onLine) return;
+  if (!db) return;
+
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile?.personnelCode) return;
+
+    const payload = {
+      type: "Heartbeat",
+      personnelCode: profile.personnelCode,
+      firstName: profile.firstName || "",
+      lastName: profile.lastName || ""
+    };
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (_) {
+    // Silently ignore - heartbeat is best-effort, it will just retry on the next tick
+  }
 }
 
 /* =========================
@@ -456,52 +366,31 @@ function openDb() {
 
 function dbPut(store, value) {
   return new Promise((resolve, reject) => {
-    if (!db) {
-      reject(new Error("DB_NOT_READY"));
-      return;
-    }
-
     const tx = db.transaction(store, "readwrite");
     const st = tx.objectStore(store);
     const req = st.put(value);
-
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error || new Error("DB_TX_ERROR"));
   });
 }
 
 function dbGet(store, key) {
   return new Promise((resolve, reject) => {
-    if (!db) {
-      reject(new Error("DB_NOT_READY"));
-      return;
-    }
-
     const tx = db.transaction(store, "readonly");
     const st = tx.objectStore(store);
     const req = st.get(key);
-
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error || new Error("DB_TX_ERROR"));
   });
 }
 
 function dbGetAll(store) {
   return new Promise((resolve, reject) => {
-    if (!db) {
-      reject(new Error("DB_NOT_READY"));
-      return;
-    }
-
     const tx = db.transaction(store, "readonly");
     const st = tx.objectStore(store);
     const req = st.getAll();
-
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
-    tx.onerror = () => reject(tx.error || new Error("DB_TX_ERROR"));
   });
 }
 
@@ -517,129 +406,26 @@ function getProfileFromInputs() {
   };
 }
 
-function saveProfileToLocal() {
-  const profile = getProfileFromInputs();
-
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    return false;
-  }
-
-  try {
-    localStorage.setItem("attendance_profile_main", JSON.stringify(profile));
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-function loadProfileFromLocal() {
-  try {
-    const raw = localStorage.getItem("attendance_profile_main");
-    if (!raw) return null;
-
-    const p = JSON.parse(raw);
-    if (!p) return null;
-
-    return {
-      personnelCode: String(p.personnelCode || "").trim(),
-      firstName: String(p.firstName || "").trim(),
-      lastName: String(p.lastName || "").trim()
-    };
-  } catch (_) {
-    return null;
-  }
-}
-
 async function loadProfile() {
-  let p = null;
-
-  try {
-    p = await dbGet(STORE_PROFILE, "main");
-  } catch (_) {}
-
-  if (!p) {
-    p = loadProfileFromLocal();
-  }
-
+  const p = await dbGet(STORE_PROFILE, "main");
   if (!p) return;
 
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
   if ($("firstName")) $("firstName").value = p.firstName || "";
   if ($("lastName")) $("lastName").value = p.lastName || "";
-
-  if (p.personnelCode && p.firstName && p.lastName) {
-    try {
-      await dbPut(STORE_PROFILE, { id: "main", ...p });
-    } catch (_) {}
-  }
 }
 
 async function saveProfileSilent() {
   const profile = getProfileFromInputs();
-
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    return false;
+    throw new Error("مشخصات پرسنلی کامل نیست.");
   }
-
-  const localOk = saveProfileToLocal();
-
-  try {
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    return true;
-  } catch (e) {
-    console.error("saveProfileSilent error:", e);
-    return localOk;
-  }
-}
-
-async function saveProfile() {
-  const profile = getProfileFromInputs();
-
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    showGpsToast("کد پرسنلی، نام و نام خانوادگی را کامل کنید.", 3500, "error");
-    setStatus("مشخصات کامل نیست.");
-    return false;
-  }
-
-  const localOk = saveProfileToLocal();
-
-  try {
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    showGpsToast("مشخصات با موفقیت ذخیره شد.", 2500, "success");
-    setStatus("مشخصات ذخیره شد.");
-    return true;
-  } catch (e) {
-    console.error("saveProfile error:", e);
-
-    if (localOk) {
-      showGpsToast("مشخصات روی دستگاه ذخیره شد.", 2500, "success");
-      setStatus("مشخصات روی دستگاه ذخیره شد.");
-      return true;
-    }
-
-    showGpsToast("خطا در ذخیره مشخصات.", 3500, "error");
-    setStatus("ذخیره مشخصات انجام نشد.");
-    return false;
-  }
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
 }
 
 async function getProfile() {
+  const saved = await dbGet(STORE_PROFILE, "main");
   const inputProfile = getProfileFromInputs();
-
-  if (inputProfile.personnelCode && inputProfile.firstName && inputProfile.lastName) {
-    await saveProfileSilent();
-    return inputProfile;
-  }
-
-  let saved = null;
-
-  try {
-    saved = await dbGet(STORE_PROFILE, "main");
-  } catch (_) {}
-
-  if (!saved) {
-    saved = loadProfileFromLocal();
-  }
 
   const profile = {
     personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
@@ -651,181 +437,321 @@ async function getProfile() {
     throw new Error("مشخصات پرسنلی کامل نیست.");
   }
 
-  await saveProfileSilent();
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
   return profile;
 }
 
+async function saveProfile() {
+  if (!db) db = await openDb();
+
+  const btn = $("saveProfileBtn");
+  if (!btn) return;
+
+  const originalText = "ذخیره مشخصات";
+  const originalBg = "#ff9800";
+
+  btn.disabled = true;
+  btn.style.backgroundColor = "#6c757d";
+  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
+
+  try {
+    const profile = getProfileFromInputs();
+
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      btn.classList.add("shake");
+      setTimeout(() => btn.classList.remove("shake"), 500);
+
+      setStatus("اطلاعات پرسنلی کامل نیست.");
+
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await refreshPolicyIfPossible();
+
+    btn.style.backgroundColor = "#28a745";
+    btn.textContent = "ذخیره شد";
+    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
+
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+    }, 2500);
+
+    // Profile just became available/changed - kick off a heartbeat right away.
+    sendHeartbeatIfPossible();
+  } catch (_) {
+    btn.disabled = false;
+    btn.style.backgroundColor = originalBg;
+    btn.textContent = originalText;
+    setStatus("خطا در ذخیره مشخصات");
+  }
+}
+
 /* =========================
-   Attendance Policy
+   Policy
 ========================= */
 
-async function ensurePolicyLoadedAtStartup() {
-  let saved = null;
+function normalizeAttendancePolicy(policy) {
+  const p = String(policy || "").trim().toUpperCase();
 
-  try {
-    saved = await dbGet(STORE_CONFIG, "attendancePolicy");
-  } catch (_) {}
-
-  if (saved && saved.attendancePolicy) {
-    return saved;
+  if (
+    p === POLICY_NOT_ALLOWED ||
+    p === POLICY_ONLINE_ONLY ||
+    p === POLICY_OFFLINE_ONLY ||
+    p === POLICY_ONLINE_PREFERRED ||
+    p === POLICY_ONLINE_OR_OFFLINE ||
+    p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
+  ) {
+    return p;
   }
-
-  return await refreshPolicyIfPossible();
-}
-
-async function getAttendancePolicyInfo() {
-  let saved = null;
-
-  try {
-    saved = await dbGet(STORE_CONFIG, "attendancePolicy");
-  } catch (_) {}
-
-  if (saved && saved.attendancePolicy) {
-    return {
-      id: "attendancePolicy",
-      attendancePolicy: normalizeAttendancePolicy(saved.attendancePolicy),
-      policyVersion: Number(saved.policyVersion || 0),
-      policyFetchedAt: saved.policyFetchedAt || "",
-      policySource: saved.policySource || "cache"
-    };
-  }
-
-  return {
-    id: "attendancePolicy",
-    attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-    policyVersion: 0,
-    policyFetchedAt: "",
-    policySource: "default"
-  };
-}
-function normalizeAttendancePolicy(value) {
-  const raw = String(value || "").trim().toUpperCase();
-
-  if (!raw) return DEFAULT_ATTENDANCE_POLICY;
-
-  if (raw === "DISABLED") return POLICY_NOT_ALLOWED;
-  if (raw === "DENY") return POLICY_NOT_ALLOWED;
-  if (raw === "BLOCK") return POLICY_NOT_ALLOWED;
-  if (raw === "NOT_ALLOWED") return POLICY_NOT_ALLOWED;
-
-  if (raw === "ONLINE_ONLY") return POLICY_ONLINE_ONLY;
-  if (raw === "OFFLINE_ONLY") return POLICY_OFFLINE_ONLY;
-  if (raw === "ONLINE_PREFERRED") return POLICY_ONLINE_PREFERRED;
-  if (raw === "ONLINE_OR_OFFLINE") return POLICY_ONLINE_OR_OFFLINE;
-  if (raw === "OFFLINE_ALLOWED_IMMEDIATE") return POLICY_OFFLINE_ALLOWED_IMMEDIATE;
 
   return DEFAULT_ATTENDANCE_POLICY;
 }
 
-function evaluateAttendancePolicy(attendancePolicy, isOfflineAttempt) {
-  const policy = normalizeAttendancePolicy(attendancePolicy);
+function evaluateAttendancePolicy(policy, isOnline) {
+  const normalized = normalizeAttendancePolicy(policy);
 
-  if (policy === POLICY_NOT_ALLOWED) {
-    return { ok: false, message: "ثبت تردد برای این کاربر غیرفعال است." };
+  if (normalized === POLICY_NOT_ALLOWED) {
+    return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
   }
 
-  if (policy === POLICY_ONLINE_ONLY && isOfflineAttempt) {
+  if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
     return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
   }
 
-  if (policy === POLICY_OFFLINE_ONLY && !isOfflineAttempt) {
+  if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
     return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
   }
 
-  if (policy === POLICY_ONLINE_PREFERRED) {
-    return { ok: true, message: navigator.onLine ? "ok" : "ثبت آفلاین مجاز است و بعداً ارسال می‌شود." };
-  }
-
-  if (policy === POLICY_OFFLINE_ALLOWED_IMMEDIATE) {
-    return { ok: true, message: "ok" };
-  }
-
-  return { ok: true, message: "ok" };
+  return { ok: true, message: "" };
 }
-async function refreshPolicyIfPossible() {
-  if (!navigator.onLine) {
-    return await getAttendancePolicyInfo();
+
+async function getAttendancePolicyInfo() {
+  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
+  if (!policy) {
+    return {
+      id: "attendancePolicy",
+      personnelCode: "",
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default"
+    };
   }
+  return policy;
+}
+
+async function saveAttendancePolicyInfo(data) {
+  await dbPut(STORE_CONFIG, {
+    id: "attendancePolicy",
+    personnelCode: data.personnelCode || "",
+    attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
+    policyVersion: Number(data.policyVersion || 0),
+    policyFetchedAt: data.policyFetchedAt || "",
+    policySource: data.policySource || ""
+  });
+}
+
+async function ensurePolicyLoadedAtStartup() {
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile?.personnelCode) return;
+
+  const cached = await getAttendancePolicyInfo();
+  if (cached?.personnelCode === profile.personnelCode) {
+    if (navigator.onLine) await refreshPolicyIfPossible();
+    return;
+  }
+
+  if (navigator.onLine) {
+    await refreshPolicyIfPossible();
+  } else {
+    await saveAttendancePolicyInfo({
+      personnelCode: profile.personnelCode,
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default_offline"
+    });
+  }
+}
+
+async function refreshPolicyIfPossible() {
+  if (!navigator.onLine) return null;
+
+  const profile = await getProfile().catch(() => null);
+  if (!profile?.personnelCode) return null;
 
   try {
-    const profile = await getProfile().catch(() => null);
-    const personnelCode = profile?.personnelCode || $("personnelCode")?.value.trim() || "";
-
     const url =
-      APPS_SCRIPT_URL +
-      "?action=getPolicy" +
-      (personnelCode ? "&personnelCode=" + encodeURIComponent(personnelCode) : "");
+      `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
+      encodeURIComponent(profile.personnelCode);
 
     const res = await fetch(url, { method: "GET", cache: "no-store" });
-    if (!res.ok) throw new Error("policy_fetch_failed");
+    if (!res.ok) return null;
 
-    const data = await res.json();
+    const result = await res.json().catch(() => null);
+    if (!result || result.ok !== true) return null;
 
-    const normalized = {
-      id: "attendancePolicy",
-      attendancePolicy: normalizeAttendancePolicy(
-        data?.attendancePolicy ??
-          data?.policy ??
-          data?.attendance_policy ??
-          data?.mode
-      ),
-      policyVersion: Number(data?.policyVersion || data?.version || 0),
+    const policyInfo = {
+      personnelCode: profile.personnelCode,
+      attendancePolicy: normalizeAttendancePolicy(result.attendancePolicy),
+      policyVersion: Number(result.policyVersion || 0),
       policyFetchedAt: new Date().toISOString(),
       policySource: "server"
     };
 
-    await dbPut(STORE_CONFIG, normalized);
-    return normalized;
-  } catch (e) {
-    console.error("refreshPolicyIfPossible error:", e);
-    return await getAttendancePolicyInfo(); 
+    await saveAttendancePolicyInfo(policyInfo);
+    return policyInfo;
+  } catch (_) {
+    return null;
   }
 }
 
-
-async function getCurrentAttendanceGate(forceOffline = null) {
-  const onlineState = forceOffline === null ? navigator.onLine : !forceOffline;
-  let policyInfo;
-
-  if (onlineState) {
-    // Try to refresh, but fall back to cached/default if it fails
-    policyInfo = await refreshPolicyIfPossible().catch(e => {
-      console.error("Failed to refresh policy, falling back to cached/default:", e);
-      return getAttendancePolicyInfo(); // Return cached/default policy
-    });
-  } else {
-    policyInfo = await getAttendancePolicyInfo();
-  }
-
-  // Ensure policyInfo is a valid object before proceeding
-  if (!policyInfo) {
-      console.error("policyInfo is null after attempting to fetch/cache.");
-      policyInfo = await getAttendancePolicyInfo(); // Final fallback
-  }
-
-  // Ensure policyInfo has attendancePolicy, defaulting if necessary
-  const policy = policyInfo?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-  const gate = evaluateAttendancePolicy(policy, onlineState); // Use calculated onlineState
+async function getCurrentAttendanceGate() {
+  if (navigator.onLine) await refreshPolicyIfPossible();
+  const policyInfo = await getAttendancePolicyInfo();
+  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
   return {
-    policyInfo: policyInfo, // Return the potentially updated policyInfo
-    gate
+    policyInfo,
+    gate: evaluateAttendancePolicy(policy, navigator.onLine)
   };
 }
-async function createRecord(type) {
-  const profile = await getProfile();
 
-  const { policyInfo, gate } = await getCurrentAttendanceGate(false);
-  if (!gate.ok) {
-    setStatus(gate.message);
-    showGpsToast(gate.message, 4000, "error");
+/* =========================
+   Attendance Capture
+========================= */
+
+async function startAttendanceCapture() {
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
+
+  if (!personnelCode || !firstName || !lastName) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
     return;
   }
 
-  const attendancePolicy = normalizeAttendancePolicy(
-    policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY
-  );
+  await saveProfileSilent();
+
+  const { gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
+    return;
+  }
+
+  captureStartedAtMs = Date.now();
+  photoSelectedAtMs = 0;
+  photoCompressedAtMs = 0;
+  currentPhoto = "";
+  pendingLocation = null;
+
+  const preview = $("photoPreview");
+  if (preview) {
+    preview.removeAttribute("src");
+    preview.style.display = "none";
+  }
+
+  const photoInput = $("photoInput");
+  if (!photoInput) {
+    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
+    return;
+  }
+
+  photoInput.value = "";
+  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+  photoInput.click();
+}
+
+async function handlePhotoSelected() {
+  const file = $("photoInput")?.files?.[0];
+
+  if (!file) {
+    setStatus("عکسی انتخاب نشد.");
+    return;
+  }
+
+  try {
+    photoSelectedAtMs = Date.now();
+
+    await saveProfileSilent();
+
+    const { gate } = await getCurrentAttendanceGate();
+    if (!gate.ok) {
+      setStatus(gate.message);
+      $("photoInput").value = "";
+      currentPhoto = "";
+      return;
+    }
+
+    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
+
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setStatus(
+        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
+      );
+      return;
+    }
+
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    pendingLocation = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(pendingLocation)) {
+      if (pendingLocation?.status === "denied") {
+        setStatus(
+          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
+        );
+        return;
+      }
+
+      if (pendingLocation?.status === "unavailable") {
+        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+        return;
+      }
+
+      if (pendingLocation?.status === "timeout") {
+        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        return;
+      }
+
+      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      return;
+    }
+
+    await createRecord("تردد");
+  } catch (err) {
+    console.error(err);
+    setStatus("خطا در پردازش عکس یا ثبت تردد");
+  }
+}
+
+/* =========================
+   Record Creation
+========================= */
+
+async function createRecord(type) {
+  const profile = await getProfile();
+
+  const { policyInfo, gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
+    return;
+  }
+
+  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
@@ -928,6 +854,7 @@ async function createRecord(type) {
 
   if (navigator.onLine) scheduleSyncPendingRecords(500);
 }
+
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -968,10 +895,7 @@ async function syncPendingRecords() {
 
   try {
     const policyInfo = (await refreshPolicyIfPossible()) || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(
-      policyInfo?.attendancePolicy,
-      false
-    );
+    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
 
     if (!syncGate.ok) {
       setSyncStatus(syncGate.message);
@@ -992,21 +916,6 @@ async function syncPendingRecords() {
 
     for (const r of list) {
       if (r.status === "sent" || r.status === "syncing") continue;
-
-      const recordGate = evaluateAttendancePolicy(
-        r.attendancePolicy || policyInfo?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-        false
-      );
-
-      if (!recordGate.ok) {
-        r.status = "failed";
-        r.serverResponse = JSON.stringify({
-          ok: false,
-          error: recordGate.message
-        });
-        await dbPut(STORE_RECORDS, r);
-        continue;
-      }
 
       const uploadStartIso = new Date().toISOString();
       const uploadStartMs = new Date(uploadStartIso).getTime();
@@ -1071,7 +980,6 @@ async function syncPendingRecords() {
     syncRunning = false;
   }
 }
-
 
 function buildServerPayload(record) {
   return {
@@ -1472,39 +1380,43 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
-        const OUT_W = 900;
-        const OUT_H = 1100;
-
         const canvas = document.createElement("canvas");
-        canvas.width = OUT_W;
-        canvas.height = OUT_H;
+        const MAX = 400;
+
+        let w = img.width;
+        let h = img.height;
+
+        if (w > h) {
+          if (w > MAX) {
+            h = h * (MAX / w);
+            w = MAX;
+          }
+        } else {
+          if (h > MAX) {
+            w = w * (MAX / h);
+            h = MAX;
+          }
+        }
+
+        canvas.width = w;
+        canvas.height = h;
 
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#7CFC00";
-        ctx.fillRect(0, 0, OUT_W, OUT_H);
-
-        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
-        const drawW = Math.round(img.width * scale);
-        const drawH = Math.round(img.height * scale);
-        const dx = Math.round((OUT_W - drawW) / 2);
-        const dy = Math.round((OUT_H - drawH) / 2);
-
-        ctx.drawImage(img, dx, dy, drawW, drawH);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
 
         canvas.toBlob(
           (blob) => {
-            if (!blob) {
-              reject(new Error("خطا در ساخت تصویر فشرده"));
-              return;
-            }
-
             const r = new FileReader();
+
             r.onloadend = () => resolve(r.result);
             r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
+
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.7
+          0.3
         );
       };
 
@@ -1515,88 +1427,4 @@ function compressImage(file) {
     reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
     reader.readAsDataURL(file);
   });
-}
-
-function jalaliToGregorian_(jy, jm, jd) {
-  const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
-  const jy2 = jy === 979 ? 0 : jy - 979;
-  let leapJ = -14;
-  let jp = salA[0];
-
-  for (let i = 1; i < 20; i += 1) {
-    const temp = salA[i];
-    const dy = temp - jp;
-    if (jy2 < temp) {
-      const q = Math.floor(jy2 / 33);
-      const r = jy2 % 33;
-      leapJ += q * 8 + Math.floor((r + 4) / 4);
-      if (dy - r > 0 && r === 30) leapJ += 1;
-      break;
-    }
-    leapJ += Math.floor(dy / 33) * 8 + Math.floor(((dy % 33) + 3) / 4);
-    jp = temp;
-  }
-
-  const q = Math.floor(jy2 / 33);
-  leapJ += q * 8 + Math.floor(((jy2 % 33) + 3) / 4);
-
-  const gDays = 365 * jy2 + leapJ + 79;
-  const gy2 = 1600 + 400 * Math.floor(gDays / 146097);
-  let gdm = gDays % 146097;
-
-  let leapG = true;
-  if (gdm >= 36525) {
-    gdm -= 1;
-    gdm %= 36524;
-    if (gdm >= 365) {
-      gdm += 1;
-    } else {
-      leapG = false;
-    }
-  }
-
-  let gy = gy2 + 4 * Math.floor(gdm / 1461);
-  gdm %= 1461;
-
-  if (gdm >= 366) {
-    leapG = false;
-    gdm -= 1;
-    gy += Math.floor(gdm / 365);
-    gdm %= 365;
-  }
-
-  let i = 0;
-  const salG = [0, 31, leapG ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  for (i = 1; i <= 12; i += 1) {
-    if (gdm < salG[i]) break;
-    gdm -= salG[i];
-  }
-
-  return [gy, i, gdm + 1];
-}
-
-function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
-  try {
-    const cleanD = dateStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d/]/g, "");
-    const cleanT = timeStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d:]/g, "");
-
-    const dp = cleanD.split("/");
-    const tp = cleanT.split(":");
-
-    if (dp.length < 3 || tp.length < 2) return null;
-
-    const jy = parseInt(dp[0], 10);
-    const jm = parseInt(dp[1], 10);
-    const jd = parseInt(dp[2], 10);
-
-    const th = parseInt(tp[0], 10);
-    const tm = parseInt(tp[1], 10);
-    const ts = tp[2] ? parseInt(tp[2], 10) : 0;
-
-    const [gy, gm, gd] = jalaliToGregorian_(jy, jm, jd);
-
-    return new Date(gy, gm - 1, gd, th, tm, ts);
-  } catch (e) {
-    return null;
-  }
 }

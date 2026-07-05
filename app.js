@@ -1313,29 +1313,26 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
+        // fixed portrait-friendly output
+        const OUT_W = 1080;
+        const OUT_H = 1350;
+
         const canvas = document.createElement("canvas");
-
-        // بزرگ‌تر برای حفظ چهره در موبایل و شیت
-        const MAX_W = 1280;
-        const MAX_H = 1280;
-
-        let w = img.width;
-        let h = img.height;
-
-        // حفظ نسبت تصویر
-        const ratio = Math.min(MAX_W / w, MAX_H / h, 1);
-        w = Math.round(w * ratio);
-        h = Math.round(h * ratio);
-
-        canvas.width = w;
-        canvas.height = h;
+        canvas.width = OUT_W;
+        canvas.height = OUT_H;
 
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, w, h);
+        ctx.fillRect(0, 0, OUT_W, OUT_H);
 
-        // بدون crop
-        ctx.drawImage(img, 0, 0, w, h);
+        // keep full image and make it fit vertically without crop
+        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
+        const drawW = Math.round(img.width * scale);
+        const drawH = Math.round(img.height * scale);
+        const dx = Math.round((OUT_W - drawW) / 2);
+        const dy = Math.round((OUT_H - drawH) / 2);
+
+        ctx.drawImage(img, dx, dy, drawW, drawH);
 
         canvas.toBlob(
           (blob) => {
@@ -1350,7 +1347,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.85
+          0.9
         );
       };
 

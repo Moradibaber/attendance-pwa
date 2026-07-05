@@ -216,6 +216,112 @@ function bindEvents() {
   cameraBtn.addEventListener("click", openCamera);
   cameraBtn.addEventListener("touchend", openCamera, { passive: false });
 }
+
+/* ------- startAttendanceCapture (FULL REPLACE) ------- */
+function startAttendanceCapture() {
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
+
+  if (!personnelCode || !firstName || !lastName) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
+    showGpsToast("لطفاً ابتدا مشخصات پرسنلی را تکمیل کنید.", 3000, "error");
+    return;
+  }
+
+  captureStartedAtMs = Date.now();
+  photoSelectedAtMs = 0;
+  photoCompressedAtMs = 0;
+  currentPhoto = "";
+  pendingLocation = null;
+
+  const prev = $("photoPreview");
+  if (prev) {
+    prev.removeAttribute("src");
+    prev.style.display = "none";
+  }
+
+  const photoInput = $("photoInput");
+  if (!photoInput) {
+    setStatus("ورودی عکس پیدا نشد.");
+    return;
+  }
+
+  photoInput.value = "";
+
+  setStatus("دوربین باز می‌شود...");
+
+  photoInput.click(); // *** Required for iOS Safari ***
+}
+
+/* ------- handlePhotoSelected (FULL REPLACE) ------- */
+async function handlePhotoSelected() {
+  const file = $("photoInput")?.files?.[0];
+  photoSelectedAtMs = Date.now();
+
+  if (!file) {
+    setStatus("عکسی انتخاب نشد.");
+    return;
+  }
+
+  try {
+    const profile = getProfileFromInputs();
+
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      setStatus("مشخصات پرسنلی ناقص است.");
+      showGpsToast("مشخصات پرسنلی ناقص است.", 3000, "error");
+      return;
+    }
+
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+
+    setStatus("در حال بررسی دسترسی...");
+    const { gate } = await getCurrentAttendanceGate();
+
+    if (!gate.ok) {
+      setStatus(gate.message);
+      showGpsToast(gate.message, 4000, "error");
+      $("photoInput").value = "";
+      currentPhoto = "";
+      return;
+    }
+
+    setStatus("در حال آماده‌سازی عکس...");
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
+
+    const prev = $("photoPreview");
+    if (prev) {
+      prev.src = currentPhoto;
+      prev.style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setStatus("GPS در دسترس نیست.");
+      return;
+    }
+
+    setStatus("در حال دریافت GPS...");
+    const location = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(location)) {
+      if (location?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.");
+        showGpsToast("دسترسی GPS را در تنظیمات مرورگر فعال کنید.", 5000, "error");
+        return;
+      }
+      setStatus(location?.error || "GPS دریافت نشد.");
+      return;
+    }
+
+    pendingLocation = location;
+
+    await createRecord("تردد");
+  } catch (e) {
+    console.error(e);
+    setStatus("خطا در پردازش: " + e.message);
+  }
+}
 /* =========================
    Auto Sync
 ========================= */
@@ -679,7 +785,6 @@ async function handlePhotoSelected() {
     setStatus("خطا در پردازش: " + e.message);
   }
 }
-
 /* =========================
    Record Creation
 ========================= */

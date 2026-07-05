@@ -229,13 +229,16 @@ button {
 .preview {
   display: block;
   width: 220px;
-  height: 130px;
-  object-fit: cover;
+  height: auto;
+  max-width: 100%;
+  max-height: none;
+  object-fit: contain;
   object-position: center;
   border-radius: 12px;
   margin: 0 auto;
   background: #f1f5f9;
 }
+
 
 /* آمار */
 .stats {
@@ -535,10 +538,15 @@ button {
 }
 
 @media (max-width: 480px) {
-  .grid2 {
-    grid-template-columns: 1fr;
+  .preview {
+    width: 200px;
+    height: auto;
+    max-width: 100%;
+    max-height: none;
+    object-fit: contain;
+    object-position: center;
   }
-
+}
   .app {
     padding: 6px;
   }
@@ -561,10 +569,12 @@ button {
     padding: 8px;
   }
 
-  .preview {
-    max-width: 200px;
-    max-height: 130px;
-  }
+ .photo-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
 
   .stats span {
     font-size: 18px;

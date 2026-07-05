@@ -53,53 +53,77 @@ const $ = (id) => document.getElementById(id);
    Boot
 ========================= */
 
-document.addEventListener("DOMContentLoaded", async () => {
-   document.getElementById("recordBtn").textContent = "عکس سلفی خود را بگیرید";
-});
-  try {
-    showGpsToast(
-      "★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند",
-      5000,
-      "error"
-    );
-  } catch (_) {}
+document.addEventListener('DOMContentLoaded', () => {
+  const photoInput = document.getElementById('photoInput');
+  const recordBtn = document.getElementById('recordBtn');
+  const photoLabelText = document.getElementById('photoLabelText');
+  const captureStatus = document.getElementById('captureStatus');
+  const recordLoading = document.getElementById('recordLoading');
+  const announcementBox = document.getElementById('announcementBox');
 
-  try {
-    db = await openDb();
-  } catch (e) {
-    console.error("DB init error", e);
+  if (photoInput && photoLabelText) {
+    photoInput.addEventListener('change', () => {
+      const file = photoInput.files && photoInput.files[0];
+      photoLabelText.textContent = file ? file.name : 'عکس سلفی خود را بگیرید';
+    });
   }
 
-  try {
-    bindEvents();
-  } catch (_) {}
+  if (recordBtn) {
+    recordBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
 
-  try {
-    await loadProfile();
-  } catch (_) {}
+      if (!photoInput || !photoInput.files || !photoInput.files.length) {
+        if (captureStatus) captureStatus.textContent = 'لطفا اول عکس سلفی را انتخاب کنید.';
+        return;
+      }
 
-  try {
-    await ensurePolicyLoadedAtStartup();
-  } catch (_) {}
+      try {
+        if (recordLoading) recordLoading.style.display = 'block';
+        if (captureStatus) captureStatus.textContent = 'در حال ثبت...';
 
-  try {
-    await refreshUi();
-  } catch (_) {}
+        const file = photoInput.files[0];
+        const base64 = await fileToBase64(file);
 
-  try {
-    await fetchMessages();
-  } catch (_) {}
+        if (typeof window.submitAttendance === 'function') {
+          await window.submitAttendance({
+            photoName: file.name,
+            photoType: file.type,
+            photoData: base64,
+          });
+          if (captureStatus) captureStatus.textContent = 'تردد با موفقیت ثبت شد.';
+          photoInput.value = '';
+          if (photoLabelText) photoLabelText.textContent = 'عکس سلفی خود را بگیرید';
+        } else {
+          if (captureStatus) captureStatus.textContent = 'تابع ثبت تردد پیدا نشد.';
+        }
+      } catch (err) {
+        if (captureStatus) captureStatus.textContent = 'خطا در ثبت تردد.';
+      } finally {
+        if (recordLoading) recordLoading.style.display = 'none';
+      }
+    });
+  }
 
-  try {
-    setupAutoSync();
-  } catch (_) {}
-
-  try {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
+  if (announcementBox) {
+    const text = (announcementBox.textContent || '').trim();
+    if (!text) {
+      announcementBox.style.display = 'none';
     }
-  } catch (_) {}
+  }
 });
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 /* =========================
    UI Helpers

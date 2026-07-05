@@ -195,7 +195,24 @@ function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
   $("recordBtn")?.addEventListener("click", startAttendanceCapture);
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
+
+  const cameraBtn = $("cameraBtn");
+  const photoInput = $("photoInput");
+
+  if (cameraBtn && photoInput) {
+    const openCamera = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      photoInput.value = "";
+      photoInput.click();
+    };
+
+    cameraBtn.addEventListener("click", openCamera);
+    cameraBtn.addEventListener("touchend", openCamera, { passive: false });
+  }
 }
+
 
 /* =========================
    Auto Sync
@@ -1313,7 +1330,6 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
-        // fixed portrait-friendly output
         const OUT_W = 1080;
         const OUT_H = 1350;
 
@@ -1325,7 +1341,6 @@ function compressImage(file) {
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, OUT_W, OUT_H);
 
-        // keep full image and make it fit vertically without crop
         const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
         const drawW = Math.round(img.width * scale);
         const drawH = Math.round(img.height * scale);
@@ -1347,7 +1362,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.9
+          0.7
         );
       };
 
@@ -1358,4 +1373,87 @@ function compressImage(file) {
     reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
     reader.readAsDataURL(file);
   });
+}
+function jalaliToGregorian_(jy, jm, jd) {
+  const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
+  const jy2 = (jy === 979) ? 0 : jy - 979;
+  let leapJ = -14;
+  let jp = salA[0];
+
+  for (let i = 1; i < 20; i += 1) {
+    const temp = salA[i];
+    const dy = temp - jp;
+    if (jy2 < temp) {
+      const q = Math.floor(jy2 / 33);
+      const r = jy2 % 33;
+      leapJ += q * 8 + Math.floor((r + 4) / 4);
+      if (dy - r > 0 && r === 30) leapJ += 1;
+      break;
+    }
+    leapJ += Math.floor(dy / 33) * 8 + Math.floor(((dy % 33) + 3) / 4);
+    jp = temp;
+  }
+
+  const q = Math.floor(jy2 / 33);
+  leapJ += q * 8 + Math.floor(((jy2 % 33) + 3) / 4);
+
+  const gDays = 365 * jy2 + leapJ + 79;
+  const gy2 = 1600 + 400 * Math.floor(gDays / 146097);
+  let gdm = gDays % 146097;
+
+  let leapG = true;
+  if (gdm >= 36525) {
+    gdm -= 1;
+    gdm %= 36524;
+    if (gdm >= 365) {
+      gdm += 1;
+    } else {
+      leapG = false;
+    }
+  }
+
+  let gy = gy2 + 4 * Math.floor(gdm / 1461);
+  gdm %= 1461;
+
+  if (gdm >= 366) {
+    leapG = false;
+    gdm -= 1;
+    gy += Math.floor(gdm / 365);
+    gdm %= 365;
+  }
+
+  let i = 0;
+  const salG = [0, 31, (leapG ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  for (i = 1; i <= 12; i += 1) {
+    if (gdm < salG[i]) break;
+    gdm -= salG[i];
+  }
+
+  return [gy, i, gdm + 1];
+}
+
+function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
+  try {
+    const cleanD = dateStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d/]/g, "");
+    const cleanT = timeStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d:]/g, "");
+
+    const dp = cleanD.split("/");
+    const tp = cleanT.split(":");
+
+    if (dp.length < 3 || tp.length < 2) return null;
+
+    const jy = parseInt(dp[0], 10);
+    const jm = parseInt(dp[1], 10);
+    const jd = parseInt(dp[2], 10);
+
+    const th = parseInt(tp[0], 10);
+    const tm = parseInt(tp[1], 10);
+    const ts = tp[2] ? parseInt(tp[2], 10) : 0;
+
+    const [gy, gm, gd] = jalaliToGregorian_(jy, jm, jd);
+
+    return new Date(gy, gm - 1, gd, th, tm, ts);
+  } catch (e) {
+    return null;
+  }
 }

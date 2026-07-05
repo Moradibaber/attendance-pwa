@@ -192,20 +192,34 @@ function escapeHtml(v) {
 ========================= */
 
 function bindEvents() {
-  $("saveProfileBtn")?.addEventListener("click", saveProfile);
+  $("saveProfileBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    await saveProfile();
+  });
+
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
 
   const cameraBtn = $("cameraBtn");
   if (!cameraBtn) return;
 
+  let cameraOpening = false;
+
   const openCamera = (e) => {
     if (e?.type === "touchend") e.preventDefault();
+    if (cameraOpening) return;
+    cameraOpening = true;
+
     startAttendanceCapture();
+
+    setTimeout(() => {
+      cameraOpening = false;
+    }, 1000);
   };
 
   cameraBtn.addEventListener("click", openCamera);
   cameraBtn.addEventListener("touchend", openCamera, { passive: false });
 }
+
 /* ------- startAttendanceCapture (FULL REPLACE) ------- */
 function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
@@ -213,8 +227,8 @@ function startAttendanceCapture() {
   const lastName = $("lastName")?.value.trim() || "";
 
   if (!personnelCode || !firstName || !lastName) {
-    setStatus("مشخصات پرسنلی کامل نیست.");
-    showGpsToast("لطفاً ابتدا مشخصات پرسنلی را تکمیل کنید.", 3000, "error");
+    setStatus("لطفاً ابتدا فرم مشخصات را کامل کنید.");
+    showGpsToast("کد پرسنلی، نام و نام خانوادگی را وارد کنید.", 3500, "error");
     return;
   }
 
@@ -254,15 +268,17 @@ async function handlePhotoSelected() {
   }
 
   try {
-    const profile = getProfileFromInputs();
+    const personnelCode = $("personnelCode")?.value.trim() || "";
+    const firstName = $("firstName")?.value.trim() || "";
+    const lastName = $("lastName")?.value.trim() || "";
 
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    if (!personnelCode || !firstName || !lastName) {
       setStatus("مشخصات پرسنلی ناقص است.");
       showGpsToast("مشخصات پرسنلی ناقص است.", 3000, "error");
       return;
     }
 
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await saveProfileSilent();
 
     setStatus("در حال بررسی دسترسی...");
     const { gate } = await getCurrentAttendanceGate();
@@ -279,14 +295,15 @@ async function handlePhotoSelected() {
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
-    const prev = $("photoPreview");
-    if (prev) {
-      prev.src = currentPhoto;
-      prev.style.display = "block";
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
     }
 
-    if (!isGeolocationUsable()) {
+    if (typeof isGeolocationUsable === "function" && !isGeolocationUsable()) {
       setStatus("GPS در دسترس نیست.");
+      showGpsToast("GPS در این دستگاه در دسترس نیست.", 4000, "error");
       return;
     }
 
@@ -304,11 +321,10 @@ async function handlePhotoSelected() {
     }
 
     pendingLocation = location;
-
     await createRecord("تردد");
   } catch (e) {
     console.error(e);
-    setStatus("خطا در پردازش: " + e.message);
+    setStatus("خطا در پردازش: " + (e?.message || "unknown"));
   }
 }
 /* =========================
@@ -529,10 +545,14 @@ async function saveProfile() {
       firstName,
       lastName
     });
+
+    setStatus("مشخصات پرسنلی ذخیره شد.");
+    showGpsToast("مشخصات پرسنلی ذخیره شد.", 2500, "success");
     return true;
   } catch (e) {
     console.error(e);
     setStatus("خطا در ذخیره مشخصات.");
+    showGpsToast("خطا در ذخیره مشخصات پرسنلی.", 4000, "error");
     return false;
   }
 }
@@ -725,42 +745,26 @@ async function handlePhotoSelected() {
       return;
     }
 
-    await saveProfileSilent();
+    async function saveProfileSilent() {
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
 
-    setStatus("در حال بررسی دسترسی...");
-    const { gate } = await getCurrentAttendanceGate();
+  if (!personnelCode || !firstName || !lastName) return false;
 
-    if (!gate.ok) {
-      setStatus(gate.message);
-      showGpsToast(gate.message, 4000, "error");
-      $("photoInput").value = "";
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس...");
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
-
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = currentPhoto;
-      preview.style.display = "block";
-    }
-
-    setStatus("در حال دریافت GPS...");
-    const location = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(location)) {
-      if (location?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.");
-        showGpsToast("دسترسی GPS را در تنظیمات مرورگر فعال کنید.", 5000, "error");
-        return;
-      }
-      setStatus(location?.error || "GPS دریافت نشد.");
-      return;
-    }
-
+  try {
+    await dbPut(STORE_PROFILE, {
+      id: "main",
+      personnelCode,
+      firstName,
+      lastName
+    });
+    return true;
+  } catch (e) {
+    console.error("saveProfileSilent error:", e);
+    return false;
+  }
+}
 /* =========================
    Record Creation
 ========================= */

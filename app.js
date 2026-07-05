@@ -1314,19 +1314,20 @@ function compressImage(file) {
 
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX = 400;
+        const MAX = 800; // افزایش اندازه برای وضوح کامل چهره
 
         let w = img.width;
         let h = img.height;
 
+        // محاسبه ابعاد جدید با حفظ دقیق نسبت تصویر
         if (w > h) {
           if (w > MAX) {
-            h = h * (MAX / w);
+            h = Math.round(h * (MAX / w));
             w = MAX;
           }
         } else {
           if (h > MAX) {
-            w = w * (MAX / h);
+            w = Math.round(w * (MAX / h));
             h = MAX;
           }
         }
@@ -1335,12 +1336,21 @@ function compressImage(file) {
         canvas.height = h;
 
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fff";
+        
+        // پاکسازی و آماده‌سازی کانواس با پس‌زمینه سفید
+        ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, w, h);
+        
+        // رسم کامل تصویر بدون برش (بدون کراپ و افتادن بخشی از چهره)
         ctx.drawImage(img, 0, 0, w, h);
 
+        // خروجی گرفتن با کیفیت مناسب ۷۵٪ جهت وضوح تشخیص چهره در سرور
         canvas.toBlob(
           (blob) => {
+            if (!blob) {
+              reject(new Error("موفق به تولید خروجی فشرده نشد"));
+              return;
+            }
             const r = new FileReader();
 
             r.onloadend = () => resolve(r.result);
@@ -1349,7 +1359,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.3
+          0.75
         );
       };
 

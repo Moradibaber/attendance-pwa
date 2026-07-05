@@ -660,10 +660,15 @@ async function getProfile() {
 ========================= */
 
 async function ensurePolicyLoadedAtStartup() {
+  let saved = null;
+
   try {
-    const saved = await dbGet(STORE_CONFIG, "attendancePolicy");
-    if (saved && saved.attendancePolicy) return saved;
+    saved = await dbGet(STORE_CONFIG, "attendancePolicy");
   } catch (_) {}
+
+  if (saved && saved.attendancePolicy) {
+    return saved;
+  }
 
   return await refreshPolicyIfPossible();
 }
@@ -676,7 +681,13 @@ async function getAttendancePolicyInfo() {
   } catch (_) {}
 
   if (saved && saved.attendancePolicy) {
-    return saved;
+    return {
+      id: "attendancePolicy",
+      attendancePolicy: normalizeAttendancePolicy(saved.attendancePolicy),
+      policyVersion: Number(saved.policyVersion || 0),
+      policyFetchedAt: saved.policyFetchedAt || "",
+      policySource: saved.policySource || "cache"
+    };
   }
 
   return {
@@ -687,12 +698,30 @@ async function getAttendancePolicyInfo() {
     policySource: "default"
   };
 }
+function normalizeAttendancePolicy(value) {
+  const raw = String(value || "").trim().toUpperCase();
+
+  if (!raw) return DEFAULT_ATTENDANCE_POLICY;
+
+  if (raw === "DISABLED") return POLICY_NOT_ALLOWED;
+  if (raw === "DENY") return POLICY_NOT_ALLOWED;
+  if (raw === "BLOCK") return POLICY_NOT_ALLOWED;
+  if (raw === "NOT_ALLOWED") return POLICY_NOT_ALLOWED;
+
+  if (raw === "ONLINE_ONLY") return POLICY_ONLINE_ONLY;
+  if (raw === "OFFLINE_ONLY") return POLICY_OFFLINE_ONLY;
+  if (raw === "ONLINE_PREFERRED") return POLICY_ONLINE_PREFERRED;
+  if (raw === "ONLINE_OR_OFFLINE") return POLICY_ONLINE_OR_OFFLINE;
+  if (raw === "OFFLINE_ALLOWED_IMMEDIATE") return POLICY_OFFLINE_ALLOWED_IMMEDIATE;
+
+  return DEFAULT_ATTENDANCE_POLICY;
+}
 
 function evaluateAttendancePolicy(attendancePolicy, isOfflineAttempt) {
-  const policy = attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+  const policy = normalizeAttendancePolicy(attendancePolicy);
 
   if (policy === POLICY_NOT_ALLOWED) {
-    return { ok: false, message: "ثبت تردد برای این کاربر مجاز نیست." };
+    return { ok: false, message: "ثبت تردد برای این کاربر غیرفعال است." };
   }
 
   if (policy === POLICY_ONLINE_ONLY && isOfflineAttempt) {
@@ -703,9 +732,16 @@ function evaluateAttendancePolicy(attendancePolicy, isOfflineAttempt) {
     return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
   }
 
+  if (policy === POLICY_ONLINE_PREFERRED) {
+    return { ok: true, message: navigator.onLine ? "ok" : "ثبت آفلاین مجاز است و بعداً ارسال می‌شود." };
+  }
+
+  if (policy === POLICY_OFFLINE_ALLOWED_IMMEDIATE) {
+    return { ok: true, message: "ok" };
+  }
+
   return { ok: true, message: "ok" };
 }
-
 async function refreshPolicyIfPossible() {
   if (!navigator.onLine) {
     return await getAttendancePolicyInfo();
@@ -724,10 +760,16 @@ async function refreshPolicyIfPossible() {
     if (!res.ok) throw new Error("policy_fetch_failed");
 
     const data = await res.json();
+
     const normalized = {
       id: "attendancePolicy",
-      attendancePolicy: data?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: Number(data?.policyVersion || 0),
+      attendancePolicy: normalizeAttendancePolicy(
+        data?.attendancePolicy ??
+          data?.policy ??
+          data?.attendance_policy ??
+          data?.mode
+      ),
+      policyVersion: Number(data?.policyVersion || data?.version || 0),
       policyFetchedAt: new Date().toISOString(),
       policySource: "server"
     };
@@ -740,25 +782,33 @@ async function refreshPolicyIfPossible() {
   }
 }
 
-async function getCurrentAttendanceGate() {
-  const policyInfo = navigator.onLine
+
+async function getCurrentAttendanceGate(forceOffline = null) {
+  const onlineState = forceOffline === null ? navigator.onLine : !forceOffline;
+  const policyInfo = onlineState
     ? await refreshPolicyIfPossible()
     : await getAttendancePolicyInfo();
 
-  const gate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, !navigator.onLine);
+  const gate = evaluateAttendancePolicy(
+    policyInfo?.attendancePolicy,
+    !onlineState
+  );
+
   return { policyInfo, gate };
 }
-
 async function createRecord(type) {
   const profile = await getProfile();
 
-  const { policyInfo, gate } = await getCurrentAttendanceGate();
+  const { policyInfo, gate } = await getCurrentAttendanceGate(false);
   if (!gate.ok) {
     setStatus(gate.message);
+    showGpsToast(gate.message, 4000, "error");
     return;
   }
 
-  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+  const attendancePolicy = normalizeAttendancePolicy(
+    policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY
+  );
 
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
@@ -861,7 +911,6 @@ async function createRecord(type) {
 
   if (navigator.onLine) scheduleSyncPendingRecords(500);
 }
-
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -902,7 +951,10 @@ async function syncPendingRecords() {
 
   try {
     const policyInfo = (await refreshPolicyIfPossible()) || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
+    const syncGate = evaluateAttendancePolicy(
+      policyInfo?.attendancePolicy,
+      false
+    );
 
     if (!syncGate.ok) {
       setSyncStatus(syncGate.message);
@@ -923,6 +975,21 @@ async function syncPendingRecords() {
 
     for (const r of list) {
       if (r.status === "sent" || r.status === "syncing") continue;
+
+      const recordGate = evaluateAttendancePolicy(
+        r.attendancePolicy || policyInfo?.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+        false
+      );
+
+      if (!recordGate.ok) {
+        r.status = "failed";
+        r.serverResponse = JSON.stringify({
+          ok: false,
+          error: recordGate.message
+        });
+        await dbPut(STORE_RECORDS, r);
+        continue;
+      }
 
       const uploadStartIso = new Date().toISOString();
       const uploadStartMs = new Date(uploadStartIso).getTime();
@@ -987,6 +1054,7 @@ async function syncPendingRecords() {
     syncRunning = false;
   }
 }
+
 
 function buildServerPayload(record) {
   return {

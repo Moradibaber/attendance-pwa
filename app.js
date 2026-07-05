@@ -778,7 +778,7 @@ async function refreshPolicyIfPossible() {
     return normalized;
   } catch (e) {
     console.error("refreshPolicyIfPossible error:", e);
-    return await getAttendancePolicyInfo();
+    return await getAttendancePolicyInfo(); 
   }
 }
 

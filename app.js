@@ -1314,8 +1314,8 @@ function compressImage(file) {
 
       img.onload = () => {
         // fixed portrait-friendly output
-        const OUT_W = 1080;
-        const OUT_H = 1350;
+        const OUT_W = 900;
+        const OUT_H = 1200;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;

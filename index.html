@@ -73,8 +73,11 @@
 <section class="card attendance-card">
 <h2>ثبت تردد</h2>
 
-<input id="photoInput" class="hidden-file-input" type="file" accept="image/*" capture="user" />
-
+<!-- <input id="photoInput" class="hidden-file-input" type="file" accept="image/*" capture="user" /> -->
+<div class="selfie-upload-wrap">
+  <label for="photoInput" class="selfie-upload-label">عکس سلفی خود را بگیرید</label>
+  <input id="photoInput" type="file" accept="image/*" capture="user" class="selfie-upload-input" />
+</div>
 <div class="photo-row">
 <img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
 </div>

@@ -1334,15 +1334,15 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
-        const OUT_W = 1080;
-        const OUT_H = 1350;
+        const OUT_W = 900;
+        const OUT_H = 1100;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
         canvas.height = OUT_H;
 
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#7CFC00";
         ctx.fillRect(0, 0, OUT_W, OUT_H);
 
         const scale = Math.min(OUT_W / img.width, OUT_H / img.height);

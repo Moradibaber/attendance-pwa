@@ -454,11 +454,11 @@ function evaluateAttendancePolicy(policy, isOnline) {
   }
 
   if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
+    return { ok: false, message: "فقط ثبت آنلاین مجاز است" };
   }
 
   if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
-    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
+    return { ok: false, message: "فقط ثبت آفلاین مجاز است" };
   }
 
   return { ok: true, message: "" };

@@ -193,7 +193,6 @@ function escapeHtml(v) {
 
 function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
-  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
 
   const cameraBtn = $("cameraBtn");
@@ -203,7 +202,6 @@ function bindEvents() {
     const openCamera = (e) => {
       e.preventDefault();
       e.stopPropagation();
-
       photoInput.value = "";
       photoInput.click();
     };
@@ -212,8 +210,6 @@ function bindEvents() {
     cameraBtn.addEventListener("touchend", openCamera, { passive: false });
   }
 }
-
-
 /* =========================
    Auto Sync
 ========================= */
@@ -627,8 +623,6 @@ async function handlePhotoSelected() {
   }
 
   try {
-    photoSelectedAtMs = Date.now();
-
     await saveProfileSilent();
 
     const { gate } = await getCurrentAttendanceGate();
@@ -641,7 +635,6 @@ async function handlePhotoSelected() {
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
     if (preview) {
@@ -650,44 +643,37 @@ async function handlePhotoSelected() {
     }
 
     if (!isGeolocationUsable()) {
-      setStatus(
-        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
-      );
+      setStatus("GPS در دسترس نیست.");
       return;
     }
 
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
+    setStatus("در حال دریافت GPS...");
+    const location = await getLocationIOSFriendly();
 
-    if (!hasValidLocation(pendingLocation)) {
-      if (pendingLocation?.status === "denied") {
-        setStatus(
-          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
-        );
+    if (!hasValidLocation(location)) {
+      if (location?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.");
         return;
       }
-
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+      if (location?.status === "unavailable") {
+        setStatus("GPS در دسترس نیست.");
         return;
       }
-
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+      if (location?.status === "timeout") {
+        setStatus("زمان GPS تمام شد.");
         return;
       }
-
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      setStatus("GPS دریافت نشد.");
       return;
     }
 
+    pendingLocation = location;
     await createRecord("تردد");
   } catch (err) {
     console.error(err);
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
-
 /* =========================
    Record Creation
 ========================= */

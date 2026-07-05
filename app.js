@@ -4,8 +4,6 @@
    - POST with Content-Type: text/plain (no preflight)
    - mode: "no-cors" (so browser won't block; response is opaque)
    - treat success as "queued/sent" and rely on server-side Debug sheet
-   + NEW: Heartbeat - pings the server every 30s while online so the
-     server can accumulate how long each user stays online (OnlineTime sheet)
    ========================= */
 
 const DB_NAME = "attendance-pwa-db";
@@ -31,10 +29,6 @@ const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
 const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
 const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
 const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
-
-// NEW: heartbeat config - must be <= the server's HEARTBEAT_GAP_THRESHOLD_MS (90s) with room to spare
-const HEARTBEAT_INTERVAL_MS = 30000;
-let heartbeatTimer = null;
 
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
@@ -96,10 +90,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   try {
     setupAutoSync();
-  } catch (_) {}
-
-  try {
-    setupHeartbeat();
   } catch (_) {}
 
   try {
@@ -269,60 +259,6 @@ function scheduleSyncPendingRecords(delay = 0) {
 }
 
 /* =========================
-   NEW: Heartbeat (online time tracking)
-   -------------------------------------------------
-   Sends a small "Heartbeat" ping to the server every
-   HEARTBEAT_INTERVAL_MS while the user is online, so the
-   server (OnlineTime sheet) can accumulate total online
-   seconds per user per day. Uses the same CORS-safe
-   text/plain + no-cors pattern as syncPendingRecords.
-========================= */
-
-function setupHeartbeat() {
-  // Fire one immediately (if possible), then on an interval.
-  sendHeartbeatIfPossible();
-
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  heartbeatTimer = setInterval(sendHeartbeatIfPossible, HEARTBEAT_INTERVAL_MS);
-
-  // Also fire right away whenever we come back online or the tab becomes visible,
-  // so a session resumes promptly instead of waiting for the next tick.
-  window.addEventListener("online", sendHeartbeatIfPossible);
-
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && navigator.onLine) sendHeartbeatIfPossible();
-  });
-}
-
-async function sendHeartbeatIfPossible() {
-  if (!navigator.onLine) return;
-  if (!db) return;
-
-  try {
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile?.personnelCode) return;
-
-    const payload = {
-      type: "Heartbeat",
-      personnelCode: profile.personnelCode,
-      firstName: profile.firstName || "",
-      lastName: profile.lastName || ""
-    };
-
-    await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify(payload)
-    });
-  } catch (_) {
-    // Silently ignore - heartbeat is best-effort, it will just retry on the next tick
-  }
-}
-
-/* =========================
    IndexedDB
 ========================= */
 
@@ -481,9 +417,6 @@ async function saveProfile() {
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
     }, 2500);
-
-    // Profile just became available/changed - kick off a heartbeat right away.
-    sendHeartbeatIfPossible();
   } catch (_) {
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;

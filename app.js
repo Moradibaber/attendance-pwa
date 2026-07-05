@@ -679,6 +679,7 @@ async function handlePhotoSelected() {
 ========================= */
 
 async function createRecord(type) {
+    const policy = await getUserPolicy();
   const profile = await getProfile();
 
   const { policyInfo, gate } = await getCurrentAttendanceGate();

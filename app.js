@@ -198,25 +198,14 @@ function bindEvents() {
   const cameraBtn = $("cameraBtn");
   if (!cameraBtn) return;
 
-  let openingCamera = false;
-
   const openCamera = (e) => {
-    if (e.type === "touchend") e.preventDefault();
-    if (openingCamera) return;
-
-    openingCamera = true;
-
+    if (e?.type === "touchend") e.preventDefault();
     startAttendanceCapture();
-
-    setTimeout(() => {
-      openingCamera = false;
-    }, 1000);
   };
 
   cameraBtn.addEventListener("click", openCamera);
   cameraBtn.addEventListener("touchend", openCamera, { passive: false });
 }
-
 /* ------- startAttendanceCapture (FULL REPLACE) ------- */
 function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
@@ -229,16 +218,18 @@ function startAttendanceCapture() {
     return;
   }
 
+  saveProfileSilent();
+
   captureStartedAtMs = Date.now();
   photoSelectedAtMs = 0;
   photoCompressedAtMs = 0;
   currentPhoto = "";
   pendingLocation = null;
 
-  const prev = $("photoPreview");
-  if (prev) {
-    prev.removeAttribute("src");
-    prev.style.display = "none";
+  const preview = $("photoPreview");
+  if (preview) {
+    preview.removeAttribute("src");
+    preview.style.display = "none";
   }
 
   const photoInput = $("photoInput");
@@ -248,10 +239,8 @@ function startAttendanceCapture() {
   }
 
   photoInput.value = "";
-
   setStatus("دوربین باز می‌شود...");
-
-  photoInput.click(); // *** Required for iOS Safari ***
+  photoInput.click();
 }
 
 /* ------- handlePhotoSelected (FULL REPLACE) ------- */
@@ -499,54 +488,52 @@ async function getProfile() {
   }
 
   await dbPut(STORE_PROFILE, { id: "main", ...profile });
-  return profile;
+  return pasync function saveProfileSilent() {
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
+
+  if (!personnelCode || !firstName || !lastName) return false;
+
+  try {
+    await dbPut(STORE_PROFILE, {
+      id: "main",
+      personnelCode,
+      firstName,
+      lastName
+    });
+    return true;
+  } catch (e) {
+    console.error("saveProfileSilent error:", e);
+    return false;
+  }
+}
+rofile;
 }
 
 async function saveProfile() {
-  if (!db) db = await openDb();
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
 
-  const btn = $("saveProfileBtn");
-  if (!btn) return;
-
-  const originalText = "ذخیره مشخصات";
-  const originalBg = "#ff9800";
-
-  btn.disabled = true;
-  btn.style.backgroundColor = "#6c757d";
-  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
+  if (!personnelCode || !firstName || !lastName) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
+    showGpsToast("کد پرسنلی، نام و نام خانوادگی الزامی است.", 4000, "error");
+    return false;
+  }
 
   try {
-    const profile = getProfileFromInputs();
-
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      btn.classList.add("shake");
-      setTimeout(() => btn.classList.remove("shake"), 500);
-
-      setStatus("اطلاعات پرسنلی کامل نیست.");
-
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-      return;
-    }
-
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    await refreshPolicyIfPossible();
-
-    btn.style.backgroundColor = "#28a745";
-    btn.textContent = "ذخیره شد";
-    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
-
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-    }, 2500);
-  } catch (_) {
-    btn.disabled = false;
-    btn.style.backgroundColor = originalBg;
-    btn.textContent = originalText;
-    setStatus("خطا در ذخیره مشخصات");
+    await dbPut(STORE_PROFILE, {
+      id: "main",
+      personnelCode,
+      firstName,
+      lastName
+    });
+    return true;
+  } catch (e) {
+    console.error(e);
+    setStatus("خطا در ذخیره مشخصات.");
+    return false;
   }
 }
 
@@ -728,15 +715,17 @@ async function handlePhotoSelected() {
   }
 
   try {
-    const profile = getProfileFromInputs();
+    const personnelCode = $("personnelCode")?.value.trim() || "";
+    const firstName = $("firstName")?.value.trim() || "";
+    const lastName = $("lastName")?.value.trim() || "";
 
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    if (!personnelCode || !firstName || !lastName) {
       setStatus("مشخصات پرسنلی ناقص است.");
       showGpsToast("مشخصات پرسنلی ناقص است.", 3000, "error");
       return;
     }
 
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await saveProfileSilent();
 
     setStatus("در حال بررسی دسترسی...");
     const { gate } = await getCurrentAttendanceGate();
@@ -753,15 +742,10 @@ async function handlePhotoSelected() {
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
-    const prev = $("photoPreview");
-    if (prev) {
-      prev.src = currentPhoto;
-      prev.style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setStatus("GPS در دسترس نیست.");
-      return;
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
     }
 
     setStatus("در حال دریافت GPS...");
@@ -777,14 +761,6 @@ async function handlePhotoSelected() {
       return;
     }
 
-    pendingLocation = location;
-
-    await createRecord("تردد");
-  } catch (e) {
-    console.error(e);
-    setStatus("خطا در پردازش: " + e.message);
-  }
-}
 /* =========================
    Record Creation
 ========================= */

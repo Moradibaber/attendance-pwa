@@ -14,7 +14,7 @@ const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
 
 const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
+  "https://script.google.com/macros/s/AKfycbwhRwn40ro-CLM1CVs_wyFwo94x0sgtad65peLKs7b7e27Ybv2mXK8fo2lTLe6AZqJy/exec";
 
 const GPS_RETRY_MS = 30000;
 const GOOD_ACCURACY_METERS = 1000;
@@ -454,11 +454,11 @@ function evaluateAttendancePolicy(policy, isOnline) {
   }
 
   if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
-    return { ok: false, message: "فقط ثبت آنلاین مجاز است" };
+    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
   }
 
   if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
-    return { ok: false, message: "فقط ثبت آفلاین مجاز است" };
+    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
   }
 
   return { ok: true, message: "" };

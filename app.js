@@ -1314,52 +1314,43 @@ function compressImage(file) {
 
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX = 800; // افزایش اندازه برای وضوح کامل چهره
+
+        // بزرگ‌تر برای حفظ چهره در موبایل و شیت
+        const MAX_W = 1280;
+        const MAX_H = 1280;
 
         let w = img.width;
         let h = img.height;
 
-        // محاسبه ابعاد جدید با حفظ دقیق نسبت تصویر
-        if (w > h) {
-          if (w > MAX) {
-            h = Math.round(h * (MAX / w));
-            w = MAX;
-          }
-        } else {
-          if (h > MAX) {
-            w = Math.round(w * (MAX / h));
-            h = MAX;
-          }
-        }
+        // حفظ نسبت تصویر
+        const ratio = Math.min(MAX_W / w, MAX_H / h, 1);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
 
         canvas.width = w;
         canvas.height = h;
 
         const ctx = canvas.getContext("2d");
-        
-        // پاکسازی و آماده‌سازی کانواس با پس‌زمینه سفید
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, w, h);
-        
-        // رسم کامل تصویر بدون برش (بدون کراپ و افتادن بخشی از چهره)
+
+        // بدون crop
         ctx.drawImage(img, 0, 0, w, h);
 
-        // خروجی گرفتن با کیفیت مناسب ۷۵٪ جهت وضوح تشخیص چهره در سرور
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              reject(new Error("موفق به تولید خروجی فشرده نشد"));
+              reject(new Error("خطا در ساخت تصویر فشرده"));
               return;
             }
-            const r = new FileReader();
 
+            const r = new FileReader();
             r.onloadend = () => resolve(r.result);
             r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.75
+          0.85
         );
       };
 

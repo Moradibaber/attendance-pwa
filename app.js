@@ -4,8 +4,6 @@
    - POST with Content-Type: text/plain (no preflight)
    - mode: "no-cors" (so browser won't block; response is opaque)
    - treat success as "queued/sent" and rely on server-side Debug sheet
-   + NEW: Heartbeat - pings the server every 30s while online so the
-     server can accumulate how long each user stays online (OnlineTime sheet)
    ========================= */
 
 const DB_NAME = "attendance-pwa-db";
@@ -31,10 +29,6 @@ const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
 const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
 const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
 const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
-
-// NEW: heartbeat config - must be <= the server's HEARTBEAT_GAP_THRESHOLD_MS (90s) with room to spare
-const HEARTBEAT_INTERVAL_MS = 30000;
-let heartbeatTimer = null;
 
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
@@ -96,10 +90,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   try {
     setupAutoSync();
-  } catch (_) {}
-
-  try {
-    setupHeartbeat();
   } catch (_) {}
 
   try {
@@ -205,7 +195,24 @@ function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
   $("recordBtn")?.addEventListener("click", startAttendanceCapture);
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
+
+  const cameraBtn = $("cameraBtn");
+  const photoInput = $("photoInput");
+
+  if (cameraBtn && photoInput) {
+    const openCamera = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      photoInput.value = "";
+      photoInput.click();
+    };
+
+    cameraBtn.addEventListener("click", openCamera);
+    cameraBtn.addEventListener("touchend", openCamera, { passive: false });
+  }
 }
+
 
 /* =========================
    Auto Sync
@@ -266,60 +273,6 @@ function setupAutoSync() {
 function scheduleSyncPendingRecords(delay = 0) {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => syncPendingRecords(), delay);
-}
-
-/* =========================
-   NEW: Heartbeat (online time tracking)
-   -------------------------------------------------
-   Sends a small "Heartbeat" ping to the server every
-   HEARTBEAT_INTERVAL_MS while the user is online, so the
-   server (OnlineTime sheet) can accumulate total online
-   seconds per user per day. Uses the same CORS-safe
-   text/plain + no-cors pattern as syncPendingRecords.
-========================= */
-
-function setupHeartbeat() {
-  // Fire one immediately (if possible), then on an interval.
-  sendHeartbeatIfPossible();
-
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  heartbeatTimer = setInterval(sendHeartbeatIfPossible, HEARTBEAT_INTERVAL_MS);
-
-  // Also fire right away whenever we come back online or the tab becomes visible,
-  // so a session resumes promptly instead of waiting for the next tick.
-  window.addEventListener("online", sendHeartbeatIfPossible);
-
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && navigator.onLine) sendHeartbeatIfPossible();
-  });
-}
-
-async function sendHeartbeatIfPossible() {
-  if (!navigator.onLine) return;
-  if (!db) return;
-
-  try {
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile?.personnelCode) return;
-
-    const payload = {
-      type: "Heartbeat",
-      personnelCode: profile.personnelCode,
-      firstName: profile.firstName || "",
-      lastName: profile.lastName || ""
-    };
-
-    await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify(payload)
-    });
-  } catch (_) {
-    // Silently ignore - heartbeat is best-effort, it will just retry on the next tick
-  }
 }
 
 /* =========================
@@ -481,9 +434,6 @@ async function saveProfile() {
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
     }, 2500);
-
-    // Profile just became available/changed - kick off a heartbeat right away.
-    sendHeartbeatIfPossible();
   } catch (_) {
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;
@@ -1380,43 +1330,39 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
+        const OUT_W = 1080;
+        const OUT_H = 1350;
+
         const canvas = document.createElement("canvas");
-        const MAX = 400;
-
-        let w = img.width;
-        let h = img.height;
-
-        if (w > h) {
-          if (w > MAX) {
-            h = h * (MAX / w);
-            w = MAX;
-          }
-        } else {
-          if (h > MAX) {
-            w = w * (MAX / h);
-            h = MAX;
-          }
-        }
-
-        canvas.width = w;
-        canvas.height = h;
+        canvas.width = OUT_W;
+        canvas.height = OUT_H;
 
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, OUT_W, OUT_H);
+
+        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
+        const drawW = Math.round(img.width * scale);
+        const drawH = Math.round(img.height * scale);
+        const dx = Math.round((OUT_W - drawW) / 2);
+        const dy = Math.round((OUT_H - drawH) / 2);
+
+        ctx.drawImage(img, dx, dy, drawW, drawH);
 
         canvas.toBlob(
           (blob) => {
-            const r = new FileReader();
+            if (!blob) {
+              reject(new Error("خطا در ساخت تصویر فشرده"));
+              return;
+            }
 
+            const r = new FileReader();
             r.onloadend = () => resolve(r.result);
             r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.3
+          0.7
         );
       };
 
@@ -1427,4 +1373,87 @@ function compressImage(file) {
     reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
     reader.readAsDataURL(file);
   });
+}
+function jalaliToGregorian_(jy, jm, jd) {
+  const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
+  const jy2 = (jy === 979) ? 0 : jy - 979;
+  let leapJ = -14;
+  let jp = salA[0];
+
+  for (let i = 1; i < 20; i += 1) {
+    const temp = salA[i];
+    const dy = temp - jp;
+    if (jy2 < temp) {
+      const q = Math.floor(jy2 / 33);
+      const r = jy2 % 33;
+      leapJ += q * 8 + Math.floor((r + 4) / 4);
+      if (dy - r > 0 && r === 30) leapJ += 1;
+      break;
+    }
+    leapJ += Math.floor(dy / 33) * 8 + Math.floor(((dy % 33) + 3) / 4);
+    jp = temp;
+  }
+
+  const q = Math.floor(jy2 / 33);
+  leapJ += q * 8 + Math.floor(((jy2 % 33) + 3) / 4);
+
+  const gDays = 365 * jy2 + leapJ + 79;
+  const gy2 = 1600 + 400 * Math.floor(gDays / 146097);
+  let gdm = gDays % 146097;
+
+  let leapG = true;
+  if (gdm >= 36525) {
+    gdm -= 1;
+    gdm %= 36524;
+    if (gdm >= 365) {
+      gdm += 1;
+    } else {
+      leapG = false;
+    }
+  }
+
+  let gy = gy2 + 4 * Math.floor(gdm / 1461);
+  gdm %= 1461;
+
+  if (gdm >= 366) {
+    leapG = false;
+    gdm -= 1;
+    gy += Math.floor(gdm / 365);
+    gdm %= 365;
+  }
+
+  let i = 0;
+  const salG = [0, 31, (leapG ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  for (i = 1; i <= 12; i += 1) {
+    if (gdm < salG[i]) break;
+    gdm -= salG[i];
+  }
+
+  return [gy, i, gdm + 1];
+}
+
+function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
+  try {
+    const cleanD = dateStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d/]/g, "");
+    const cleanT = timeStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d:]/g, "");
+
+    const dp = cleanD.split("/");
+    const tp = cleanT.split(":");
+
+    if (dp.length < 3 || tp.length < 2) return null;
+
+    const jy = parseInt(dp[0], 10);
+    const jm = parseInt(dp[1], 10);
+    const jd = parseInt(dp[2], 10);
+
+    const th = parseInt(tp[0], 10);
+    const tm = parseInt(tp[1], 10);
+    const ts = tp[2] ? parseInt(tp[2], 10) : 0;
+
+    const [gy, gm, gd] = jalaliToGregorian_(jy, jm, jd);
+
+    return new Date(gy, gm - 1, gd, th, tm, ts);
+  } catch (e) {
+    return null;
+  }
 }

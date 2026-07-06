@@ -1,8 +1,8 @@
 :root {
-  --bg: #ADD8E6; 
+  --bg: #ADD8E6;
   --card: #DEB887;
   --text: #0f172a;
-  --muted: #64748b; 
+  --muted: #64748b;
   --primary: #0f766e;
   --primary-dark: #115e59;
   --danger-bg: #fff7ed;
@@ -11,7 +11,7 @@
 }
 
 * {
-  box-sizing: border-box; 
+  box-sizing: border-box;
 }
 
 body {
@@ -31,6 +31,7 @@ body.modal-open {
   padding: 8px;
   text-align: center;
 }
+
 #recordBtn {
   display: none !important;
 }
@@ -74,56 +75,58 @@ p {
   padding: 8px;
   font-size: 14px;
 }
-    .admin-message-box {
-        display: none; /* Hidden by default */
-        position: fixed; /* Stay in place */
-        z-index: 1000; /* Sit on top */
-        left: 0;
-        top: 0;
-        width: 100%; /* Full width */
-        height: 100%; /* Full height */
-        overflow: auto; /* Enable scroll if needed */
-        background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
-        padding-top: 60px; /* Location of the box */
-    }
 
-    .admin-message-content {
-        background-color: #fefefe;
-        margin: 5% auto; /* 15% from the top and centered */
-        padding: 20px;
-        border: 1px solid #888;
-        width: 80%; /* Could be more or less, depending on screen size */
-        max-width: 500px; /* Max width for larger screens */
-        border-radius: 8px;
-        position: relative;
-        color: black; /* Text color */
-        background-color: #ffdddd; /* Light red background */
-        border-left: 6px solid #f44336; /* Red left border */
-        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
-    }
+/* پیام مدیر */
+.admin-message-box {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.4);
+  padding-top: 60px;
+}
 
-    .admin-message-content span {
-        font-weight: bold;
-    }
+.admin-message-content {
+  margin: 5% auto;
+  padding: 20px;
+  width: 80%;
+  max-width: 500px;
+  border-radius: 8px;
+  position: relative;
+  color: #000;
+  background-color: #ffdddd;
+  border-left: 6px solid #f44336;
+  border: 1px solid #888;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
 
-    .close-admin-message {
-        color: #aaa;
-        position: absolute;
-        top: 10px;
-        right: 15px;
-        font-size: 20px;
-        font-weight: bold;
-        cursor: pointer;
-    }
+.admin-message-content span {
+  font-weight: bold;
+}
 
-    .close-admin-message:hover,
-    .close-admin-message:focus {
-        color: black;
-        text-decoration: none;
-    }
+.close-admin-message {
+  color: #aaa;
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.close-admin-message:hover,
+.close-admin-message:focus {
+  color: #000;
+  text-decoration: none;
+}
 
 /* المنت‌های loading */
-#saveLoading, #recordLoading {
+#saveLoading,
+#recordLoading {
   display: inline-block;
   width: 20px;
   height: 20px;
@@ -135,8 +138,9 @@ p {
   vertical-align: middle;
 }
 
-#saveLoading:empty, #recordLoading:empty {
-  display: none; /* Hide if empty */
+#saveLoading:empty,
+#recordLoading:empty {
+  display: none;
 }
 
 @keyframes spin {
@@ -162,12 +166,11 @@ button {
   text-align: center;
 }
 
-/* اصلاح رنگ فونت */
-input[type="text"], input[type="number"] {
+/* اصلاح رنگ فونت ورودی‌ها */
+input[type="text"],
+input[type="number"] {
   color: var(--text);
 }
-/* رنگ قرمز در CSS معتبر نیست، این خط حذف یا اصلاح شود */
-/* font-color:red; */
 
 input {
   direction: rtl;
@@ -182,7 +185,7 @@ button {
 
 .primary {
   background: var(--primary);
-  color: white;
+  color: #fff;
 }
 
 .primary.alt {
@@ -191,7 +194,7 @@ button {
 
 .success {
   background: #16a34a;
-  color: white;
+  color: #fff;
 }
 
 .secondary {
@@ -234,14 +237,12 @@ button {
   width: 220px;
   height: auto;
   max-width: 100%;
-  max-height: none;
   object-fit: contain;
   object-position: center;
   border-radius: 12px;
   margin: 0 auto;
   background: #f1f5f9;
 }
-
 
 /* آمار */
 .stats {
@@ -278,7 +279,7 @@ button {
   padding-top: 2px;
 }
 
-/* ردیف تردد */
+/* ردیف تردد فشرده */
 .record-item.compact-record {
   display: flex;
   align-items: center;
@@ -341,16 +342,13 @@ button {
   margin-bottom: 0;
 }
 
-/* اگر آخرین عنصر status باشد */
+/* اگر آخرین عنصر status یا پاراگراف باشد */
 .card .status:last-child,
 .card p:last-child {
   margin-bottom: 0;
 }
 
-/* ============================= */
 /* راهنمای نصب و ثبت تردد */
-/* ============================= */
-
 .guide-card {
   background: linear-gradient(135deg, #e0f2fe, #ccfbf1, #fef3c7);
   border: 1px solid rgba(15, 118, 110, 0.25);
@@ -540,16 +538,16 @@ button {
   transform: scale(0.98);
 }
 
+/* ریسپانسیو موبایل */
 @media (max-width: 480px) {
   .preview {
     width: 200px;
     height: auto;
     max-width: 100%;
-    max-height: none;
     object-fit: contain;
     object-position: center;
   }
-}
+
   .app {
     padding: 6px;
   }
@@ -572,12 +570,12 @@ button {
     padding: 8px;
   }
 
- .photo-row {
-  display: flex;
-  justify-content: center;
-  margin-top: 6px;
-  margin-bottom: 4px;
-}
+  .photo-row {
+    display: flex;
+    justify-content: center;
+    margin-top: 6px;
+    margin-bottom: 4px;
+  }
 
   .stats span {
     font-size: 18px;
@@ -623,6 +621,8 @@ button {
     font-size: 13px;
   }
 }
+
+/* ورودی مخفی عکس سلفی */
 .hidden-file-input {
   position: fixed;
   left: -9999px;
@@ -631,6 +631,7 @@ button {
   height: 1px;
   opacity: 0;
 }
+
 .selfie-upload-wrap {
   width: 100%;
 }

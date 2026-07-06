@@ -841,3 +841,32 @@ button {
 .app-hidden {
   display: none;
 }
+.container {
+  gap: 10px !important;
+}
+
+.card {
+  padding: 14px !important;
+  gap: 8px !important;
+}
+
+.card-title {
+  margin-bottom: 2px !important;
+}
+
+.status-grid {
+  gap: 8px !important;
+  margin-bottom: 4px !important;
+}
+
+.status-box {
+  padding: 10px 5px !important;
+}
+
+.records-list {
+  gap: 6px !important;
+}
+
+.record-item {
+  padding: 8px 12px !important;
+}

@@ -870,3 +870,10 @@ button {
 .record-item {
   padding: 8px 12px !important;
 }
+.card,
+section,
+.panel,
+.box {
+  margin-top: 0 !important;
+  margin-bottom: 10px !important;
+}

@@ -22,7 +22,7 @@ body {
   background: var(--bg);
   color: var(--text);
   direction: rtl;
-  padding: 15px;
+  padding: 10px;
 }
 
 body.modal-open {
@@ -32,7 +32,7 @@ body.modal-open {
 .app {
   width: min(760px, 100%);
   margin: 0 auto;
-  padding: 8px;
+  padding: 6px;
   text-align: center;
 }
 
@@ -44,10 +44,13 @@ body.modal-open {
 .card {
   background: var(--card) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 16px !important;
-  padding: 16px !important;
-  margin: 12px 0 !important;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1) !important;
+  border-radius: 12px !important;
+  padding: 12px !important;
+  margin: 8px 0 !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08) !important;
+  display: flex;
+  flex-direction: column;
+  gap: 8px !important;
 }
 
 .form-hero-image {
@@ -56,7 +59,7 @@ body.modal-open {
   max-width: 520px;
   height: auto;
   margin: 0 auto;
-  border-radius: 18px;
+  border-radius: 14px;
   object-fit: cover;
 }
 
@@ -67,41 +70,41 @@ body.modal-open {
 
 /* تیترها کمی کوچکتر */
 h1 {
-  margin: 0 0 6px;
-  font-size: 22px;
+  margin: 0 0 4px;
+  font-size: 20px;
 }
 
 h2 {
-  font-size: 1.1rem !important;
+  font-size: 1.05rem !important;
   font-weight: 800 !important;
   color: #3f2f21 !important;
   text-align: center !important;
   margin-top: 0 !important;
-  margin-bottom: 15px !important;
+  margin-bottom: 10px !important;
 }
 
 /* کنترل فاصله پاراگراف‌ها */
 p {
-  line-height: 1.5;
-  margin: 4px 0;
+  line-height: 1.4;
+  margin: 3px 0;
 }
 
 /* هشدار مهم جمع‌وجور */
 .compact-warning, .warning {
   background-color: #fff3e0 !important;
   border: 1.5px solid #ffb74d !important;
-  border-radius: 14px !important;
-  padding: 12px 16px !important;
+  border-radius: 12px !important;
+  padding: 10px 14px !important;
   color: #5c3e21 !important;
-  font-size: 0.85rem !important;
+  font-size: 0.8rem !important;
   text-align: right;
 }
 
 .compact-warning strong, .warning strong {
   display: block;
   text-align: center;
-  font-size: 1rem;
-  margin-bottom: 5px;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
   color: #d35400;
   font-weight: bold;
 }
@@ -122,7 +125,7 @@ p {
 
 .admin-message-content {
   margin: 5% auto;
-  padding: 20px;
+  padding: 16px;
   width: 80%;
   max-width: 500px;
   border-radius: 8px;
@@ -158,8 +161,8 @@ p {
 #saveLoading,
 #recordLoading {
   display: inline-block;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   margin: 0 5px;
   border: 3px solid rgba(0, 0, 0, 0.1);
   border-radius: 50%;
@@ -181,7 +184,7 @@ p {
 /* فرم پرسنلی فشرده‌تر */
 label {
   display: block;
-  margin: 5px 0;
+  margin: 4px 0;
   font-weight: 700;
 }
 
@@ -190,12 +193,12 @@ label {
   background-color: #ffcc00 !important;
   color: #000 !important;
   font-weight: 900 !important;
-  font-size: 1.2rem !important;
+  font-size: 1.1rem !important;
   text-align: center !important;
   border: 1px solid #e0b000 !important;
-  border-radius: 12px !important;
-  padding: 12px !important;
-  margin-bottom: 10px !important;
+  border-radius: 10px !important;
+  padding: 10px !important;
+  margin-bottom: 8px !important;
   width: 100% !important;
   box-sizing: border-box !important;
   outline: none;
@@ -209,10 +212,10 @@ label {
 input,
 button {
   width: 100%;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--border);
-  padding: 9px;
-  margin-top: 4px;
+  padding: 8px;
+  margin-top: 3px;
   font: inherit;
   text-align: center;
 }
@@ -238,13 +241,13 @@ button {
   background-color: #28a745 !important;
   color: #fff !important;
   font-weight: 800 !important;
-  font-size: 1.1rem !important;
+  font-size: 1.05rem !important;
   border: none !important;
-  border-radius: 12px !important;
-  padding: 15px !important;
+  border-radius: 10px !important;
+  padding: 12px !important;
   width: 100% !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 6px rgba(40, 167, 69, 0.2) !important;
+  box-shadow: 0 3px 5px rgba(40, 167, 69, 0.2) !important;
   transition: transform 0.1s ease;
 }
 
@@ -273,10 +276,10 @@ button {
 
 /* آیکون وضعیت آنلاین */
 .status {
-  min-height: 20px;
+  min-height: 18px;
   font-weight: 800;
-  font-size: 14px;
-  margin-top: 4px;
+  font-size: 13px;
+  margin-top: 3px;
   margin-bottom: 0;
 }
 
@@ -290,25 +293,25 @@ button {
 
 /* اگر پیام وضعیت کوچک‌تر باشد */
 .small-status {
-  font-size: 13px;
-  min-height: 18px;
+  font-size: 12px;
+  min-height: 16px;
 }
 
 .photo-row {
   display: flex;
   justify-content: center;
-  margin-top: 6px;
-  margin-bottom: 4px;
+  margin-top: 4px;
+  margin-bottom: 3px;
 }
 
 .preview {
   display: block;
-  width: 220px;
+  width: 200px;
   height: auto;
   max-width: 100%;
   object-fit: contain;
   object-position: center;
-  border-radius: 12px;
+  border-radius: 10px;
   margin: 0 auto;
   background: #f1f5f9;
 }
@@ -317,17 +320,17 @@ button {
 .stats {
   display: grid !important;
   grid-template-columns: 1fr 1fr 1fr !important;
-  gap: 10px !important;
-  margin: 8px 0 !important;
+  gap: 8px !important;
+  margin: 6px 0 !important;
 }
 
 .stats > div {
-  border-radius: 12px !important;
-  padding: 15px 5px !important;
+  border-radius: 10px !important;
+  padding: 10px 4px !important;
   text-align: center !important;
   color: #fff !important;
   font-weight: 900 !important;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+  box-shadow: 0 3px 5px rgba(0,0,0,0.1) !important;
 }
 
 /* ۳ ستون: ۱. ارسال‌نشده (آبی)، ۲. ارسال‌شده (سبز)، ۳. ناموفق (قرمز) */
@@ -337,12 +340,12 @@ button {
 
 .stats span {
   display: block !important;
-  font-size: 1.5rem !important;
+  font-size: 1.35rem !important;
   font-weight: 900 !important;
 }
 
 .stats small {
-  font-size: 0.8rem !important;
+  font-size: 0.75rem !important;
   font-weight: 700 !important;
   color: #fff !important;
   opacity: 0.9;
@@ -352,8 +355,8 @@ button {
 .records {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 220px;
+  gap: 3px;
+  max-height: 200px;
   overflow-y: auto;
   padding-top: 2px;
 }
@@ -363,9 +366,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 6px 4px;
-  font-size: 13px;
+  gap: 8px;
+  padding: 5px 4px;
+  font-size: 12px;
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
 }
@@ -377,7 +380,7 @@ button {
 /* فاصله کمتر بین آیتم‌ها */
 .record {
   border-bottom: 1px solid var(--border);
-  padding: 6px 0;
+  padding: 5px 0;
 }
 
 .record:last-child {
@@ -387,7 +390,7 @@ button {
 .badge {
   display: inline-block;
   background: rgba(255, 255, 255, 0.2);
-  padding: 5px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
 }
 
@@ -398,7 +401,7 @@ button {
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
 }
 
 /* کارت‌های خاص برای حذف فضای اضافه پایین */
@@ -408,7 +411,7 @@ button {
 .records-card,
 .top-status,
 .compact-warning {
-  padding-bottom: 6px;
+  padding-bottom: 4px;
 }
 
 /* آخرین عنصر داخل کارت فضای اضافه نداشته باشد */
@@ -431,23 +434,23 @@ button {
 .guide-card {
   background: linear-gradient(135deg, #e0f2fe, #ccfbf1, #fef3c7);
   border: 1px solid rgba(15, 118, 110, 0.25);
-  padding: 8px;
+  padding: 6px;
 }
 
 .guide-button {
   background: linear-gradient(135deg, #2563eb, #0f766e);
   color: #ffffff;
   border: none;
-  border-radius: 14px;
-  padding: 11px 12px;
-  font-size: 15px;
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+  border-radius: 12px;
+  padding: 9px 10px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .guide-button:active {
   transform: scale(0.98);
-  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
 }
 
 .guide-button:hover {
@@ -459,7 +462,7 @@ button {
   inset: 0;
   display: none;
   z-index: 9999;
-  padding: 12px;
+  padding: 10px;
 }
 
 .guide-modal.show {
@@ -476,19 +479,19 @@ button {
 .guide-box {
   position: relative;
   width: min(720px, 100%);
-  max-height: 92vh;
-  margin: 4vh auto 0;
+  max-height: 90vh;
+  margin: 5vh auto 0;
   background: #ffffff;
-  border-radius: 22px;
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.6);
   animation: guidePop 0.18s ease-out;
 }
 
 @keyframes guidePop {
   from {
-    transform: translateY(12px) scale(0.98);
+    transform: translateY(10px) scale(0.98);
     opacity: 0;
   }
   to {
@@ -501,35 +504,35 @@ button {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
-  padding: 14px 14px 12px;
+  gap: 6px;
+  padding: 12px 12px 10px;
   background: linear-gradient(135deg, #0f766e, #14b8a6, #2563eb);
   color: #ffffff;
   text-align: right;
 }
 
 .guide-header h2 {
-  margin: 0 0 4px;
-  font-size: 19px;
+  margin: 0 0 3px;
+  font-size: 17px;
 }
 
 .guide-header p {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   opacity: 0.95;
 }
 
 .guide-close {
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
   margin: 0;
   padding: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.22);
   color: #ffffff;
-  font-size: 28px;
-  line-height: 38px;
+  font-size: 24px;
+  line-height: 34px;
   border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
@@ -538,36 +541,36 @@ button {
 }
 
 .guide-content {
-  max-height: calc(92vh - 150px);
+  max-height: calc(90vh - 130px);
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px;
   background: linear-gradient(180deg, #f8fafc, #ffffff);
   text-align: right;
 }
 
 .guide-section {
-  border-radius: 16px;
-  padding: 12px;
-  margin-bottom: 10px;
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
 .guide-section h3 {
-  margin: 0 0 8px;
-  font-size: 15px;
+  margin: 0 0 6px;
+  font-size: 14px;
 }
 
 .guide-section ol,
 .guide-section ul {
   margin: 0;
-  padding-right: 20px;
+  padding-right: 18px;
 }
 
 .guide-section li {
-  margin: 7px 0;
-  line-height: 1.7;
-  font-size: 14px;
+  margin: 5px 0;
+  line-height: 1.6;
+  font-size: 13px;
 }
 
 .guide-section strong {
@@ -600,7 +603,7 @@ button {
 }
 
 .guide-footer {
-  padding: 10px 12px 12px;
+  padding: 8px 10px 10px;
   background: #ffffff;
   border-top: 1px solid #e2e8f0;
 }
@@ -608,9 +611,9 @@ button {
 .guide-ok {
   background: linear-gradient(135deg, #16a34a, #0f766e);
   color: #ffffff;
-  border-radius: 14px;
-  padding: 11px;
-  box-shadow: 0 5px 14px rgba(22, 163, 74, 0.22);
+  border-radius: 12px;
+  padding: 9px;
+  box-shadow: 0 4px 10px rgba(22, 163, 74, 0.2);
 }
 
 .guide-ok:active {
@@ -620,7 +623,7 @@ button {
 /* ریسپانسیو موبایل */
 @media (max-width: 480px) {
   .preview {
-    width: 200px;
+    width: 180px;
     height: auto;
     max-width: 100%;
     object-fit: contain;
@@ -628,76 +631,77 @@ button {
   }
 
   .app {
-    padding: 6px;
+    padding: 4px;
   }
 
   .card {
-    padding: 7px 7px 5px !important;
-    border-radius: 12px !important;
+    padding: 10px !important;
+    border-radius: 10px !important;
+    margin: 6px 0 !important;
+    gap: 6px !important;
   }
 
   h1 {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   h2 {
-    font-size: 1.1rem !important;
+    font-size: 1rem !important;
+    margin-bottom: 8px !important;
   }
 
   input,
   button {
-    padding: 8px;
+    padding: 7px;
   }
 
   .photo-row {
-    display: flex;
-    justify-content: center;
-    margin-top: 6px;
-    margin-bottom: 4px;
+    margin-top: 4px;
+    margin-bottom: 3px;
   }
 
   .stats span {
-    font-size: 1.5rem !important;
+    font-size: 1.3rem !important;
   }
 
   .guide-modal {
-    padding: 8px;
+    padding: 6px;
   }
 
   .guide-box {
-    max-height: 94vh;
-    margin-top: 3vh;
-    border-radius: 18px;
-  }
-
-  .guide-header {
-    padding: 12px;
-  }
-
-  .guide-header h2 {
-    font-size: 17px;
-  }
-
-  .guide-header p {
-    font-size: 12px;
-  }
-
-  .guide-content {
-    max-height: calc(94vh - 145px);
-    padding: 10px;
-  }
-
-  .guide-section {
-    padding: 10px;
+    max-height: 92vh;
+    margin-top: 4vh;
     border-radius: 14px;
   }
 
+  .guide-header {
+    padding: 10px;
+  }
+
+  .guide-header h2 {
+    font-size: 15px;
+  }
+
+  .guide-header p {
+    font-size: 11px;
+  }
+
+  .guide-content {
+    max-height: calc(92vh - 120px);
+    padding: 8px;
+  }
+
+  .guide-section {
+    padding: 8px;
+    border-radius: 10px;
+  }
+
   .guide-section h3 {
-    font-size: 14px;
+    font-size: 13px;
   }
 
   .guide-section li {
-    font-size: 13px;
+    font-size: 12px;
   }
 }
 
@@ -732,50 +736,53 @@ button {
   align-items: center !important;
   justify-content: center !important;
   width: 100% !important;
-  min-height: 48px !important;
-  border-radius: 12px !important;
+  min-height: 44px !important;
+  border-radius: 10px !important;
   background-color: #3498db !important;
   border: none !important;
   color: #fff !important;
-  font-size: 1.1rem !important;
+  font-size: 1.05rem !important;
   font-weight: 800 !important;
   cursor: pointer !important;
   box-sizing: border-box !important;
   text-align: center !important;
-  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2) !important;
+  box-shadow: 0 3px 5px rgba(52, 152, 219, 0.2) !important;
 }
 
 .selfie-upload-label:active {
   transform: scale(0.98) !important;
 }
+
 .camera-btn {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 10px !important;
-  padding: 15px 20px !important;
+  gap: 8px !important;
+  padding: 12px 18px !important;
   background-color: #3498db !important;
-  color: #ffffff !important; /* این رنگ متن است */
-  border-radius: 12px !important;
+  color: #ffffff !important;
+  border-radius: 10px !important;
   font-weight: 900 !important;
-  font-size: 1.15rem !important;
+  font-size: 1.1rem !important;
   border: none !important;
   cursor: pointer !important;
 }
 
 .camera-btn span {
-  color: #ffffff !important; /* اطمینان از رنگ سفید */
+  color: #ffffff !important;
   font-weight: 800 !important;
 }
+
 .hero-cover {
   position: relative;
   width: 100%;
-  margin: 0 0 20px 0;
-  border-radius: 18px;
+  margin: 0 0 15px 0;
+  border-radius: 14px;
   overflow: hidden;
-  background: #f0f0f0; /* رنگ رزرو تا عکس لود شود */
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+  background: #f0f0f0;
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
 }
+
 .hero-cover img {
   display: block;
   width: 100%;
@@ -786,16 +793,15 @@ button {
 
 .hero-cover-badge {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
-  padding: 5px 10px;
-  border-radius: 20px;
+  right: 10px;
+  bottom: 10px;
+  padding: 4px 8px;
+  border-radius: 15px;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   backdrop-filter: blur(4px);
 }
-/* styles.css */
 
 /* Splash */
 .splash-screen {
@@ -817,9 +823,9 @@ button {
 
 .splash-card {
   width: min(92vw, 520px);
-  border-radius: 22px;
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
   background: #f6d2aa;
 }
 
@@ -831,22 +837,18 @@ button {
 }
 
 .splash-text {
-  padding: 14px 18px 18px;
+  padding: 12px 16px 16px;
   text-align: center;
   font-weight: 700;
-  font-size: 22px;
+  font-size: 20px;
   color: #7a3a00;
 }
 
 .app-hidden {
   display: none;
 }
-.container {
-  gap: 10px !important;
-}
 
-.card {
-  padding: 14px !important;
+.container {
   gap: 8px !important;
 }
 
@@ -855,25 +857,26 @@ button {
 }
 
 .status-grid {
-  gap: 8px !important;
-  margin-bottom: 4px !important;
+  gap: 6px !important;
+  margin-bottom: 3px !important;
 }
 
 .status-box {
-  padding: 10px 5px !important;
+  padding: 8px 4px !important;
 }
 
 .records-list {
-  gap: 6px !important;
+  gap: 4px !important;
 }
 
 .record-item {
-  padding: 8px 12px !important;
+  padding: 6px 10px !important;
 }
+
 .card,
 section,
 .panel,
 .box {
   margin-top: 0 !important;
-  margin-bottom: 10px !important;
+  margin-bottom: 8px !important;
 }

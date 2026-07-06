@@ -533,7 +533,8 @@ async function ensurePolicyLoadedAtStartup() {
 async function refreshPolicyIfPossible() {
   if (!navigator.onLine) return null;
 
-  const profile = await getProfile().catch(() => null);
+  // استفاده از dbGet مستقیم به جای getProfile برای جلوگیری از پرتاب خطا در صورت عدم ثبت اولیه پروفایل
+  const profile = await dbGet(STORE_PROFILE, "main").catch(() => null);
   if (!profile?.personnelCode) return null;
 
   try {
@@ -541,7 +542,12 @@ async function refreshPolicyIfPossible() {
       `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
       encodeURIComponent(profile.personnelCode);
 
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    // افزودن تنظیمات منعطف‌تر برای هماهنگی با مکانیسم کش سافاری
+    const res = await fetch(url, { 
+      method: "GET", 
+      cache: "no-store",
+      credentials: "omit"
+    });
     if (!res.ok) return null;
 
     const result = await res.json().catch(() => null);
@@ -1061,7 +1067,8 @@ async function fetchMessages() {
   if (!navigator.onLine) return;
 
   try {
-    const profile = await getProfile().catch(() => null);
+    // خواندن مستقیم از دیتا بیس بدون پرتاب خطا جهت سازگاری با لود اولیه آیفون
+    const profile = await dbGet(STORE_PROFILE, "main").catch(() => null);
     if (!profile?.personnelCode) return;
 
     const url =
@@ -1069,7 +1076,11 @@ async function fetchMessages() {
       "?action=getMessages&personnelCode=" +
       encodeURIComponent(profile.personnelCode);
 
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    const res = await fetch(url, { 
+      method: "GET", 
+      cache: "no-store",
+      credentials: "omit" 
+    });
     if (!res.ok) return;
 
     const result = await res.json().catch(() => null);
@@ -1100,17 +1111,31 @@ async function fetchMessages() {
     console.error("Error fetching messages:", e);
   }
 }
-
 /* =========================
    Time / Date
 ========================= */
 
 function getPersianDate(d) {
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+  // فرمت‌دهی استاندارد تاریخ خورشیدی به همراه پاکسازی کاراکترهای کنترلی جهت متن در iOS
+  const rawDate = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
   }).format(d);
+  
+  // جایگزینی اعداد فارسی به انگلیسی و حذف کاراکترهای غیر عددی به جز ممیز
+  return rawDate
+    .replace(/[۰-۹]/g, (w) => "۰۱۲۳۴۵۶۷۸۹".indexOf(w))
+    .replace(/[^\d/]/g, "");
+}
+
+function getTime(d) {
+  // در سافاری iOS، آرگومان hour12: false در زمان فارسی گاهی اوقات ب.ظ/ق.ظ برمی‌گرداند.
+  // مطمئن‌ترین راه استخراج دستی بخش‌های ساعت، دقیقه و ثانیه است تا در تمام پلتفرم‌ها یکسان باشد.
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
 }
 
 function getTime(d) {

@@ -34,7 +34,7 @@ let pendingLocation = null;
 let syncRunning = false;
 let syncTimer = null;
 let adminMessageShownOnEntry = false;
-let lastAdminMessage = null; // تغییر از "" به null برای شروع دقیق
+let lastAdminMessage = null; 
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
@@ -412,7 +412,7 @@ function getProfileFromInputs() {
 
 async function loadProfile() {
   const p = await dbGet(STORE_PROFILE, "main");
-    if (!p) return;
+  if (!p) return;
 
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
   if ($("firstName")) $("firstName").value = p.firstName || "";
@@ -420,25 +420,17 @@ async function loadProfile() {
 }
 
 async function saveProfileSilent() {
-  const profile = getProfileFromInputs();
-  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-    throw new Error("مشخصات پرسنلی کامل نیست.");
+  try {
+    const profile = getProfileFromInputs();
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      throw new Error("مشخصات پرسنلی کامل نیست.");
+    }
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await refreshPolicyIfPossible();
+    await fetchMessages();
+  } catch (err) {
+    console.error("Silent profile save failed:", err);
   }
-  await dbPut(STORE_PROFILE, { id: "main", ...profile });
-await refreshPolicyIfPossible();
-await fetchMessages();
-
-btn.style.backgroundColor = "#28a745";
-btn.textContent = "ذخیره شد";
-showGpsToast("success", "مشخصات با موفقیت ثبت شد", "3000");
-
-setTimeout(() => {
-  ...
-}, 4500);
-
-} catch (_) {
-  ...
-  setStatus("خطا در ذخیره مشخصات");
 }
 
 async function getProfile() {
@@ -634,7 +626,6 @@ async function refreshPolicyIfPossible() {
             await saveAttendancePolicyInfo(data);
             console.log("[Policy] Successfully updated and saved:", data);
             
-            // اعمال تغییرات جدید در UI پس از دریافت پالسی
             if (typeof updateOnlineBadge === "function") {
                 updateOnlineBadge();
             }
@@ -829,7 +820,6 @@ async function createRecord(type) {
 
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
 
-  // تبدیل تاریخ به شمسی قبل از ذخیره در دیتابیس محلی
   const jalaliDateStr = getJalaliIsoDate(now);
   const hourStr = getTime(now);
 
@@ -840,7 +830,7 @@ async function createRecord(type) {
     lastName: profile.lastName,
     type,
     recordType: type,
-    recordDate: jalaliDateStr, // تاریخ شمسی
+    recordDate: jalaliDateStr, 
     recordHour: hourStr,
     recordTime: hourStr,
     latitude: loc.latitude || "",
@@ -1112,6 +1102,7 @@ function renderRecords(records) {
 /* =========================
    Admin Messages
 ========================= */
+
 async function fetchMessages() {
   if (!navigator.onLine) return;
 
@@ -1139,7 +1130,6 @@ async function fetchMessages() {
     try {
       const data = JSON.parse(rawText);
       
-      // Handle { ok: true, messages: [...] } format
       if (data && typeof data === "object") {
         const msgSource = data.messages || data.message || data;
         if (Array.isArray(msgSource)) {
@@ -1158,7 +1148,6 @@ async function fetchMessages() {
       finalMsg = rawText.replace(/["\[\]]/g, "").trim();
     }
 
-    // Clean up any remaining JSON-like artifacts from parsing edge-cases
     if (typeof finalMsg === "string") {
       finalMsg = finalMsg.trim();
     }
@@ -1175,13 +1164,11 @@ async function fetchMessages() {
 }
 
 function showAdminMessage(message) {
-  // Remove any existing overlay to avoid duplicates on iOS Safari
   const existingOverlay = document.getElementById("admin-message-overlay");
   if (existingOverlay) {
     existingOverlay.remove();
   }
 
-  // Create overlay with dynamic styling optimized for iOS Safari webviews
   const overlay = document.createElement("div");
   overlay.id = "admin-message-overlay";
   overlay.style.cssText = `
@@ -1216,7 +1203,6 @@ function showAdminMessage(message) {
     animation: zoomInAdmin 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   `;
 
-  // Inject CSS animation directly to handle rendering engine triggers
   const styleSheet = document.createElement("style");
   styleSheet.innerText = `
     @keyframes zoomInAdmin {
@@ -1265,7 +1251,6 @@ function showAdminMessage(message) {
   `;
   btn.textContent = "متوجه شدم و تایید می‌کنم";
 
-  // Ensure touch events and click events both dismiss the modal on iOS devices
   const dismiss = (e) => {
     e.preventDefault();
     overlay.remove();
@@ -1280,6 +1265,7 @@ function showAdminMessage(message) {
   
   document.body.appendChild(overlay);
 }
+
 /* =========================
    Time / Date
 ========================= */

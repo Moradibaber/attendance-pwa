@@ -1033,130 +1033,6 @@ function renderRecords(records) {
 /* =========================
    Admin Messages
 ========================= */
-function showAdminMessage(message) {
-  const msg = String(message == null ? "" : message).trim();
-  if (!msg) return;
-
-  const oldOverlay = document.getElementById("admin-message-overlay");
-  if (oldOverlay) oldOverlay.remove();
-
-  const oldStyle = document.getElementById("admin-message-style");
-  if (!oldStyle) {
-    const style = document.createElement("style");
-    style.id = "admin-message-style";
-    style.textContent = `
-      #admin-message-overlay{
-        position:fixed !important;
-        inset:0 !important;
-        width:100vw !important;
-        height:100vh !important;
-        background:rgba(0,0,0,.55) !important;
-        display:flex !important;
-        align-items:center !important;
-        justify-content:center !important;
-        padding:16px !important;
-        box-sizing:border-box !important;
-        z-index:2147483647 !important;
-        -webkit-backdrop-filter:blur(2px);
-        backdrop-filter:blur(2px);
-      }
-      #admin-message-modal{
-        width:min(92vw,380px) !important;
-        max-height:80vh !important;
-        overflow:auto !important;
-        background:#fff !important;
-        color:#111 !important;
-        border-radius:14px !important;
-        box-shadow:0 20px 50px rgba(0,0,0,.35) !important;
-        padding:18px !important;
-        direction:rtl !important;
-        font-family:inherit !important;
-        transform:translateZ(0);
-        -webkit-transform:translateZ(0);
-      }
-      #admin-message-title{
-        margin:0 0 12px 0 !important;
-        font-size:18px !important;
-        font-weight:700 !important;
-        color:#c62828 !important;
-        line-height:1.5 !important;
-      }
-      #admin-message-body{
-        margin:0 0 16px 0 !important;
-        font-size:16px !important;
-        line-height:1.9 !important;
-        white-space:pre-wrap !important;
-        word-break:break-word !important;
-      }
-      #admin-message-btn{
-        display:block !important;
-        width:100% !important;
-        border:0 !important;
-        border-radius:10px !important;
-        padding:12px 14px !important;
-        background:#0d6efd !important;
-        color:#fff !important;
-        font-size:16px !important;
-        font-weight:700 !important;
-        cursor:pointer !important;
-        -webkit-appearance:none !important;
-        appearance:none !important;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  const overlay = document.createElement("div");
-  overlay.id = "admin-message-overlay";
-
-  const modal = document.createElement("div");
-  modal.id = "admin-message-modal";
-
-  const title = document.createElement("div");
-  title.id = "admin-message-title";
-  title.textContent = "پیام مدیر";
-
-  const body = document.createElement("div");
-  body.id = "admin-message-body";
-  body.textContent = msg;
-
-  const btn = document.createElement("button");
-  btn.id = "admin-message-btn";
-  btn.type = "button";
-  btn.textContent = "تایید";
-
-  btn.addEventListener("click", function () {
-    overlay.remove();
-  });
-
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) overlay.remove();
-  });
-
-  modal.appendChild(title);
-  modal.appendChild(body);
-  modal.appendChild(btn);
-  overlay.appendChild(modal);
-
-  if (!document.body) {
-    alert(msg);
-    return;
-  }
-
-  document.body.appendChild(overlay);
-
-  requestAnimationFrame(function () {
-    try { btn.focus({ preventScroll: true }); } catch (_) {}
-  });
-
-  setTimeout(function () {
-    const exists = document.getElementById("admin-message-overlay");
-    if (!exists && msg) {
-      alert(msg);
-    }
-  }, 1200);
-}
-
 async function fetchMessages() {
   if (!navigator.onLine) return;
 
@@ -1164,126 +1040,158 @@ async function fetchMessages() {
     const profile = await dbGet(STORE_PROFILE, "main");
     if (!profile || !profile.personnelCode) return;
 
-    const personnelCode = String(profile.personnelCode || "").trim();
-    if (!personnelCode) return;
+    const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    
+    // 1. Bypass iOS Safari caching strictly using a dynamic timestamp parameter.
+    // 2. DO NOT use custom headers (like Cache-Control/Pragma) because cross-origin (CORS) 
+    //    requests to Google Apps Script will trigger an OPTIONS preflight block on iOS Safari.
+    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&_=${Date.now()}`;
 
-    const url =
-      `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${encodeURIComponent(personnelCode)}&_=${Date.now()}`;
-
-    const res = await fetch(url, {
+    const response = await fetch(url, {
       method: "GET",
       mode: "cors",
-      cache: "no-store",
-      redirect: "follow",
-      credentials: "omit",
-      headers: {
-        "Accept": "application/json, text/plain, */*"
-      }
+      credentials: "omit"
     });
 
-    if (!res.ok) return;
+    if (!response.ok) return;
 
-    const raw = (await res.text() || "").trim();
-    if (!raw) return;
-
-    let messages = [];
-
-    const normalizeMessage = function (value) {
-      let v = String(value == null ? "" : value).trim();
-
-      if (!v) return "";
-      if (v === "[]" || v === "{}") return "";
-
-      if (
-        (v.startsWith('"') && v.endsWith('"')) ||
-        (v.startsWith("'") && v.endsWith("'"))
-      ) {
-        v = v.slice(1, -1).trim();
-      }
-
-      if (!v) return "";
-
-      const lower = v.toLowerCase();
-      if (
-        lower === "false" ||
-        lower === "null" ||
-        lower === "undefined" ||
-        lower === "0" ||
-        lower === "none" ||
-        lower === "no message" ||
-        lower === "no messages"
-      ) {
-        return "";
-      }
-
-      return v;
-    };
-
-    const collectMessages = function (input) {
-      if (Array.isArray(input)) {
-        return input.map(normalizeMessage).filter(Boolean);
-      }
-
-      if (typeof input === "string") {
-        const one = normalizeMessage(input);
-        return one ? [one] : [];
-      }
-
-      if (input && typeof input === "object") {
-        if (Array.isArray(input.messages)) {
-          return input.messages.map(normalizeMessage).filter(Boolean);
-        }
-        if (Array.isArray(input.data)) {
-          return input.data.map(normalizeMessage).filter(Boolean);
-        }
-        if (Array.isArray(input.result)) {
-          return input.result.map(normalizeMessage).filter(Boolean);
-        }
-        if (typeof input.message === "string") {
-          const one = normalizeMessage(input.message);
-          return one ? [one] : [];
-        }
-        if (typeof input.msg === "string") {
-          const one = normalizeMessage(input.msg);
-          return one ? [one] : [];
-        }
-      }
-
-      return [];
-    };
-
-    try {
-      const parsed = JSON.parse(raw);
-      messages = collectMessages(parsed);
-    } catch (_) {
-      messages = collectMessages(raw);
-
-      if (!messages.length && raw.startsWith("[") && raw.endsWith("]")) {
-        try {
-          const parsedArray = JSON.parse(raw);
-          messages = collectMessages(parsedArray);
-        } catch (_) {}
-      }
+    const rawText = await response.text();
+    if (!rawText || rawText.trim() === "" || rawText === "[]" || rawText === "false" || rawText === "null") {
+      return;
     }
 
-    if (!messages.length) return;
+    let finalMsg = "";
+    try {
+      const data = JSON.parse(rawText);
+      if (Array.isArray(data)) {
+        finalMsg = data[data.length - 1];
+      } else if (data && typeof data === "object") {
+        finalMsg = data.message || JSON.stringify(data);
+      } else {
+        finalMsg = data.toString();
+      }
+    } catch (e) {
+      // Fallback if response is plain text instead of JSON
+      finalMsg = rawText.replace(/["\[\]]/g, "").trim();
+    }
 
-    const combined = messages.join("\n\n").trim();
-    if (!combined) return;
-
-    if (combined === lastAdminMessage) return;
-
-    lastAdminMessage = combined;
-    adminMessageShownOnEntry = true;
-
-    setTimeout(function () {
-      showAdminMessage(combined);
-    }, 150);
+    if (finalMsg && finalMsg !== "false" && finalMsg !== "null") {
+      if (finalMsg !== lastAdminMessage) {
+        lastAdminMessage = finalMsg;
+        showAdminMessage(finalMsg);
+      }
+    }
   } catch (err) {
-    console.error("fetchMessages failed:", err);
+    console.error("Fetch messages failed:", err);
   }
 }
 
+function showAdminMessage(message) {
+  // Remove any existing overlay to avoid duplicates on iOS Safari
+  const existingOverlay = document.getElementById("admin-message-overlay");
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  // Create overlay with dynamic styling optimized for iOS Safari webviews
+  const overlay = document.createElement("div");
+  overlay.id = "admin-message-overlay";
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+  `;
+
+  const container = document.createElement("div");
+  container.style.cssText = `
+    background-color: #fff7ed;
+    border: 2px solid #ea580c;
+    border-radius: 16px;
+    padding: 24px;
+    width: 100%;
+    max-width: 450px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+    text-align: right;
+    direction: rtl;
+    box-sizing: border-box;
+    animation: zoomInAdmin 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  `;
+
+  // Inject CSS animation directly to handle rendering engine triggers
+  const styleSheet = document.createElement("style");
+  styleSheet.innerText = `
+    @keyframes zoomInAdmin {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(styleSheet);
+
+  const title = document.createElement("div");
+  title.style.cssText = `
+    font-size: 18px;
+    font-weight: bold;
+    color: #c2410c;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+  title.textContent = "🔔 پیام جدید از طرف مدیریت";
+
+  const body = document.createElement("div");
+  body.style.cssText = `
+    font-size: 15px;
+    color: #431407;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  `;
+  body.textContent = message;
+
+  const btn = document.createElement("button");
+  btn.style.cssText = `
+    width: 100%;
+    background-color: #ea580c;
+    color: #ffffff;
+    border: none;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  `;
+  btn.textContent = "متوجه شدم و تایید می‌کنم";
+
+  // Ensure touch events and click events both dismiss the modal on iOS devices
+  const dismiss = (e) => {
+    e.preventDefault();
+    overlay.remove();
+  };
+  btn.addEventListener("click", dismiss, { passive: false });
+  btn.addEventListener("touchstart", dismiss, { passive: false });
+
+  container.appendChild(title);
+  container.appendChild(body);
+  container.appendChild(btn);
+  overlay.appendChild(container);
+  
+  document.body.appendChild(overlay);
+}
 /* =========================
    Time / Date
 ========================= */

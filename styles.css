@@ -795,3 +795,49 @@ button {
   font-size: 10px;
   backdrop-filter: blur(4px);
 }
+/* styles.css */
+
+/* Splash */
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #bfe8f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+.splash-screen.is-hide {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.splash-card {
+  width: min(92vw, 520px);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.15);
+  background: #f6d2aa;
+}
+
+.splash-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+.splash-text {
+  padding: 14px 18px 18px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 22px;
+  color: #7a3a00;
+}
+
+.app-hidden {
+  display: none;
+}

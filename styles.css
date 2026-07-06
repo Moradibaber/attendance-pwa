@@ -45,6 +45,16 @@ body.modal-open {
   margin: 6px 0;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
 }
+.form-hero-image {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 18px;
+  object-fit: cover;
+}
+
 
 .hero {
   background: linear-gradient(135deg, #0f766e, #14b8a6);

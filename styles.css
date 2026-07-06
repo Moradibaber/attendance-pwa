@@ -748,3 +748,22 @@ button {
 .selfie-upload-label:active {
   transform: scale(0.98) !important;
 }
+.camera-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  padding: 15px 20px !important;
+  background-color: #3498db !important;
+  color: #ffffff !important; /* این رنگ متن است */
+  border-radius: 12px !important;
+  font-weight: 900 !important;
+  font-size: 1.15rem !important;
+  border: none !important;
+  cursor: pointer !important;
+}
+
+.camera-btn span {
+  color: #ffffff !important; /* اطمینان از رنگ سفید */
+  font-weight: 800 !important;
+}

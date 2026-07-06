@@ -1041,10 +1041,6 @@ async function fetchMessages() {
     if (!profile || !profile.personnelCode) return;
 
     const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
-    
-    // 1. Bypass iOS Safari caching strictly using a dynamic timestamp parameter.
-    // 2. DO NOT use custom headers (like Cache-Control/Pragma) because cross-origin (CORS) 
-    //    requests to Google Apps Script will trigger an OPTIONS preflight block on iOS Safari.
     const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&_=${Date.now()}`;
 
     const response = await fetch(url, {
@@ -1063,19 +1059,32 @@ async function fetchMessages() {
     let finalMsg = "";
     try {
       const data = JSON.parse(rawText);
-      if (Array.isArray(data)) {
+      
+      // Handle { ok: true, messages: [...] } format
+      if (data && typeof data === "object") {
+        const msgSource = data.messages || data.message || data;
+        if (Array.isArray(msgSource)) {
+          finalMsg = msgSource[msgSource.length - 1];
+        } else if (typeof msgSource === "string") {
+          finalMsg = msgSource;
+        } else {
+          finalMsg = JSON.stringify(msgSource);
+        }
+      } else if (Array.isArray(data)) {
         finalMsg = data[data.length - 1];
-      } else if (data && typeof data === "object") {
-        finalMsg = data.message || JSON.stringify(data);
       } else {
         finalMsg = data.toString();
       }
     } catch (e) {
-      // Fallback if response is plain text instead of JSON
       finalMsg = rawText.replace(/["\[\]]/g, "").trim();
     }
 
-    if (finalMsg && finalMsg !== "false" && finalMsg !== "null") {
+    // Clean up any remaining JSON-like artifacts from parsing edge-cases
+    if (typeof finalMsg === "string") {
+      finalMsg = finalMsg.trim();
+    }
+
+    if (finalMsg && finalMsg !== "false" && finalMsg !== "null" && finalMsg !== "undefined") {
       if (finalMsg !== lastAdminMessage) {
         lastAdminMessage = finalMsg;
         showAdminMessage(finalMsg);

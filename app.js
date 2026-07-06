@@ -1,7 +1,7 @@
-// FILE: app.js
- 
-const DB_NAME = "attendance-pwa-db"; 
-const DB_VERSION = 3; 
+/* ========= FILE: app.js ========= */
+
+const DB_NAME = "attendance-pwa-db";
+const DB_VERSION = 3;
 
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
@@ -33,7 +33,7 @@ let pendingLocation = null;
 let syncRunning = false;
 let syncTimer = null;
 let adminMessageShownOnEntry = false;
-let lastAdminMessage = null; // تغییر از "" به null برای شروع دقیق
+let lastAdminMessage = null;
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
@@ -413,20 +413,20 @@ async function saveProfile() {
     }
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    loadProfile(); 
+    loadProfile();
     setTimeout(() => {
-        refreshPolicyIfPossible();
-        fetchMessages();
+      refreshPolicyIfPossible();
+      fetchMessages();
     }, 500);
 
     btn.style.backgroundColor = "#28a745";
     btn.textContent = "ذخیره شد";
-    showGpsToast("success", "مشخصات با موفقیت ثبت شد", "3000");
+    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
 
     setTimeout(() => {
-        btn.disabled = false;
-        btn.style.backgroundColor = originalBg;
-        btn.textContent = originalText;
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
     }, 2500);
   } catch (_) {
     btn.disabled = false;
@@ -525,48 +525,50 @@ async function ensurePolicyLoadedAtStartup() {
 }
 
 async function refreshPolicyIfPossible() {
-    if (!navigator.onLine) {
-        console.log("[Policy] Offline, skipping policy refresh.");
-        return;
+  if (!navigator.onLine) {
+    console.log("[Policy] Offline, skipping policy refresh.");
+    return;
+  }
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) {
+      console.log("[Policy] Profile or personnel code not found yet.");
+      return;
     }
-    try {
-        const profile = await dbGet(STORE_PROFILE, "main");
-        if (!profile || !profile.personnelCode) {
-            console.log("[Policy] Profile or personnel code not found yet.");
-            return;
-        }
-        
-        const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
-        const timestamp = Date.now();
-        const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${personnelCode}&_nocache=${timestamp}`;
-        
-        console.log("[Policy] Fetching policy from server...");
-        
-        const response = await fetch(url, {
-            method: "GET",
-            mode: "cors",
-            redirect: "follow"
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const text = await response.text();
-        const data = JSON.parse(text);
-        
-        if (data && typeof data === 'object') {
-            await saveAttendancePolicyInfo(data);
-            console.log("[Policy] Successfully updated and saved:", data);
-            
-            // اعمال تغییرات جدید در UI پس از دریافت پالسی
-            if (typeof updateOnlineBadge === "function") {
-                updateOnlineBadge();
-            }
-        }
-    } catch (error) {
-        console.error("[Policy] Failed to refresh policy on iOS/Safari:", error);
+
+    const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    const timestamp = Date.now();
+    const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${personnelCode}&_nocache=${timestamp}`;
+
+    console.log("[Policy] Fetching policy from server...");
+
+    const response = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      redirect: "follow"
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    const text = await response.text();
+    const data = JSON.parse(text);
+
+    if (data && typeof data === "object") {
+      await saveAttendancePolicyInfo(data);
+      console.log("[Policy] Successfully updated and saved:", data);
+
+      if (typeof updateOnlineBadge === "function") {
+        updateOnlineBadge();
+      }
+    }
+
+    return await getAttendancePolicyInfo();
+  } catch (error) {
+    console.error("[Policy] Failed to refresh policy on iOS/Safari:", error);
+    return await getAttendancePolicyInfo();
+  }
 }
 
 async function getCurrentAttendanceGate() {
@@ -734,6 +736,12 @@ async function createRecord(type) {
   const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
   const gpsTimestamp = deviceTimeAtGps;
 
+  const jalaliNow = getJalaliDateTime(now);
+  const jalaliClick = getJalaliDateTime(new Date(clickMs));
+  const jalaliPhoto = photoMs ? getJalaliDateTime(new Date(photoMs)) : null;
+  const jalaliPhotoCompressed = photoCompressedMs ? getJalaliDateTime(new Date(photoCompressedMs)) : null;
+  const jalaliGps = gpsMs ? getJalaliDateTime(new Date(gpsMs)) : null;
+
   const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
   const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
   const submitDelayMs = Math.max(0, nowMs - clickMs);
@@ -761,20 +769,48 @@ async function createRecord(type) {
     lastName: profile.lastName,
     type,
     recordType: type,
-    recordDate: getIsoDate(now),
-    recordHour: getTime(now),
-    recordTime: getTime(now),
+
+    recordDate: jalaliNow.date,
+    recordHour: jalaliNow.time,
+    recordTime: jalaliNow.time,
+    recordDateTime: jalaliNow.full,
+
+    recordDateGregorian: getIsoDate(now),
+    recordTimeGregorian: getTime(now),
+
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
+
     deviceTime,
     deviceTimeAtClick,
     deviceTimeAtPhoto,
     deviceTimeAtPhotoCompressed,
     deviceTimeAtGps,
     gpsTimestamp,
+
+    deviceTimeJalali: jalaliNow.full,
+    deviceDateJalali: jalaliNow.date,
+    deviceClockJalali: jalaliNow.time,
+
+    deviceTimeAtClickJalali: jalaliClick.full,
+    deviceDateAtClickJalali: jalaliClick.date,
+    deviceClockAtClickJalali: jalaliClick.time,
+
+    deviceTimeAtPhotoJalali: jalaliPhoto ? jalaliPhoto.full : "",
+    deviceDateAtPhotoJalali: jalaliPhoto ? jalaliPhoto.date : "",
+    deviceClockAtPhotoJalali: jalaliPhoto ? jalaliPhoto.time : "",
+
+    deviceTimeAtPhotoCompressedJalali: jalaliPhotoCompressed ? jalaliPhotoCompressed.full : "",
+    deviceDateAtPhotoCompressedJalali: jalaliPhotoCompressed ? jalaliPhotoCompressed.date : "",
+    deviceClockAtPhotoCompressedJalali: jalaliPhotoCompressed ? jalaliPhotoCompressed.time : "",
+
+    deviceTimeAtGpsJalali: jalaliGps ? jalaliGps.full : "",
+    deviceDateAtGpsJalali: jalaliGps ? jalaliGps.date : "",
+    deviceClockAtGpsJalali: jalaliGps ? jalaliGps.time : "",
+
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
@@ -797,16 +833,18 @@ async function createRecord(type) {
     photo: currentPhoto || "",
     status: "pending",
     createdAt: now.toISOString(),
+    createdAtJalali: jalaliNow.full,
     lastSyncTryAt: "",
     syncTryCount: 0,
     syncedAt: "",
+    syncedAtJalali: "",
     serverResponse: ""
   };
 
   await dbPut(STORE_RECORDS, record);
 
   showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-  setStatus("تردد با GPS ذخیره شد.");
+  setStatus(`تردد با GPS ذخیره شد - ${jalaliNow.full}`);
   await refreshUi();
 
   if (navigator.onLine) scheduleSyncPendingRecords(500);
@@ -825,7 +863,10 @@ async function markFirstConnectionForOfflineRecords() {
   if (!db || !navigator.onLine) return;
 
   try {
-    const nowIso = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const nowJalali = getJalaliDateTime(now).full;
+
     const records = await dbGetAll(STORE_RECORDS);
     const list = records.filter(
       (r) =>
@@ -836,6 +877,7 @@ async function markFirstConnectionForOfflineRecords() {
 
     for (const r of list) {
       r.firstConnectionAfterOfflineRecord = nowIso;
+      r.firstConnectionAfterOfflineRecordJalali = nowJalali;
       await dbPut(STORE_RECORDS, r);
     }
 
@@ -871,12 +913,16 @@ async function syncPendingRecords() {
     for (const r of list) {
       if (r.status === "sent" || r.status === "syncing") continue;
 
-      const uploadStartIso = new Date().toISOString();
-      const uploadStartMs = new Date(uploadStartIso).getTime();
+      const uploadStart = new Date();
+      const uploadStartIso = uploadStart.toISOString();
+      const uploadStartMs = uploadStart.getTime();
+      const uploadStartJalali = getJalaliDateTime(uploadStart).full;
 
       r.status = "syncing";
       r.lastSyncTryAt = uploadStartIso;
+      r.lastSyncTryAtJalali = uploadStartJalali;
       r.lastConnectionBeforeUpload = uploadStartIso;
+      r.lastConnectionBeforeUploadJalali = uploadStartJalali;
       r.syncTryCount = Number(r.syncTryCount || 0) + 1;
 
       if (!r.connectionStatus) {
@@ -887,6 +933,7 @@ async function syncPendingRecords() {
 
       if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
         r.firstConnectionAfterOfflineRecord = uploadStartIso;
+        r.firstConnectionAfterOfflineRecordJalali = uploadStartJalali;
       }
 
       if (r.firstConnectionAfterOfflineRecord) {
@@ -911,10 +958,15 @@ async function syncPendingRecords() {
           body: JSON.stringify(payload)
         });
 
-        const sentIso = new Date().toISOString();
+        const sentDate = new Date();
+        const sentIso = sentDate.toISOString();
+        const sentJalali = getJalaliDateTime(sentDate).full;
+
         r.status = "sent";
         r.syncedAt = sentIso;
+        r.syncedAtJalali = sentJalali;
         r.uploadedAt = sentIso;
+        r.uploadedAtJalali = sentJalali;
         r.serverResponse = "opaque_no_cors";
         await dbPut(STORE_RECORDS, r);
       } catch (err) {
@@ -943,20 +995,48 @@ function buildServerPayload(record) {
     lastName: record.lastName || "",
     type: record.type || record.recordType || "",
     recordType: record.recordType || record.type || "",
+
     recordDate: record.recordDate || "",
     recordHour: record.recordHour || record.recordTime || "",
     recordTime: record.recordTime || record.recordHour || "",
+    recordDateTime: record.recordDateTime || "",
+
+    recordDateGregorian: record.recordDateGregorian || "",
+    recordTimeGregorian: record.recordTimeGregorian || "",
+
     latitude: record.latitude || "",
     longitude: record.longitude || "",
     accuracy: record.accuracy || "",
     locationStatus: record.locationStatus || "",
     locationError: record.locationError || "",
+
     deviceTime: record.deviceTime || "",
     deviceTimeAtClick: record.deviceTimeAtClick || "",
     deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
     deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
     deviceTimeAtGps: record.deviceTimeAtGps || "",
     gpsTimestamp: record.gpsTimestamp || "",
+
+    deviceTimeJalali: record.deviceTimeJalali || "",
+    deviceDateJalali: record.deviceDateJalali || "",
+    deviceClockJalali: record.deviceClockJalali || "",
+
+    deviceTimeAtClickJalali: record.deviceTimeAtClickJalali || "",
+    deviceDateAtClickJalali: record.deviceDateAtClickJalali || "",
+    deviceClockAtClickJalali: record.deviceClockAtClickJalali || "",
+
+    deviceTimeAtPhotoJalali: record.deviceTimeAtPhotoJalali || "",
+    deviceDateAtPhotoJalali: record.deviceDateAtPhotoJalali || "",
+    deviceClockAtPhotoJalali: record.deviceClockAtPhotoJalali || "",
+
+    deviceTimeAtPhotoCompressedJalali: record.deviceTimeAtPhotoCompressedJalali || "",
+    deviceDateAtPhotoCompressedJalali: record.deviceDateAtPhotoCompressedJalali || "",
+    deviceClockAtPhotoCompressedJalali: record.deviceClockAtPhotoCompressedJalali || "",
+
+    deviceTimeAtGpsJalali: record.deviceTimeAtGpsJalali || "",
+    deviceDateAtGpsJalali: record.deviceDateAtGpsJalali || "",
+    deviceClockAtGpsJalali: record.deviceClockAtGpsJalali || "",
+
     gpsWaitMs: record.gpsWaitMs ?? "",
     photoDelayMs: record.photoDelayMs ?? "",
     submitDelayMs: record.submitDelayMs ?? "",
@@ -964,9 +1044,16 @@ function buildServerPayload(record) {
     createdOnline: record.createdOnline === true,
     connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
     connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
+
     firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
+    firstConnectionAfterOfflineRecordJalali: record.firstConnectionAfterOfflineRecordJalali || "",
+
     lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
+    lastConnectionBeforeUploadJalali: record.lastConnectionBeforeUploadJalali || "",
+
     uploadedAt: record.uploadedAt || "",
+    uploadedAtJalali: record.uploadedAtJalali || "",
+
     delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
     clockRisk: record.clockRisk || "",
     clockRiskReason: record.clockRiskReason || "",
@@ -978,8 +1065,12 @@ function buildServerPayload(record) {
     policySource: record.policySource || "",
     photo: record.photo || "",
     createdAt: record.createdAt || "",
+    createdAtJalali: record.createdAtJalali || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
-    syncTryCount: Number(record.syncTryCount || 0)
+    lastSyncTryAtJalali: record.lastSyncTryAtJalali || "",
+    syncTryCount: Number(record.syncTryCount || 0),
+    syncedAt: record.syncedAt || "",
+    syncedAtJalali: record.syncedAtJalali || ""
   };
 }
 
@@ -1020,10 +1111,13 @@ function renderRecords(records) {
           ? " - آفلاین"
           : " - آنلاین";
 
+      const dateText = r.recordDate || "";
+      const timeText = r.recordHour || r.recordTime || "";
+
       return `
         <div class="record-item compact-record">
-          <span>${escapeHtml(r.recordDate || "")}</span>
-          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
+          <span>${escapeHtml(dateText)}</span>
+          <span>${escapeHtml(timeText)}${connectionText}${riskText}</span>
         </div>
       `;
     })
@@ -1033,6 +1127,7 @@ function renderRecords(records) {
 /* =========================
    Admin Messages
 ========================= */
+
 async function fetchMessages() {
   if (!navigator.onLine) return;
 
@@ -1059,8 +1154,7 @@ async function fetchMessages() {
     let finalMsg = "";
     try {
       const data = JSON.parse(rawText);
-      
-      // Handle { ok: true, messages: [...] } format
+
       if (data && typeof data === "object") {
         const msgSource = data.messages || data.message || data;
         if (Array.isArray(msgSource)) {
@@ -1079,7 +1173,6 @@ async function fetchMessages() {
       finalMsg = rawText.replace(/["\[\]]/g, "").trim();
     }
 
-    // Clean up any remaining JSON-like artifacts from parsing edge-cases
     if (typeof finalMsg === "string") {
       finalMsg = finalMsg.trim();
     }
@@ -1096,13 +1189,11 @@ async function fetchMessages() {
 }
 
 function showAdminMessage(message) {
-  // Remove any existing overlay to avoid duplicates on iOS Safari
   const existingOverlay = document.getElementById("admin-message-overlay");
   if (existingOverlay) {
     existingOverlay.remove();
   }
 
-  // Create overlay with dynamic styling optimized for iOS Safari webviews
   const overlay = document.createElement("div");
   overlay.id = "admin-message-overlay";
   overlay.style.cssText = `
@@ -1137,7 +1228,6 @@ function showAdminMessage(message) {
     animation: zoomInAdmin 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   `;
 
-  // Inject CSS animation directly to handle rendering engine triggers
   const styleSheet = document.createElement("style");
   styleSheet.innerText = `
     @keyframes zoomInAdmin {
@@ -1186,7 +1276,6 @@ function showAdminMessage(message) {
   `;
   btn.textContent = "متوجه شدم و تایید می‌کنم";
 
-  // Ensure touch events and click events both dismiss the modal on iOS devices
   const dismiss = (e) => {
     e.preventDefault();
     overlay.remove();
@@ -1198,12 +1287,45 @@ function showAdminMessage(message) {
   container.appendChild(body);
   container.appendChild(btn);
   overlay.appendChild(container);
-  
+
   document.body.appendChild(overlay);
 }
+
 /* =========================
    Time / Date
 ========================= */
+
+function toEnglishDigits(v) {
+  return String(v || "").replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
+}
+
+function normalizeSlashDate(v) {
+  return String(v || "").replace(/\//g, "/").replace(/-/g, "/").trim();
+}
+
+function getJalaliDateTime(dateObj = new Date()) {
+  const dateFormatter = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+
+  const timeFormatter = new Intl.DateTimeFormat("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+
+  const rawDate = dateFormatter.format(dateObj);
+  const rawTime = timeFormatter.format(dateObj);
+
+  const date = normalizeSlashDate(toEnglishDigits(rawDate));
+  const time = toEnglishDigits(rawTime);
+  const full = `${date} ${time}`;
+
+  return { date, time, full };
+}
 
 function getIsoDate(d) {
   const y = d.getFullYear();
@@ -1240,318 +1362,3 @@ async function getNetworkTimeDriftMs(deviceNowMs) {
 }
 
 function calculateClockRisk(data) {
-  const reasons = [];
-  let score = 0;
-
-  const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
-  if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
-    score += 6;
-    reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
-  }
-
-  if (data.offlineCreated) {
-    score += 1;
-    reasons.push("ثبت آفلاین");
-  }
-
-  if (String(data.locationStatus || "").toLowerCase() !== "ok") {
-    score += 4;
-    reasons.push("GPS نامعتبر/خاموش");
-  }
-
-  return {
-    clockRisk: score >= 6 ? "high" : score >= 3 ? "medium" : "low",
-    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
-  };
-}
-
-/* =========================
-   Geolocation
-========================= */
-
-function isGeolocationUsable() {
-  return !!navigator.geolocation && window.isSecureContext;
-}
-
-function hasValidLocation(l) {
-  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
-}
-
-function emptyLocation(status, error) {
-  return {
-    latitude: "",
-    longitude: "",
-    accuracy: "",
-    timestamp: null,
-    status,
-    error
-  };
-}
-
-function chooseBetterLocation(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-
-  if (!hasValidLocation(a)) return b;
-  if (!hasValidLocation(b)) return a;
-
-  return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
-}
-
-function geoErrorToLocation(err) {
-  if (err.code === 1) return emptyLocation("denied", "دسترسی رد شد");
-  if (err.code === 2) return emptyLocation("unavailable", "موقعیت در دسترس نیست");
-  if (err.code === 3) return emptyLocation("timeout", "زمان تمام شد");
-  return emptyLocation("error", "خطای GPS");
-}
-
-function getCurrentPositionSafe(options) {
-  return new Promise((resolve) => {
-    let done = false;
-
-    const timeoutId = setTimeout(() => {
-      if (done) return;
-      done = true;
-      resolve(emptyLocation("timeout", "زمان تمام شد"));
-    }, (options.timeout || 20000) + 3000);
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
-
-        resolve({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-          status: "ok",
-          error: ""
-        });
-      },
-      (err) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
-        resolve(geoErrorToLocation(err));
-      },
-      options
-    );
-  });
-}
-
-function getLocationWithWatch(waitMs) {
-  return new Promise((resolve) => {
-    let done = false;
-    let best = null;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const loc = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-          status: "ok",
-          error: ""
-        };
-
-        best = chooseBetterLocation(best, loc);
-        if (loc.accuracy <= GOOD_ACCURACY_METERS) finish(loc);
-      },
-      (err) => finish(geoErrorToLocation(err)),
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: waitMs
-      }
-    );
-
-    const timeoutId = setTimeout(() => finish(best), waitMs + 3000);
-
-    function finish(loc) {
-      if (done) return;
-      done = true;
-      navigator.geolocation.clearWatch(watchId);
-      clearTimeout(timeoutId);
-      resolve(loc || emptyLocation("timeout", "GPS دریافت نشد"));
-    }
-  });
-}
-
-async function getLocationIOSFriendly() {
-  if (!isGeolocationUsable()) return emptyLocation("unavailable", "GPS در دسترس نیست");
-
-  const firstLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 25000
-  });
-
-  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return firstLocation;
-  }
-
-  if (firstLocation?.status === "denied") return firstLocation;
-
-  const secondLocation = await getCurrentPositionSafe({
-    enableHighAccuracy: false,
-    maximumAge: 0,
-    timeout: 15000
-  });
-
-  if (secondLocation?.status === "denied") return secondLocation;
-
-  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
-
-  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) {
-    return bestLocation;
-  }
-
-  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
-  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
-
-  return bestLocation;
-}
-
-/* =========================
-   Image
-========================= */
-
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      const img = new Image();
-
-      img.onload = () => {
-        const OUT_W = 1080;
-        const OUT_H = 1350;
-
-        const canvas = document.createElement("canvas");
-        canvas.width = OUT_W;
-        canvas.height = OUT_H;
-
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, OUT_W, OUT_H);
-
-        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
-        const drawW = Math.round(img.width * scale);
-        const drawH = Math.round(img.height * scale);
-        const dx = Math.round((OUT_W - drawW) / 2);
-        const dy = Math.round((OUT_H - drawH) / 2);
-
-        ctx.drawImage(img, dx, dy, drawW, drawH);
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error("خطا در ساخت تصویر فشرده"));
-              return;
-            }
-
-            const r = new FileReader();
-            r.onloadend = () => resolve(r.result);
-            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.7
-        );
-      };
-
-      img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
-      img.src = e.target.result;
-    };
-
-    reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function jalaliToGregorian_(jy, jm, jd) {
-  const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
-  const jy2 = (jy === 979) ? 0 : jy - 979;
-  let leapJ = -14;
-  let jp = salA[0];
-
-  for (let i = 1; i < 20; i += 1) {
-    const temp = salA[i];
-    const dy = temp - jp;
-    if (jy2 < temp) {
-      const q = Math.floor(jy2 / 33);
-      const r = jy2 % 33;
-      leapJ += q * 8 + Math.floor((r + 4) / 4);
-      if (dy - r > 0 && r === 30) leapJ += 1;
-      break;
-    }
-    leapJ += Math.floor(dy / 33) * 8 + Math.floor(((dy % 33) + 3) / 4);
-    jp = temp;
-  }
-
-  const q = Math.floor(jy2 / 33);
-  leapJ += q * 8 + Math.floor(((jy2 % 33) + 3) / 4);
-
-  const gDays = 365 * jy2 + leapJ + 79;
-  const gy2 = 1600 + 400 * Math.floor(gDays / 146097);
-  let gdm = gDays % 146097;
-
-  let leapG = true;
-  if (gdm >= 36525) {
-    gdm -= 1;
-    gdm %= 36524;
-    if (gdm >= 365) {
-      gdm += 1;
-    } else {
-      leapG = false;
-    }
-  }
-
-  let gy = gy2 + 4 * Math.floor(gdm / 1461);
-  gdm %= 1461;
-
-  if (gdm >= 366) {
-    leapG = false;
-    gdm -= 1;
-    gy += Math.floor(gdm / 365);
-    gdm %= 365;
-  }
-
-  let i = 0;
-  const salG = [0, 31, (leapG ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  for (i = 1; i <= 12; i += 1) {
-    if (gdm < salG[i]) break;
-    gdm -= salG[i];
-  }
-
-  return [gy, i, gdm + 1];
-}
-
-function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
-  try {
-    const cleanD = dateStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d/]/g, "");
-    const cleanT = timeStr.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/[^\d:]/g, "");
-
-    const dp = cleanD.split("/");
-    const tp = cleanT.split(":");
-
-    if (dp.length < 3 || tp.length < 2) return null;
-
-    const jy = parseInt(dp[0], 10);
-    const jm = parseInt(dp[1], 10);
-    const jd = parseInt(dp[2], 10);
-
-    const th = parseInt(tp[0], 10);
-    const tm = parseInt(tp[1], 10);
-    const ts = tp[2] ? parseInt(tp[2], 10) : 0;
-
-    const [gy, gm, gd] = jalaliToGregorian_(jy, jm, jd);
-
-    return new Date(gy, gm - 1, gd, th, tm, ts);
-  } catch (e) {
-    return null;
-  }
-}

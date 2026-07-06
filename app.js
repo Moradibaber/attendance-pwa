@@ -1036,24 +1036,22 @@ function renderRecords(records) {
 function showAdminMessage(m) {
   if (!m || String(m).trim() === "" || m === "undefined" || m === "null") return;
 
-  // حذف کوتیشن‌های احتمالی که گوگل اسکریپت دور متن می‌گذارد
-  let msg = String(m).trim().replace(/^["']|["']$/g, '');
+  const msg = String(m).trim().replace(/^["']|["']$/g, '');
 
   const old = document.getElementById("admin-message-overlay");
   if (old) old.remove();
 
   const overlay = document.createElement("div");
   overlay.id = "admin-message-overlay";
-  // استفاده از z-index بسیار بالا و پوزیشن فیکس برای غلبه بر باگ‌های رندرینگ iOS
   overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:2147483647; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);";
 
   const modal = document.createElement("div");
-  modal.style.cssText = "background:#ffffff; padding:25px; border-radius:20px; width:100%; max-width:350px; text-align:center; box-shadow:0 20px 40px rgba(0,0,0,0.4); direction:rtl; border:1px solid #eee;";
+  modal.style.cssText = "background:#ffffff; padding:25px; border-radius:20px; width:100%; max-width:350px; text-align:center; box-shadow:0 20px 40px rgba(0,0,0,0.4); direction:rtl; border:1px solid #eee; animation: fadeInAdmin 0.3s ease-out;";
 
   modal.innerHTML = `
-    <h3 style="margin:0 0 15px 0; color:#e74c3c; font-size:22px;">پیام جدید مدیر</h3>
-    <p style="color:#333; line-height:1.7; font-size:17px; margin-bottom:25px; word-wrap:break-word;">${msg}</p>
-    <button id="confirmAdminMsg" style="background:#2ecc71; color:#fff; border:none; padding:14px; border-radius:12px; cursor:pointer; width:100%; font-weight:bold; font-size:18px;">تایید و بستن</button>
+    <h3 style="margin:0 0 15px 0; color:#d9534f; font-size:20px;">پیام مدیر</h3>
+    <div style="color:#333; line-height:1.8; font-size:16px; margin-bottom:25px; word-wrap:break-word; max-height:300px; overflow-y:auto;">${msg}</div>
+    <button id="confirmAdminMsg" style="background:#007bff; color:#fff; border:none; padding:14px; border-radius:12px; cursor:pointer; width:100%; font-weight:bold; font-size:17px;">تایید</button>
   `;
 
   overlay.appendChild(modal);
@@ -1063,6 +1061,7 @@ function showAdminMessage(m) {
     overlay.remove();
   };
 }
+
 async function fetchMessages() {
   if (!navigator.onLine) return;
 
@@ -1073,45 +1072,47 @@ async function fetchMessages() {
     const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
     const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&ts=${Date.now()}`;
 
-    // استفاده از ساده‌ترین حالت fetch برای جلوگیری از بلاک شدن در iOS
-    const response = await fetch(url);
-    
+    const response = await fetch(url, { method: "GET", mode: "cors", redirect: "follow" });
     if (!response.ok) return;
 
-    const rawText = await response.text();
-    if (!rawText || rawText.length < 2) return;
+    const text = await response.text();
+    if (!text || text.length < 2) return;
 
-    let finalMsg = "";
+    let messageToShow = "";
 
-    // شناسایی هوشمند محتوا
-    if (rawText.includes('{"') || rawText.includes('":')) {
-      try {
-        const jsonObj = JSON.parse(rawText);
-        finalMsg = jsonObj.message || jsonObj.msg || rawText;
-      } catch (e) { finalMsg = rawText; }
-    } else {
-      finalMsg = rawText;
+    try {
+      const data = JSON.parse(text);
+      // چون سرور آرایه برمی‌گرداند:
+      if (Array.isArray(data) && data.length > 0) {
+        // آخرین (جدیدترین) پیام فعال را برمی‌داریم
+        messageToShow = data[data.length - 1];
+      } else if (typeof data === 'string') {
+        messageToShow = data;
+      } else if (data && data.message) {
+        messageToShow = data.message;
+      }
+    } catch (e) {
+      // اگر جی‌سون نبود، کل متن را به عنوان پیام در نظر می‌گیرد
+      messageToShow = text;
     }
 
-    // حذف کاراکترهای مخفی و کوتیشن‌های اضافی سرور
-    finalMsg = finalMsg.replace(/["']/g, "").trim();
+    messageToShow = String(messageToShow).trim();
 
-    // فیلتر نهایی
-    const skipList = ["false", "null", "undefined", "0", "تردد", "error", "none", "no messages"];
-    if (!finalMsg || skipList.includes(finalMsg.toLowerCase())) return;
+    // لیست سیاه برای جلوگیری از نمایش پیام‌های نامربوط
+    const skipList = ["false", "null", "undefined", "0", "تردد", "error", "[]"];
+    if (!messageToShow || skipList.includes(messageToShow.toLowerCase())) return;
 
-    // اگر پیام جدید است، نمایش بده
-    if (finalMsg !== lastAdminMessage) {
-      lastAdminMessage = finalMsg;
-      console.log("Admin Message Found:", finalMsg);
+    // نمایش فقط در صورت تغییر پیام نسبت به سشن قبلی
+    if (messageToShow !== lastAdminMessage) {
+      lastAdminMessage = messageToShow;
+      console.log("Showing Admin Message:", messageToShow);
       
-      // اجرای نمایش در Thread بعدی برای اطمینان از پایان پردازش fetch
-      requestAnimationFrame(() => {
-        showAdminMessage(finalMsg);
-      });
+      setTimeout(() => {
+        showAdminMessage(messageToShow);
+      }, 500);
     }
   } catch (err) {
-    console.log("Fetch Error:", err);
+    console.error("Fetch Messages Error:", err);
   }
 }
 

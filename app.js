@@ -1,7 +1,7 @@
 // FILE: app.js
  
 const DB_NAME = "attendance-pwa-db"; 
-const DB_VERSION = 3;
+const DB_VERSION = 3; 
 
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";

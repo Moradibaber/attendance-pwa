@@ -5,17 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#0f766e" />
   <link rel="manifest" href="manifest.json?v=2" />
-  <link rel="stylesheet" href="styles.css?v=7" />
   <title>ثبت تردد</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
 
   <style>
+    :root {
+      --bg: #b1e4ec;
+      --card: #e3c4a8;
+      --text: #3f2f21;
+      --border: #c5a88d;
+      --primary: #28a745;
+      --blue: #3498db;
+    }
+
+    * { box-sizing: border-box; }
+
     body {
-      background-color: #b1e4ec !important;
+      background-color: var(--bg) !important;
       margin: 0;
-      padding: 10px;
+      padding: 4px;
       font-family: system-ui, -apple-system, sans-serif;
-      overflow-x: hidden;
+      direction: rtl;
     }
 
     .app {
@@ -23,857 +33,236 @@
       margin: 0 auto;
     }
 
+    /* کاهش شدید فواصل کارت‌ها */
     .card {
-      background-color: #e3c4a8 !important;
-      border: 1px solid #c5a88d !important;
-      border-radius: 16px !important;
-      padding: 2px !important;
-      margin-bottom: 2px !important;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+      background-color: var(--card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 12px !important;
+      padding: 6px 10px !important;
+      margin-bottom: 4px !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
     }
 
     .card h2 {
-      font-size: 1.2rem !important;
+      font-size: 0.95rem !important;
       font-weight: 800 !important;
-      color: #3f2f21 !important;
+      color: var(--text) !important;
       text-align: center !important;
-      margin-top: 0 !important;
-      margin-bottom: 2px !important;
+      margin: 0 0 4px 0 !important;
+      line-height: 1.2;
     }
 
+    /* استایل هشدار */
     .compact-warning {
       background-color: #fff3e0 !important;
-      border: 1.5px solid #ffb74d !important;
-      border-radius: 14px !important;
-      padding: 12px 16px !important;
-      color: #5c3e21 !important;
+      border: 1px solid #ffb74d !important;
+      padding: 6px 10px !important;
     }
     .compact-warning strong {
       display: block;
       text-align: center;
-      font-size: 1.05rem;
-      margin-bottom: 6px;
+      font-size: 0.85rem;
       color: #d35400;
+      margin-bottom: 2px;
     }
     .compact-warning p {
       margin: 0;
-      font-size: 0.85rem;
-      line-height: 1.6;
+      font-size: 0.75rem;
+      line-height: 1.4;
       text-align: justify;
     }
 
+    /* ورودی‌های متن */
     #personnelCode, #firstName, #lastName {
       background-color: #ffcc00 !important;
       color: #111827 !important;
       font-weight: 900 !important;
-      font-size: 1.25rem !important;
+      font-size: 1rem !important;
       text-align: center !important;
       border: 1px solid #e0b000 !important;
-      border-radius: 12px !important;
-      padding: 14px !important;
-      margin-bottom: 12px !important;
+      border-radius: 8px !important;
+      padding: 8px !important;
+      margin-bottom: 6px !important;
       width: 100% !important;
-      box-sizing: border-box !important;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.05) !important;
       outline: none;
     }
 
-    #personnelCode::placeholder, #firstName::placeholder, #lastName::placeholder {
-      color: #555555 !important;
-      font-weight: bold !important;
-    }
-
+    /* دکمه سبز ذخیره مشخصات */
     #saveProfileBtn {
-      background-color: #28a745 !important;
+      background-color: var(--primary) !important;
       color: #ffffff !important;
       font-weight: 800 !important;
-      font-size: 1.15rem !important;
+      font-size: 0.9rem !important;
       border: none !important;
-      border-radius: 12px !important;
-      padding: 14px !important;
+      border-radius: 8px !important;
+      padding: 8px !important;
       width: 100% !important;
       cursor: pointer !important;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 6px rgba(40, 167, 69, 0.2) !important;
-      display: block;
-    }
-    #saveProfileBtn:active {
-      transform: scale(0.98);
     }
 
-    #photoInput{
-      position:absolute !important;
-      width:1px !important;
-      height:1px !important;
-      padding:0 !important;
-      margin:-1px !important;
-      overflow:hidden !important;
-      clip:rect(0,0,0,0) !important;
-      white-space:nowrap !important;
-      border:0 !important;
-      opacity:0 !important;
-      pointer-events:none !important;
+    /* دکمه آبی ثبت تردد (سلفی) - فشرده شده */
+    .camera-row {
+      margin: 0 !important;
+      padding: 0 !important;
     }
 
-    .camera-row{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:10px;
-      margin:10px 0 12px;
-    }
-
-    .camera-btn{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:10px;
-      padding:15px 20px;
-      border:none !important;
-      background:#ff5722 !important;
-      color:#ffffff !important;
-      border-radius:12px !important;
-      cursor:pointer;
-      user-select:none;
-      -webkit-tap-highlight-color:transparent;
-      touch-action:manipulation;
-      font-weight:800 !important;
-      font-size:1.15rem !important;
-      line-height:1;
-      min-height:48px;
+    .camera-btn {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 6px !important;
+      padding: 6px 10px !important; /* پدینگ کم برای ارتفاع کمتر */
+      background: var(--blue) !important;
+      color: #fff !important;
+      border-radius: 8px !important;
+      font-weight: 800 !important;
+      font-size: 0.9rem !important;
+      min-height: 34px !important; /* ارتفاع کنترل شده */
+      border: none !important;
+      cursor: pointer !important;
       width: 100%;
-      box-sizing: border-box;
-      box-shadow: 0 4px 10px rgba(255, 87, 34, 0.35) !important;
-      transition: all 0.2s ease-in-out;
     }
 
-    .camera-btn:active{
-      transform:scale(0.97);
-      background:#e64a19 !important;
-      box-shadow: 0 2px 5px rgba(255, 87, 34, 0.2) !important;
+    .cam-ico {
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
     }
 
-    .camera-btn .cam-ico{
-      width:22px;
-      height:22px;
-      display:inline-block;
-      flex:0 0 auto;
-      background:#ffffff !important;
-      -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-2.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z'/%3E%3C/svg%3E") center/contain no-repeat;
-      mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-2.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z'/%3E%3C/svg%3E") center/contain no-repeat;
+    #photoInput { display: none; }
+
+    .photo-row { margin-top: 4px; }
+    .preview {
+      display: block;
+      width: 140px;
+      border-radius: 8px;
+      margin: 0 auto;
     }
 
+    /* بخش آمار */
     .stats {
       display: grid !important;
       grid-template-columns: 1fr 1fr 1fr !important;
-      gap: 12px !important;
-      margin: 15px 0 !important;
+      gap: 6px !important;
+      margin: 4px 0 !important;
     }
-
     .stats > div {
-      border-radius: 12px !important;
-      padding: 16px 5px !important;
-      text-align: center !important;
-      color: #ffffff !important;
-      font-weight: 900 !important;
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: center !important;
-      justify-content: center !important;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-    }
-
-    .stats > div:nth-child(1) {
-      background-color: #3399ff !important;
-    }
-
-    .stats > div:nth-child(2) {
-      background-color: #00cc44 !important;
-    }
-
-    .stats > div:nth-child(3) {
-      background-color: #ff1a1a !important;
-    }
-
-    .stats span {
-      font-size: 1.6rem !important;
-      font-weight: 900 !important;
-      display: block !important;
-      margin-bottom: 4px !important;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-    }
-
-    .stats small {
-      font-size: 0.85rem !important;
-      font-weight: 700 !important;
-      display: block !important;
-      opacity: 0.95 !important;
-    }
-
-    #saveProfileBtn {
-      transition: all 0.4s ease;
-      position: relative;
-      font-weight: bold;
-      border: none;
-      cursor: pointer;
-    }
-
-    .dots::after {
-      content: '';
-      animation: dots 1.5s infinite;
-    }
-
-    @keyframes dots {
-      0% { content: ''; }
-      25% { content: '.'; }
-      50% { content: '..'; }
-      75% { content: '...'; }
-      100% { content: ''; }
-    }
-
-    .shake {
-      animation: shake 0.5s;
-    }
-
-    @keyframes shake {
-      0%, 100% { transform: translateX(0); }
-      25% { transform: translateX(-5px); }
-      75% { transform: translateX(5px); }
-    }
-
-    /* Splash Screen */
-    #splashScreen {
-      position: fixed;
-      inset: 0;
-      z-index: 99999;
-      background: #b1e4ec;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-      box-sizing: border-box;
-      transition: opacity 0.35s ease, visibility 0.35s ease;
-    }
-
-    #splashScreen.is-hide {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-    }
-
-    .splash-card {
-      width: min(92vw, 520px);
-      border-radius: 22px;
-      overflow: hidden;
-      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
-      background: #f4d2aa;
-      border: 1px solid rgba(255,255,255,0.55);
-    }
-
-    .splash-card img {
-      display: block;
-      width: 100%;
-      height: auto;
-      object-fit: cover;
-    }
-
-    .splash-text {
-      padding: 14px 18px 18px;
-      text-align: center;
-      font-weight: 800;
-      font-size: 22px;
-      color: #7a3a00;
-    }
-
-    .splash-subtext {
-      margin-top: 6px;
-      text-align: center;
-      font-size: 13px;
-      color: #7b5b3d;
-      opacity: 0.95;
-    }
-
-    .app-hidden {
-      display: none;
-    }
-
-    /* Busy Overlay Loader Style */
-    .busy-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.45);
-      z-index: 999999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(2px);
-      transition: opacity 0.2s ease;
-    }
-
-    .busy-box {
-      background: #ffffff;
-      border-radius: 16px;
-      padding: 20px 24px;
-      min-width: 220px;
-      text-align: center;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-
-    .busy-spinner {
-      width: 42px;
-      height: 42px;
-      margin: 0 auto 12px;
-      border: 4px solid #e5e7eb;
-      border-top-color: #f97316;
-      border-radius: 50%;
-      animation: busySpin 0.9s linear infinite;
-    }
-
-    @keyframes busySpin {
-      to { transform: rotate(360deg); }
-    }
-    <!-- جایگزین تگ <link rel="stylesheet" href="styles.css"> یا <style> فعلی در Index.html -->
-
-  :root {
-    --bg: #b1e4ec;
-    --card: #e3c4a8;
-    --text: #3f2f21;
-    --muted: #5c3e21;
-    --primary: #28a745;
-    --border: #c5a88d;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0 !important;
-    font-family: system-ui, -apple-system, Tahoma, Arial, sans-serif;
-    background: var(--bg) !important;
-    color: var(--text) !important;
-    direction: rtl;
-    padding: 4px 2px !important;
-  }
-  body.modal-open { overflow: hidden; }
-  .app {
-    width: min(760px, 100%);
-    margin: 0 auto !important;
-    padding: 2px !important;
-    text-align: center;
-  }
-  #recordBtn { display: none !important; }
-  .card {
-    background: var(--card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    padding: 6px 8px !important;
-    margin: 4px 0 !important;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08) !important;
-  }
-  .form-hero-image {
-    display: block;
-    width: 100%;
-    max-width: 480px;
-    height: auto;
-    margin: 0 auto;
-    border-radius: 10px;
-    object-fit: cover;
-  }
-  .hero {
-    background: linear-gradient(135deg, #0f766e, #14b8a6);
-    color: #fff;
-  }
-  h1 {
-    margin: 0 0 2px !important;
-    font-size: 18px !important;
-  }
-  h2 {
-    font-size: 0.95rem !important;
-    font-weight: 800 !important;
-    color: #3f2f21 !important;
-    text-align: center !important;
-    margin: 0 0 4px !important;
-  }
-  p {
-    line-height: 1.3 !important;
-    margin: 1px 0 !important;
-    font-size: 0.85rem !important;
-  }
-  .compact-warning, .warning {
-    background: #fff3e0 !important;
-    border: 1px solid #ffb74d !important;
-    border-radius: 8px !important;
-    padding: 6px 8px !important;
-    color: #5c3e21 !important;
-    font-size: 0.8rem !important;
-    text-align: right;
-  }
-  .compact-warning strong, .warning strong {
-    display: block;
-    text-align: center;
-    font-size: 0.9rem;
-    margin-bottom: 2px;
-    color: #d35400;
-    font-weight: 700;
-  }
-  .admin-message-box {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background: rgba(0,0,0,.4);
-    padding-top: 60px;
-  }
-  .admin-message-content {
-    margin: 5% auto;
-    padding: 12px;
-    width: 85%;
-    max-width: 450px;
-    border-radius: 6px;
-    position: relative;
-    color: #000;
-    background: #ffdddd;
-    border-left: 6px solid #f44336;
-    border: 1px solid #888;
-  }
-  .admin-message-content span { font-weight: 700; }
-  .close-admin-message {
-    color: #aaa;
-    position: absolute;
-    top: 6px;
-    right: 12px;
-    font-size: 18px;
-    font-weight: 700;
-    cursor: pointer;
-  }
-  #saveLoading, #recordLoading {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    margin: 0 4px;
-    border: 2px solid rgba(0,0,0,.1);
-    border-radius: 50%;
-    border-top-color: var(--primary);
-    animation: spin 1s linear infinite;
-    vertical-align: middle;
-  }
-  #saveLoading:empty, #recordLoading:empty { display: none; }
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  label {
-    display: block;
-    margin: 2px 0 !important;
-    font-weight: 700;
-    font-size: 0.85rem;
-  }
-  #personnelCode, #firstName, #lastName {
-    background: #ffcc00 !important;
-    color: #000 !important;
-    font-weight: 900 !important;
-    font-size: 1.05rem !important;
-    text-align: center !important;
-    border: 1px solid #e0b000 !important;
-    border-radius: 8px !important;
-    padding: 8px !important;
-    margin-bottom: 4px !important;
-    width: 100% !important;
-    outline: none;
-  }
-  #personnelCode::placeholder, #firstName::placeholder, #lastName::placeholder {
-    color: #444 !important;
-    font-weight: 700 !important;
-  }
-  input, button {
-    width: 100%;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    padding: 6px !important;
-    margin-top: 2px !important;
-    font: inherit;
-    text-align: center;
-  }
-  input[type="text"], input[type="number"] { color: var(--text); }
-  input { direction: rtl; }
-  button {
-    border: 0;
-    cursor: pointer;
-    font-weight: 800;
-    margin-bottom: 1px;
-  }
-  #saveProfileBtn {
-    background: #28a745 !important;
-    color: #fff !important;
-    font-weight: 800 !important;
-    font-size: 0.95rem !important;
-    border: none !important;
-    border-radius: 8px !important;
-    padding: 10px !important;
-    width: 100% !important;
-    cursor: pointer !important;
-    box-shadow: 0 2px 4px rgba(40, 167, 69, .15) !important;
-  }
-  .primary { background: var(--primary); color: #fff; }
-  .primary.alt { background: #2563eb; }
-  .success { background: #16a34a; color: #fff; }
-  .secondary { background: #e2e8f0; color: #0f172a; }
-  .status {
-    min-height: 16px;
-    font-weight: 800;
-    font-size: 13px;
-    margin-top: 2px;
-    margin-bottom: 0;
-  }
-  .online::before { content: "🟢 "; }
-  .offline::before { content: "🔴 "; }
-  .small-status {
-    font-size: 12px;
-    min-height: 16px;
-  }
-  .photo-row {
-    display: flex;
-    justify-content: center;
-    margin-top: 2px !important;
-    margin-bottom: 2px !important;
-  }
-  .preview {
-    display: block;
-    width: 180px;
-    height: auto;
-    max-width: 100%;
-    object-fit: contain;
-    object-position: center;
-    border-radius: 8px;
-    margin: 0 auto;
-    background: #f1f5f9;
-  }
-  .stats {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr 1fr !important;
-    gap: 4px !important;
-    margin: 2px 0 !important;
-  }
-  .stats > div {
-    border-radius: 8px !important;
-    padding: 4px 2px !important;
-    text-align: center !important;
-    color: #fff !important;
-    font-weight: 900 !important;
-  }
-  .stats > div:nth-child(1) { background: #3399ff !important; }
-  .stats > div:nth-child(2) { background: #00cc44 !important; }
-  .stats > div:nth-child(3) { background: #ff1a1a !important; }
-  .stats span {
-    display: block !important;
-    font-size: 1.1rem !important;
-    font-weight: 900 !important;
-  }
-  .stats small {
-    font-size: .7rem !important;
-    font-weight: 700 !important;
-    color: #fff !important;
-    opacity: .9;
-  }
-  .records {
-    display: flex;
-    flex-direction: column;
-    gap: 2px !important;
-    max-height: 180px;
-    overflow-y: auto;
-  }
-  .record-item.compact-record {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px !important;
-    padding: 4px 6px !important;
-    font-size: 12px;
-    white-space: nowrap;
-    border-bottom: 1px solid var(--border);
-  }
-  .record-item:last-child { border-bottom: none; }
-  .record {
-    border-bottom: 1px solid var(--border);
-    padding: 4px 0;
-  }
-  .record:last-child { border-bottom: 0; }
-  .badge {
-    display: inline-block;
-    background: rgba(255, 255, 255, .2);
-    padding: 2px 6px;
-    border-radius: 999px;
-  }
-  .muted { color: var(--muted); }
-  .grid2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-  }
-  .profile-card, .attendance-card, .status-card, .records-card, .top-status, .compact-warning {
-    padding-bottom: 2px !important;
-  }
-  .card > *:last-child { margin-bottom: 0 !important; }
-  .card button:last-child { margin-bottom: 0 !important; }
-  .card .status:last-child, .card p:last-child { margin-bottom: 0 !important; }
-  .guide-card {
-    background: linear-gradient(135deg, #e0f2fe, #ccfbf1, #fef3c7);
-    border: 1px solid rgba(15, 118, 110, .25);
-    padding: 4px !important;
-  }
-  .guide-button {
-    background: linear-gradient(135deg, #2563eb, #0f766e);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 13px;
-  }
-  .guide-modal {
-    position: fixed;
-    inset: 0;
-    display: none;
-    z-index: 9999;
-    padding: 6px;
-  }
-  .guide-modal.show { display: block; }
-  .guide-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(15,23,42,.58);
-    backdrop-filter: blur(2px);
-  }
-  .guide-box {
-    position: relative;
-    width: min(720px, 100%);
-    max-height: 96vh;
-    margin: 2vh auto 0;
-    background: #fff;
-    border-radius: 12px;
-    overflow: hidden;
-    border: 1px solid rgba(255,255,255,.6);
-  }
-  .guide-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 6px;
-    padding: 8px 10px;
-    background: linear-gradient(135deg, #0f766e, #14b8a6, #2563eb);
-    color: #fff;
-    text-align: right;
-  }
-  .guide-header h2 { margin: 0 0 2px; font-size: 15px; }
-  .guide-header p { margin: 0; font-size: 11px; }
-  .guide-close {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    margin: 0;
-    padding: 0;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
-    color: #fff;
-    font-size: 24px;
-    line-height: 32px;
-    border: 1px solid rgba(255,255,255,.3);
-  }
-  .guide-content {
-    max-height: calc(96vh - 110px);
-    overflow-y: auto;
-    padding: 8px;
-    background: #fff;
-    text-align: right;
-  }
-  .guide-section {
-    border-radius: 10px;
-    padding: 8px;
-    margin-bottom: 6px;
-    border: 1px solid #e2e8f0;
-  }
-  .guide-section h3 { margin: 0 0 4px; font-size: 13px; }
-  .guide-section li { margin: 3px 0; line-height: 1.4; font-size: 12px; }
-  .guide-section strong { color: #0f766e; }
-  .guide-footer {
-    padding: 8px 10px;
-    background: #fff;
-    border-top: 1px solid #e2e8f0;
-  }
-  .guide-ok {
-    background: linear-gradient(135deg, #16a34a, #0f766e);
-    color: #fff;
-    border-radius: 10px;
-    padding: 8px;
-  }
-  @media (max-width: 480px) {
-    body { padding: 2px !important; }
-    .app { padding: 1px !important; }
-    .card {
-      padding: 5px 6px 4px !important;
       border-radius: 8px !important;
-      margin: 3px 0 !important;
+      padding: 6px 2px !important;
+      text-align: center !important;
+      color: #fff !important;
+      font-weight: 800 !important;
     }
-    h1 { font-size: 17px !important; }
-    h2 { font-size: 0.9rem !important; }
-    input, button { padding: 6px !important; }
-    .preview { width: 160px; }
-    .stats span { font-size: 1.1rem !important; }
-    .guide-modal { padding: 4px; }
-    .guide-box { max-height: 96vh; margin-top: 2vh; border-radius: 10px; }
-  }
-  .hidden-file-input {
-    position: fixed;
-    left: -9999px;
-    top: 0;
-    width: 1px;
-    height: 1px;
-    opacity: 0;
-  }
-  .selfie-upload-wrap { width: 100%; }
-  .selfie-upload-input {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    border: 0;
-  }
-  .selfie-upload-label {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    width: 100% !important;
-    min-height: 38px !important;
-    border-radius: 8px !important;
-    background: #3498db !important;
-    border: none !important;
-    color: #fff !important;
-    font-size: 0.95rem !important;
-    font-weight: 800 !important;
-    cursor: pointer !important;
-    box-sizing: border-box !important;
-    text-align: center !important;
-  }
-  .camera-btn {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    gap: 6px !important;
-    padding: 10px 14px !important;
-    background: #3498db !important;
-    color: #fff !important;
-    border-radius: 8px !important;
-    font-weight: 900 !important;
-    font-size: 0.98rem !important;
-    border: none !important;
-    cursor: pointer !important;
-  }
-  .camera-btn span {
-    color: #fff !important;
-    font-weight: 800 !important;
-  }
-.card {
-      padding-top: 2px !important;
-      padding-bottom: 2px !important;
-      margin-top: 2px !important;
-      margin-bottom: 2px !important;
+    .stats > div:nth-child(1) { background: #3399ff !important; }
+    .stats > div:nth-child(2) { background: #00cc44 !important; }
+    .stats > div:nth-child(3) { background: #ff1a1a !important; }
+    .stats span { display: block; font-size: 1.1rem; }
+    .stats small { font-size: 0.65rem; opacity: 0.9; }
+
+    /* لیست ترددها */
+    .records {
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 0.8rem;
     }
-    .card h2 {
-      margin-top: 0px !important;
-      margin-bottom: 2px !important;
-    }
-    .selfie-upload-label {
-      min-height: 30px !important;
-      padding-top: 4px !important;
-      padding-bottom: 4px !important;
-      font-size: 0.85rem !important;
-    }
-    .selfie-upload-wrap {
-      margin-top: 0px !important;
-      margin-bottom: 0px !important;
+    .record-item {
+      padding: 4px;
+      border-bottom: 1px solid var(--border);
+      text-align: center;
     }
 
+    .status {
+      font-size: 0.75rem;
+      margin: 2px 0;
+      min-height: 14px;
+      text-align: center;
+    }
+
+    /* Splash & Overlays */
+    #splashScreen {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--bg); display: flex; align-items: center; justify-content: center;
+    }
+    #splashScreen.is-hide { display: none; }
+    .splash-card { width: 80%; text-align: center; background: #f4d2aa; border-radius: 20px; padding-bottom: 15px;}
+    .splash-card img { width: 100%; border-radius: 20px 20px 0 0; }
+
+    .busy-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 10000; display: flex; align-items: center; justify-content: center;
+    }
+    .busy-box { background: #fff; padding: 20px; border-radius: 12px; text-align: center; }
+    .busy-spinner {
+      width: 30px; height: 30px; border: 3px solid #eee; border-top-color: #f97316;
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .app-hidden { display: none; }
   </style>
 </head>
 
 <body>
-  <!-- Splash screen before opening the form -->
-  <div id="splashScreen" aria-hidden="true">
+  <div id="splashScreen">
     <div class="splash-card">
-      <img src="cover-rights-reserved.png" alt="خوش آمدید">
-      <div class="splash-text">خوش آمدید</div>
-      <div class="splash-subtext">لطفا کمی صبر کنید...</div>
+      <img src="cover-rights-reserved.png" alt="Welcome">
+      <div style="font-weight:800; margin-top:10px;">خوش آمدید</div>
     </div>
   </div>
 
-  <!-- Central Loading Overlay -->
   <div id="busyOverlay" class="busy-overlay" style="display:none;">
     <div class="busy-box">
       <div class="busy-spinner"></div>
-      <div id="busyText">در حال پردازش...</div>
+      <div id="busyText" style="font-size:0.85rem">در حال پردازش...</div>
     </div>
   </div>
 
   <main class="app app-hidden" id="mainApp">
-    <p id="onlineBadge" class="status top-status"></p>
+    <p id="onlineBadge" class="status"></p>
 
-    <section class="card warning compact-warning">
+    <section class="card compact-warning">
       <strong>هشدار مهم</strong>
-      <p>
-        پاک کردن حافظه مرورگر، حذف برنامه یا زدن گزینه Clear data / Clear storage باعث حذف اطلاعات تردد ارسال‌نشده می‌شود.
-        ادمین سیستم از عدم ارسال یا حذف اطلاعات مطلع خواهد شد و عواقب حذف آن به عهده کاربر است.
-      </p>
+      <p>پاک کردن حافظه مرورگر یا حذف برنامه باعث حذف اطلاعات ارسال‌نشده می‌شود.</p>
     </section>
 
-    <section class="card profile-card">
+    <section class="card">
       <h2>مشخصات پرسنلی</h2>
-
-      <input id="personnelCode" inputmode="numeric" autocomplete="off" placeholder="شماره پرسنلی" />
-      <input id="firstName" autocomplete="given-name" placeholder="نام" />
-      <input id="lastName" autocomplete="family-name" placeholder="نام خانوادگی" />
-
-      <button id="saveProfileBtn" class="secondary">ذخیره مشخصات</button>
-      <p id="profileStatus" class="status small-status"></p>
-      <div id="saveLoading" class="inline-loading"></div>
+      <input id="personnelCode" inputmode="numeric" placeholder="شماره پرسنلی" />
+      <input id="firstName" placeholder="نام" />
+      <input id="lastName" placeholder="نام خانوادگی" />
+      <button id="saveProfileBtn">ذخیره مشخصات</button>
+      <p id="profileStatus" class="status"></p>
     </section>
 
-    <section class="card attendance-card">
+    <section class="card">
       <h2>ثبت تردد</h2>
-
       <input id="photoInput" type="file" accept="image/*" capture="user" />
-
       <div class="camera-row">
-        <label for="photoInput" class="camera-btn" id="cameraBtn">
-          <span class="cam-ico" aria-hidden="true"></span>
+        <label for="photoInput" class="camera-btn">
+          <span class="cam-ico"></span>
           <span>عکس سلفی خود را بگیرید</span>
         </label>
       </div>
-
       <div class="photo-row">
-        <img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
+        <img id="photoPreview" class="preview" style="display:none" />
       </div>
-
-      <p id="captureStatus" class="status small-status"></p>
-      <div id="recordLoading" class="inline-loading"></div>
+      <p id="captureStatus" class="status"></p>
     </section>
 
-    <section class="card status-card">
+    <section class="card">
       <h2>وضعیت</h2>
-
       <div class="stats">
         <div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
         <div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
         <div><span id="failedCount">0</span><small>ناموفق</small></div>
       </div>
-
-      <p id="syncStatus" class="status small-status"></p>
+      <p id="syncStatus" class="status"></p>
     </section>
 
-    <section class="card records-card">
-      <h2>ترددهای ثبت شده</h2>
+    <section class="card">
+      <h2>ترددهای اخیر</h2>
       <div id="recordsList" class="records"></div>
     </section>
   </main>
@@ -881,13 +270,10 @@
   <script src="app.js?v=54"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const splash = document.getElementById('splashScreen');
-      const mainApp = document.getElementById('mainApp');
-
       setTimeout(() => {
-        if (splash) splash.classList.add('is-hide');
-        if (mainApp) mainApp.classList.remove('app-hidden');
-      }, 2000);
+        document.getElementById('splashScreen').classList.add('is-hide');
+        document.getElementById('mainApp').classList.remove('app-hidden');
+      }, 1500);
     });
   </script>
 </body>

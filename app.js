@@ -1033,33 +1033,128 @@ function renderRecords(records) {
 /* =========================
    Admin Messages
 ========================= */
-function showAdminMessage(m) {
-  if (!m || String(m).trim() === "" || m === "undefined" || m === "null") return;
+function showAdminMessage(message) {
+  const msg = String(message == null ? "" : message).trim();
+  if (!msg) return;
 
-  const msg = String(m).trim().replace(/^["']|["']$/g, '');
+  const oldOverlay = document.getElementById("admin-message-overlay");
+  if (oldOverlay) oldOverlay.remove();
 
-  const old = document.getElementById("admin-message-overlay");
-  if (old) old.remove();
+  const oldStyle = document.getElementById("admin-message-style");
+  if (!oldStyle) {
+    const style = document.createElement("style");
+    style.id = "admin-message-style";
+    style.textContent = `
+      #admin-message-overlay{
+        position:fixed !important;
+        inset:0 !important;
+        width:100vw !important;
+        height:100vh !important;
+        background:rgba(0,0,0,.55) !important;
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        padding:16px !important;
+        box-sizing:border-box !important;
+        z-index:2147483647 !important;
+        -webkit-backdrop-filter:blur(2px);
+        backdrop-filter:blur(2px);
+      }
+      #admin-message-modal{
+        width:min(92vw,380px) !important;
+        max-height:80vh !important;
+        overflow:auto !important;
+        background:#fff !important;
+        color:#111 !important;
+        border-radius:14px !important;
+        box-shadow:0 20px 50px rgba(0,0,0,.35) !important;
+        padding:18px !important;
+        direction:rtl !important;
+        font-family:inherit !important;
+        transform:translateZ(0);
+        -webkit-transform:translateZ(0);
+      }
+      #admin-message-title{
+        margin:0 0 12px 0 !important;
+        font-size:18px !important;
+        font-weight:700 !important;
+        color:#c62828 !important;
+        line-height:1.5 !important;
+      }
+      #admin-message-body{
+        margin:0 0 16px 0 !important;
+        font-size:16px !important;
+        line-height:1.9 !important;
+        white-space:pre-wrap !important;
+        word-break:break-word !important;
+      }
+      #admin-message-btn{
+        display:block !important;
+        width:100% !important;
+        border:0 !important;
+        border-radius:10px !important;
+        padding:12px 14px !important;
+        background:#0d6efd !important;
+        color:#fff !important;
+        font-size:16px !important;
+        font-weight:700 !important;
+        cursor:pointer !important;
+        -webkit-appearance:none !important;
+        appearance:none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
   const overlay = document.createElement("div");
   overlay.id = "admin-message-overlay";
-  overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:2147483647; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);";
 
   const modal = document.createElement("div");
-  modal.style.cssText = "background:#ffffff; padding:25px; border-radius:20px; width:100%; max-width:350px; text-align:center; box-shadow:0 20px 40px rgba(0,0,0,0.4); direction:rtl; border:1px solid #eee; animation: fadeInAdmin 0.3s ease-out;";
+  modal.id = "admin-message-modal";
 
-  modal.innerHTML = `
-    <h3 style="margin:0 0 15px 0; color:#d9534f; font-size:20px;">پیام مدیر</h3>
-    <div style="color:#333; line-height:1.8; font-size:16px; margin-bottom:25px; word-wrap:break-word; max-height:300px; overflow-y:auto;">${msg}</div>
-    <button id="confirmAdminMsg" style="background:#007bff; color:#fff; border:none; padding:14px; border-radius:12px; cursor:pointer; width:100%; font-weight:bold; font-size:17px;">تایید</button>
-  `;
+  const title = document.createElement("div");
+  title.id = "admin-message-title";
+  title.textContent = "پیام مدیر";
 
+  const body = document.createElement("div");
+  body.id = "admin-message-body";
+  body.textContent = msg;
+
+  const btn = document.createElement("button");
+  btn.id = "admin-message-btn";
+  btn.type = "button";
+  btn.textContent = "تایید";
+
+  btn.addEventListener("click", function () {
+    overlay.remove();
+  });
+
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  modal.appendChild(title);
+  modal.appendChild(body);
+  modal.appendChild(btn);
   overlay.appendChild(modal);
+
+  if (!document.body) {
+    alert(msg);
+    return;
+  }
+
   document.body.appendChild(overlay);
 
-  document.getElementById("confirmAdminMsg").onclick = function() {
-    overlay.remove();
-  };
+  requestAnimationFrame(function () {
+    try { btn.focus({ preventScroll: true }); } catch (_) {}
+  });
+
+  setTimeout(function () {
+    const exists = document.getElementById("admin-message-overlay");
+    if (!exists && msg) {
+      alert(msg);
+    }
+  }, 1200);
 }
 
 async function fetchMessages() {
@@ -1069,50 +1164,123 @@ async function fetchMessages() {
     const profile = await dbGet(STORE_PROFILE, "main");
     if (!profile || !profile.personnelCode) return;
 
-    const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
-    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&ts=${Date.now()}`;
+    const personnelCode = String(profile.personnelCode || "").trim();
+    if (!personnelCode) return;
 
-    const response = await fetch(url, { method: "GET", mode: "cors", redirect: "follow" });
-    if (!response.ok) return;
+    const url =
+      `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${encodeURIComponent(personnelCode)}&_=${Date.now()}`;
 
-    const text = await response.text();
-    if (!text || text.length < 2) return;
+    const res = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+      redirect: "follow",
+      credentials: "omit",
+      headers: {
+        "Accept": "application/json, text/plain, */*"
+      }
+    });
 
-    let messageToShow = "";
+    if (!res.ok) return;
+
+    const raw = (await res.text() || "").trim();
+    if (!raw) return;
+
+    let messages = [];
+
+    const normalizeMessage = function (value) {
+      let v = String(value == null ? "" : value).trim();
+
+      if (!v) return "";
+      if (v === "[]" || v === "{}") return "";
+
+      if (
+        (v.startsWith('"') && v.endsWith('"')) ||
+        (v.startsWith("'") && v.endsWith("'"))
+      ) {
+        v = v.slice(1, -1).trim();
+      }
+
+      if (!v) return "";
+
+      const lower = v.toLowerCase();
+      if (
+        lower === "false" ||
+        lower === "null" ||
+        lower === "undefined" ||
+        lower === "0" ||
+        lower === "none" ||
+        lower === "no message" ||
+        lower === "no messages"
+      ) {
+        return "";
+      }
+
+      return v;
+    };
+
+    const collectMessages = function (input) {
+      if (Array.isArray(input)) {
+        return input.map(normalizeMessage).filter(Boolean);
+      }
+
+      if (typeof input === "string") {
+        const one = normalizeMessage(input);
+        return one ? [one] : [];
+      }
+
+      if (input && typeof input === "object") {
+        if (Array.isArray(input.messages)) {
+          return input.messages.map(normalizeMessage).filter(Boolean);
+        }
+        if (Array.isArray(input.data)) {
+          return input.data.map(normalizeMessage).filter(Boolean);
+        }
+        if (Array.isArray(input.result)) {
+          return input.result.map(normalizeMessage).filter(Boolean);
+        }
+        if (typeof input.message === "string") {
+          const one = normalizeMessage(input.message);
+          return one ? [one] : [];
+        }
+        if (typeof input.msg === "string") {
+          const one = normalizeMessage(input.msg);
+          return one ? [one] : [];
+        }
+      }
+
+      return [];
+    };
 
     try {
-      const data = JSON.parse(text);
-      // چون سرور آرایه برمی‌گرداند:
-      if (Array.isArray(data) && data.length > 0) {
-        // آخرین (جدیدترین) پیام فعال را برمی‌داریم
-        messageToShow = data[data.length - 1];
-      } else if (typeof data === 'string') {
-        messageToShow = data;
-      } else if (data && data.message) {
-        messageToShow = data.message;
+      const parsed = JSON.parse(raw);
+      messages = collectMessages(parsed);
+    } catch (_) {
+      messages = collectMessages(raw);
+
+      if (!messages.length && raw.startsWith("[") && raw.endsWith("]")) {
+        try {
+          const parsedArray = JSON.parse(raw);
+          messages = collectMessages(parsedArray);
+        } catch (_) {}
       }
-    } catch (e) {
-      // اگر جی‌سون نبود، کل متن را به عنوان پیام در نظر می‌گیرد
-      messageToShow = text;
     }
 
-    messageToShow = String(messageToShow).trim();
+    if (!messages.length) return;
 
-    // لیست سیاه برای جلوگیری از نمایش پیام‌های نامربوط
-    const skipList = ["false", "null", "undefined", "0", "تردد", "error", "[]"];
-    if (!messageToShow || skipList.includes(messageToShow.toLowerCase())) return;
+    const combined = messages.join("\n\n").trim();
+    if (!combined) return;
 
-    // نمایش فقط در صورت تغییر پیام نسبت به سشن قبلی
-    if (messageToShow !== lastAdminMessage) {
-      lastAdminMessage = messageToShow;
-      console.log("Showing Admin Message:", messageToShow);
-      
-      setTimeout(() => {
-        showAdminMessage(messageToShow);
-      }, 500);
-    }
+    if (combined === lastAdminMessage) return;
+
+    lastAdminMessage = combined;
+    adminMessageShownOnEntry = true;
+
+    setTimeout(function () {
+      showAdminMessage(combined);
+    }, 150);
   } catch (err) {
-    console.error("Fetch Messages Error:", err);
+    console.error("fetchMessages failed:", err);
   }
 }
 

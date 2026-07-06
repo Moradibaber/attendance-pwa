@@ -12,7 +12,102 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
 
   <style>
-    /* ====== فقط CSS/HTML برای دکمه دوربین (بدون دست زدن به منطق JS) ====== */
+    /* ====== استایل‌های مربوط به ظاهر کلی و هماهنگی رنگ‌ها با تصویر ====== */
+    body {
+      background-color: #b1e4ec !important; /* رنگ فیروزه‌ای کم‌رنگ کل صفحه */
+      margin: 0;
+      padding: 10px;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .app {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* ====== استایل کارت‌ها (رنگ پس‌زمینه کرم/قهوه‌ای خاکی ملایم) ====== */
+    .card {
+      background-color: #e3c4a8 !important; /* رنگ قهوه‌ای خاکی */
+      border: 1px solid #c5a88d !important;
+      border-radius: 16px !important;
+      padding: 16px !important;
+      margin-bottom: 20px !important;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+    }
+
+    .card h2 {
+      font-size: 1.2rem !important;
+      font-weight: 800 !important;
+      color: #3f2f21 !important;
+      text-align: center !important;
+      margin-top: 0 !important;
+      margin-bottom: 15px !important;
+    }
+
+    /* ====== بخش هشدار بالای صفحه ====== */
+    .compact-warning {
+      background-color: #fff3e0 !important;
+      border: 1.5px solid #ffb74d !important;
+      border-radius: 14px !important;
+      padding: 12px 16px !important;
+      color: #5c3e21 !important;
+    }
+    .compact-warning strong {
+      display: block;
+      text-align: center;
+      font-size: 1.05rem;
+      margin-bottom: 6px;
+      color: #d35400;
+    }
+    .compact-warning p {
+      margin: 0;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      text-align: justify;
+    }
+
+    /* ====== استایل فیلدهای ورودی مشخصات پرسنلی (بولد ضخیم و زرد خردلی) ====== */
+    #personnelCode, #firstName, #lastName {
+      background-color: #ffcc00 !important; /* رنگ زرد درخشان مطابق عکس */
+      color: #111827 !important;
+      font-weight: 900 !important; /* فوق‌العاده ضخیم و بولد */
+      font-size: 1.25rem !important; /* اندازه خوانا و بزرگ */
+      text-align: center !important;
+      border: 1px solid #e0b000 !important;
+      border-radius: 12px !important;
+      padding: 14px !important;
+      margin-bottom: 12px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.05) !important;
+      outline: none;
+    }
+    
+    #personnelCode::placeholder, #firstName::placeholder, #lastName::placeholder {
+      color: #555555 !important;
+      font-weight: bold !important;
+    }
+
+    /* ====== دکمه سبز رنگ ذخیره مشخصات ====== */
+    #saveProfileBtn {
+      background-color: #28a745 !important; /* رنگ سبز شاداب */
+      color: #ffffff !important;
+      font-weight: 800 !important;
+      font-size: 1.15rem !important;
+      border: none !important;
+      border-radius: 12px !important;
+      padding: 14px !important;
+      width: 100% !important;
+      cursor: pointer !important;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px rgba(40, 167, 69, 0.2) !important;
+      display: block;
+    }
+    #saveProfileBtn:active {
+      transform: scale(0.98);
+    }
+
+    /* ====== دکمه آبی رنگ دوربین و عکس سلفی ====== */
     #photoInput{
       position:absolute !important;
       width:1px !important;
@@ -40,35 +135,90 @@
       align-items:center;
       justify-content:center;
       gap:10px;
-      padding:10px 14px;
-      border:1px solid #d1d5db;
-      background:#fff;
-      color:#111827;
-      border-radius:10px;
+      padding:15px 20px;
+      border:none !important;
+      background:#3498db !important; /* رنگ آبی روشن مطابق عکس */
+      color:#ffffff !important;
+      border-radius:12px !important;
       cursor:pointer;
       user-select:none;
       -webkit-tap-highlight-color:transparent;
       touch-action:manipulation;
-      font-weight:700;
+      font-weight:800 !important;
+      font-size:1.1rem !important;
       line-height:1;
-      min-height:44px;
+      min-height:48px;
+      width: 100%;
+      box-sizing: border-box;
+      box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2) !important;
     }
 
     .camera-btn:active{
-      transform:scale(0.99);
+      transform:scale(0.98);
     }
 
     .camera-btn .cam-ico{
-      width:18px;
-      height:18px;
+      width:20px;
+      height:20px;
       display:inline-block;
       flex:0 0 auto;
-      background:#111827;
+      background:#ffffff !important; /* آیکون سفید بر روی پس‌زمینه آبی */
       -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-2.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z'/%3E%3C/svg%3E") center/contain no-repeat;
               mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-2.2a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z'/%3E%3C/svg%3E") center/contain no-repeat;
     }
 
-    /* ====== استایل‌های مربوط به انیمیشن دکمه ذخیره (همان قبلی) ====== */
+    /* ====== استایل سکشن وضعیت (سه باکس رنگی: آبی، سبز و قرمز) ====== */
+    .stats {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr 1fr !important;
+      gap: 12px !important;
+      margin: 15px 0 !important;
+    }
+
+    .stats > div {
+      border-radius: 12px !important;
+      padding: 16px 5px !important;
+      text-align: center !important;
+      color: #ffffff !important;
+      font-weight: 900 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+    }
+
+    /* باکس اول سمت راست در حالت RTL (ارسال‌نشده - آبی ملایم) */
+    .stats > div:nth-child(1) {
+      background-color: #3399ff !important;
+    }
+
+    /* باکس دوم وسط (ارسال‌شده - سبز شاداب) */
+    .stats > div:nth-child(2) {
+      background-color: #00cc44 !important;
+    }
+
+    /* باکس سوم سمت چپ (ناموفق - قرمز درخشان) */
+    .stats > div:nth-child(3) {
+      background-color: #ff1a1a !important;
+    }
+
+    .stats span {
+      font-size: 1.6rem !important;
+      font-weight: 900 !important;
+      display: block !important;
+      margin-bottom: 4px !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    }
+
+    .stats small {
+      font-size: 0.85rem !important;
+      font-weight: 700 !important;
+      display: block !important;
+      opacity: 0.95 !important;
+    }
+
+    /* ====== استایل‌های مربوط به انیمیشن دکمه ذخیره ====== */
     #saveProfileBtn {
       transition: all 0.4s ease;
       position: relative;
@@ -142,8 +292,6 @@
     <div class="photo-row">
       <img id="photoPreview" class="preview" alt="پیش‌نمایش عکس" style="display:none" />
     </div>
-
-    <!-- <button id="recordBtn" class="primary">ثبت تردد</button> -->
 
     <p id="captureStatus" class="status small-status"></p>
     <div id="recordLoading" class="inline-loading"></div>

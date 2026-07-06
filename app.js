@@ -1,10 +1,4 @@
-/* =========================
-   Attendance PWA - Clean Client Code
-   Fix: CORS preflight error on Apps Script by using:
-   - POST with Content-Type: text/plain (no preflight)
-   - mode: "no-cors" (so browser won't block; response is opaque)
-   - treat success as "queued/sent" and rely on server-side Debug sheet
-   ========================= */
+// FILE: app.js
 
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
@@ -212,7 +206,6 @@ function bindEvents() {
     cameraBtn.addEventListener("touchend", openCamera, { passive: false });
   }
 }
-
 
 /* =========================
    Auto Sync
@@ -424,6 +417,7 @@ async function saveProfile() {
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     await refreshPolicyIfPossible();
+    await fetchMessages();
 
     btn.style.backgroundColor = "#28a745";
     btn.textContent = "ذخیره شد";
@@ -533,24 +527,31 @@ async function ensurePolicyLoadedAtStartup() {
 async function refreshPolicyIfPossible() {
   if (!navigator.onLine) return null;
 
-  // استفاده از dbGet مستقیم به جای getProfile برای جلوگیری از پرتاب خطا در صورت عدم ثبت اولیه پروفایل
   const profile = await dbGet(STORE_PROFILE, "main").catch(() => null);
   if (!profile?.personnelCode) return null;
 
   try {
     const url =
       `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
-      encodeURIComponent(profile.personnelCode);
+      encodeURIComponent(profile.personnelCode) +
+      `&_=${Date.now()}`;
 
-    // افزودن تنظیمات منعطف‌تر برای هماهنگی با مکانیسم کش سافاری
-    const res = await fetch(url, { 
-      method: "GET", 
+    const res = await fetch(url, {
+      method: "GET",
       cache: "no-store",
-      credentials: "omit"
+      redirect: "follow",
+      credentials: "omit",
+      headers: {
+        "Accept": "application/json, text/plain, */*"
+      }
     });
+
     if (!res.ok) return null;
 
-    const result = await res.json().catch(() => null);
+    const text = await res.text();
+    if (!text) return null;
+
+    const result = JSON.parse(text);
     if (!result || result.ok !== true) return null;
 
     const policyInfo = {
@@ -760,7 +761,7 @@ async function createRecord(type) {
     lastName: profile.lastName,
     type,
     recordType: type,
-    recordDate: getPersianDate(now),
+    recordDate: getIsoDate(now),
     recordHour: getTime(now),
     recordTime: getTime(now),
     latitude: loc.latitude || "",
@@ -818,9 +819,6 @@ function createClientRecordId(personnelCode, baseMs) {
 
 /* =========================
    Sync (CORS-SAFE)
-   - Uses text/plain + no-cors to avoid preflight
-   - Result is opaque; success means "request was sent"
-   - Debug on server side in Debug sheet
 ========================= */
 
 async function markFirstConnectionForOfflineRecords() {
@@ -1041,49 +1039,96 @@ function showAdminMessage(m) {
 
   const msg = String(m).trim();
 
+  const old = document.getElementById("admin-message-overlay");
+  if (old) old.remove();
+
   const overlay = document.createElement("div");
-  overlay.style =
-    "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
+  overlay.id = "admin-message-overlay";
+  overlay.style.position = "fixed";
+  overlay.style.top = "0";
+  overlay.style.left = "0";
+  overlay.style.width = "100%";
+  overlay.style.height = "100%";
+  overlay.style.background = "rgba(0,0,0,0.5)";
+  overlay.style.zIndex = "9999";
+  overlay.style.display = "flex";
+  overlay.style.alignItems = "center";
+  overlay.style.justifyContent = "center";
+  overlay.style.fontFamily = "inherit";
 
   const modal = document.createElement("div");
-  modal.style =
-    "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+  modal.style.background = "#FFFFFF";
+  modal.style.padding = "20px";
+  modal.style.borderRadius = "15px";
+  modal.style.width = "85%";
+  modal.style.maxWidth = "400px";
+  modal.style.textAlign = "center";
+  modal.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
+  modal.style.direction = "rtl";
 
-  modal.innerHTML = `
-    <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
-    <p style="color:#555; line-height:1.6;">${escapeHtml(msg)}</p>
-    <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
-  `;
+  const title = document.createElement("h3");
+  title.style.marginTop = "0";
+  title.style.color = "#333";
+  title.textContent = "پیام مدیر";
 
+  const text = document.createElement("p");
+  text.style.color = "#555";
+  text.style.lineHeight = "1.6";
+  text.textContent = msg;
+
+  const btn = document.createElement("button");
+  btn.id = "closeAdminMsg";
+  btn.style.background = "#007bff";
+  btn.style.color = "#fff";
+  btn.style.border = "none";
+  btn.style.padding = "10px 25px";
+  btn.style.borderRadius = "10px";
+  btn.style.cursor = "pointer";
+  btn.style.width = "100%";
+  btn.style.fontWeight = "bold";
+  btn.textContent = "تایید";
+
+  btn.onclick = function () {
+    overlay.remove();
+  };
+
+  modal.appendChild(title);
+  modal.appendChild(text);
+  modal.appendChild(btn);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
-
-  document.getElementById("closeAdminMsg").onclick = function () {
-    document.body.removeChild(overlay);
-  };
 }
 
 async function fetchMessages() {
   if (!navigator.onLine) return;
 
   try {
-    // خواندن مستقیم از دیتا بیس بدون پرتاب خطا جهت سازگاری با لود اولیه آیفون
     const profile = await dbGet(STORE_PROFILE, "main").catch(() => null);
     if (!profile?.personnelCode) return;
 
     const url =
       APPS_SCRIPT_URL +
       "?action=getMessages&personnelCode=" +
-      encodeURIComponent(profile.personnelCode);
+      encodeURIComponent(profile.personnelCode) +
+      "&_=" +
+      Date.now();
 
-    const res = await fetch(url, { 
-      method: "GET", 
+    const res = await fetch(url, {
+      method: "GET",
       cache: "no-store",
-      credentials: "omit" 
+      redirect: "follow",
+      credentials: "omit",
+      headers: {
+        "Accept": "application/json, text/plain, */*"
+      }
     });
+
     if (!res.ok) return;
 
-    const result = await res.json().catch(() => null);
+    const text = await res.text();
+    if (!text) return;
+
+    const result = JSON.parse(text);
     if (!result || result.ok !== true) return;
 
     const messages = Array.isArray(result.messages) ? result.messages : [];
@@ -1102,7 +1147,7 @@ async function fetchMessages() {
     if (!cleaned.length) return;
 
     const msg = cleaned.join(" | ");
-    if (!adminMessageShownOnEntry && msg !== lastAdminMessage) {
+    if (msg !== lastAdminMessage) {
       lastAdminMessage = msg;
       adminMessageShownOnEntry = true;
       showAdminMessage(msg);
@@ -1111,40 +1156,23 @@ async function fetchMessages() {
     console.error("Error fetching messages:", e);
   }
 }
+
 /* =========================
    Time / Date
 ========================= */
 
-function getPersianDate(d) {
-  // فرمت‌دهی استاندارد تاریخ خورشیدی به همراه پاکسازی کاراکترهای کنترلی جهت متن در iOS
-  const rawDate = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(d);
-  
-  // جایگزینی اعداد فارسی به انگلیسی و حذف کاراکترهای غیر عددی به جز ممیز
-  return rawDate
-    .replace(/[۰-۹]/g, (w) => "۰۱۲۳۴۵۶۷۸۹".indexOf(w))
-    .replace(/[^\d/]/g, "");
+function getIsoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
 }
 
 function getTime(d) {
-  // در سافاری iOS، آرگومان hour12: false در زمان فارسی گاهی اوقات ب.ظ/ق.ظ برمی‌گرداند.
-  // مطمئن‌ترین راه استخراج دستی بخش‌های ساعت، دقیقه و ثانیه است تا در تمام پلتفرم‌ها یکسان باشد.
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
-}
-
-function getTime(d) {
-  return new Intl.DateTimeFormat("fa-IR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(d);
 }
 
 /* =========================
@@ -1399,6 +1427,7 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
+
 function jalaliToGregorian_(jy, jm, jd) {
   const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
   const jy2 = (jy === 979) ? 0 : jy - 979;

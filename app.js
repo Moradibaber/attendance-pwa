@@ -1036,100 +1036,82 @@ function renderRecords(records) {
 function showAdminMessage(m) {
   if (!m || String(m).trim() === "" || m === "undefined" || m === "null") return;
 
-  const msg = String(m).trim();
+  // حذف کوتیشن‌های احتمالی که گوگل اسکریپت دور متن می‌گذارد
+  let msg = String(m).trim().replace(/^["']|["']$/g, '');
 
-  // حذف نسخه قبلی اگر وجود داشت
   const old = document.getElementById("admin-message-overlay");
   if (old) old.remove();
 
   const overlay = document.createElement("div");
   overlay.id = "admin-message-overlay";
-  overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; align-items:center; justify-content:center; font-family:inherit; padding:20px; box-sizing:border-box;";
+  // استفاده از z-index بسیار بالا و پوزیشن فیکس برای غلبه بر باگ‌های رندرینگ iOS
+  overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:2147483647; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);";
 
   const modal = document.createElement("div");
-  modal.style.cssText = "background:#FFF; padding:25px; border-radius:20px; width:100%; max-width:400px; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.3); direction:rtl; animation: fadeInAdmin 0.3s ease-out;";
+  modal.style.cssText = "background:#ffffff; padding:25px; border-radius:20px; width:100%; max-width:350px; text-align:center; box-shadow:0 20px 40px rgba(0,0,0,0.4); direction:rtl; border:1px solid #eee;";
 
-  // افزودن انیمیشن ساده برای دیده شدن بهتر
-  const styleSheet = document.createElement("style");
-  styleSheet.textContent = "@keyframes fadeInAdmin { from { opacity:0; transform:scale(0.9); } to { opacity:1; transform:scale(1); } }";
-  document.head.appendChild(styleSheet);
+  modal.innerHTML = `
+    <h3 style="margin:0 0 15px 0; color:#e74c3c; font-size:22px;">پیام جدید مدیر</h3>
+    <p style="color:#333; line-height:1.7; font-size:17px; margin-bottom:25px; word-wrap:break-word;">${msg}</p>
+    <button id="confirmAdminMsg" style="background:#2ecc71; color:#fff; border:none; padding:14px; border-radius:12px; cursor:pointer; width:100%; font-weight:bold; font-size:18px;">تایید و بستن</button>
+  `;
 
-  const title = document.createElement("h3");
-  title.style.cssText = "margin-top:0; color:#d9534f; font-size:20px; margin-bottom:15px;";
-  title.textContent = "پیام مدیر";
-
-  const text = document.createElement("p");
-  text.style.cssText = "color:#444; line-height:1.8; font-size:16px; margin-bottom:25px; white-space:pre-wrap;";
-  text.textContent = msg;
-
-  const btn = document.createElement("button");
-  btn.style.cssText = "background:#007bff; color:#fff; border:none; padding:12px; border-radius:12px; cursor:pointer; width:100%; font-weight:bold; font-size:16px; transition:background 0.2s;";
-  btn.textContent = "متوجه شدم";
-
-  btn.onclick = function () {
-    overlay.remove();
-  };
-
-  modal.appendChild(title);
-  modal.appendChild(text);
-  modal.appendChild(btn);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
-}
 
+  document.getElementById("confirmAdminMsg").onclick = function() {
+    overlay.remove();
+  };
+}
 async function fetchMessages() {
   if (!navigator.onLine) return;
-  
+
   try {
     const profile = await dbGet(STORE_PROFILE, "main");
     if (!profile || !profile.personnelCode) return;
 
-    const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
-    // استفاده از هر دو پارامتر برای شکستن کش آیفون و اندروید
-    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${personnelCode}&_cachebuster=${Date.now()}`;
+    const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&ts=${Date.now()}`;
 
-    const response = await fetch(url, {
-      method: "GET",
-      cache: "no-store", // جلوگیری از کش در سطح مرورگر
-      mode: "cors",
-      redirect: "follow"
-    });
-
+    // استفاده از ساده‌ترین حالت fetch برای جلوگیری از بلاک شدن در iOS
+    const response = await fetch(url);
+    
     if (!response.ok) return;
 
-    const text = await response.text();
-    let msg = "";
+    const rawText = await response.text();
+    if (!rawText || rawText.length < 2) return;
 
-    // تلاش برای پارس کردن به عنوان JSON، اگر نشد به عنوان متن ساده
-    try {
-      const data = JSON.parse(text);
-      msg = (data && data.message) ? data.message : (typeof data === 'string' ? data : "");
-    } catch (e) {
-      msg = text; // پاسخ متن خام است
+    let finalMsg = "";
+
+    // شناسایی هوشمند محتوا
+    if (rawText.includes('{"') || rawText.includes('":')) {
+      try {
+        const jsonObj = JSON.parse(rawText);
+        finalMsg = jsonObj.message || jsonObj.msg || rawText;
+      } catch (e) { finalMsg = rawText; }
+    } else {
+      finalMsg = rawText;
     }
 
-    msg = String(msg).trim();
+    // حذف کاراکترهای مخفی و کوتیشن‌های اضافی سرور
+    finalMsg = finalMsg.replace(/["']/g, "").trim();
 
-    // فیلتر کردن پیام‌های سیستمی و خالی
-    const blackList = ["false", "null", "undefined", "0", "تردد", "", "error", "none"];
-    if (!msg || blackList.includes(msg.toLowerCase())) {
-      console.log("[Messages] Empty or system msg, ignoring.");
-      return;
-    }
+    // فیلتر نهایی
+    const skipList = ["false", "null", "undefined", "0", "تردد", "error", "none", "no messages"];
+    if (!finalMsg || skipList.includes(finalMsg.toLowerCase())) return;
 
-    // شرط طلایی برای نمایش در آیفون:
-    // اگر پیام با آخرین پیام متفاوت است، آن را نمایش بده
-    if (msg !== lastAdminMessage) {
-      console.log("[Messages] Showing new message:", msg);
-      lastAdminMessage = msg;
+    // اگر پیام جدید است، نمایش بده
+    if (finalMsg !== lastAdminMessage) {
+      lastAdminMessage = finalMsg;
+      console.log("Admin Message Found:", finalMsg);
       
-      // فراخوانی نمایش با کمی تاخیر برای اطمینان از رندر شدن UI در موبایل
-      setTimeout(() => {
-        showAdminMessage(msg);
-      }, 300);
+      // اجرای نمایش در Thread بعدی برای اطمینان از پایان پردازش fetch
+      requestAnimationFrame(() => {
+        showAdminMessage(finalMsg);
+      });
     }
-  } catch (error) {
-    console.error("[Messages Error]:", error);
+  } catch (err) {
+    console.log("Fetch Error:", err);
   }
 }
 

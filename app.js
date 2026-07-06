@@ -1036,60 +1036,38 @@ function renderRecords(records) {
 /* =========================
    Admin Messages
 ========================= */
-
 function showAdminMessage(m) {
   if (!m || String(m).trim() === "" || m === "undefined" || m === "null") return;
 
   const msg = String(m).trim();
 
+  // حذف نسخه قبلی اگر وجود داشت
   const old = document.getElementById("admin-message-overlay");
   if (old) old.remove();
 
   const overlay = document.createElement("div");
   overlay.id = "admin-message-overlay";
-  overlay.style.position = "fixed";
-  overlay.style.top = "0";
-  overlay.style.left = "0";
-  overlay.style.width = "100%";
-  overlay.style.height = "100%";
-  overlay.style.background = "rgba(0,0,0,0.5)";
-  overlay.style.zIndex = "9999";
-  overlay.style.display = "flex";
-  overlay.style.alignItems = "center";
-  overlay.style.justifyContent = "center";
-  overlay.style.fontFamily = "inherit";
+  overlay.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; align-items:center; justify-content:center; font-family:inherit; padding:20px; box-sizing:border-box;";
 
   const modal = document.createElement("div");
-  modal.style.background = "#FFFFFF";
-  modal.style.padding = "20px";
-  modal.style.borderRadius = "15px";
-  modal.style.width = "85%";
-  modal.style.maxWidth = "400px";
-  modal.style.textAlign = "center";
-  modal.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
-  modal.style.direction = "rtl";
+  modal.style.cssText = "background:#FFF; padding:25px; border-radius:20px; width:100%; max-width:400px; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.3); direction:rtl; animation: fadeInAdmin 0.3s ease-out;";
+
+  // افزودن انیمیشن ساده برای دیده شدن بهتر
+  const styleSheet = document.createElement("style");
+  styleSheet.textContent = "@keyframes fadeInAdmin { from { opacity:0; transform:scale(0.9); } to { opacity:1; transform:scale(1); } }";
+  document.head.appendChild(styleSheet);
 
   const title = document.createElement("h3");
-  title.style.marginTop = "0";
-  title.style.color = "#333";
+  title.style.cssText = "margin-top:0; color:#d9534f; font-size:20px; margin-bottom:15px;";
   title.textContent = "پیام مدیر";
 
   const text = document.createElement("p");
-  text.style.color = "#555";
-  text.style.lineHeight = "1.6";
+  text.style.cssText = "color:#444; line-height:1.8; font-size:16px; margin-bottom:25px; white-space:pre-wrap;";
   text.textContent = msg;
 
   const btn = document.createElement("button");
-  btn.id = "closeAdminMsg";
-  btn.style.background = "#007bff";
-  btn.style.color = "#fff";
-  btn.style.border = "none";
-  btn.style.padding = "10px 25px";
-  btn.style.borderRadius = "10px";
-  btn.style.cursor = "pointer";
-  btn.style.width = "100%";
-  btn.style.fontWeight = "bold";
-  btn.textContent = "تایید";
+  btn.style.cssText = "background:#007bff; color:#fff; border:none; padding:12px; border-radius:12px; cursor:pointer; width:100%; font-weight:bold; font-size:16px; transition:background 0.2s;";
+  btn.textContent = "متوجه شدم";
 
   btn.onclick = function () {
     overlay.remove();
@@ -1103,66 +1081,53 @@ function showAdminMessage(m) {
 }
 
 async function fetchMessages() {
-    if (!navigator.onLine) {
-        console.log("[Messages] Offline, skipping message fetch.");
-        return;
-    }
+  if (!navigator.onLine) return;
+  
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${personnelCode}&_t=${Date.now()}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      redirect: "follow"
+    });
+
+    if (!response.ok) return;
+
+    const text = await response.text();
+    let data;
     try {
-        const profile = await dbGet(STORE_PROFILE, "main");
-        if (!profile || !profile.personnelCode) {
-            console.log("[Messages] Profile or personnel code not found yet.");
-            return;
-        }
-        
-        const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
-        const timestamp = Date.now();
-        const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${personnelCode}&_nocache=${timestamp}`;
-        
-        console.log("[Messages] Fetching admin messages from server...");
-        
-        const response = await fetch(url, {
-            method: "GET",
-            mode: "cors",
-            redirect: "follow"
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const text = await response.text();
-        const data = JSON.parse(text);
-        
-        let msg = "";
-        if (data && data.message) {
-            msg = data.message.toString().trim();
-        } else if (typeof data === 'string') {
-            msg = data.trim();
-        }
-        
-        // پاکسازی پیام از مقادیر نامعتبر یا پیش‌فرض سیستم
-        const invalidValues = ["false", "null", "undefined", "0", "تردد", ""];
-        if (invalidValues.includes(msg.toLowerCase())) {
-            console.log("[Messages] Message is empty or system default. Skipping display.");
-            return;
-        }
-        
-        // جلوگیری از تکرار نمایش پیام در طول یک سشن
-        if (msg === lastAdminMessage && adminMessageShownOnEntry) {
-            console.log("[Messages] Message already shown in this session.");
-            return;
-        }
-        
-        console.log("[Messages] New message received:", msg);
-        lastAdminMessage = msg;
-        adminMessageShownOnEntry = true;
-        
-        if (typeof showAdminMessage === "function") {
-            showAdminMessage(msg);
-        }
-    } catch (error) {
-        console.error("[Messages] Failed to fetch messages on iOS/Safari:", error);
+      data = JSON.parse(text);
+    } catch (e) {
+      data = text; // اگر پاسخ JSON نبود و متن خام بود
     }
+
+    let msg = "";
+    if (data && typeof data === 'object' && data.message) {
+      msg = String(data.message).trim();
+    } else if (typeof data === 'string') {
+      msg = data.trim();
+    }
+
+    // لیست سیاه کلمات سیستمی
+    const blackList = ["false", "null", "undefined", "0", "تردد", "", "error"];
+    if (!msg || blackList.includes(msg.toLowerCase())) {
+      return;
+    }
+
+    // نمایش پیام اگر با پیام قبلی متفاوت باشد
+    if (msg !== lastAdminMessage) {
+      console.log("[Messages] New message to show:", msg);
+      lastAdminMessage = msg;
+      showAdminMessage(msg);
+    }
+  } catch (error) {
+    console.error("[Messages Error]:", error);
+  }
 }
 
 /* =========================

@@ -767,3 +767,34 @@ button {
   color: #ffffff !important; /* اطمینان از رنگ سفید */
   font-weight: 800 !important;
 }
+.hero-cover {
+  position: relative;
+  width: 100%;
+  margin: 0 0 18px 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #fff7f2 0%, #ffe8dc 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(210, 120, 70, 0.16);
+}
+hero-cover img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 7;
+  object-fit: cover;
+}
+
+.hero-cover-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(35, 25, 20, 0.78);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  backdrop-filter: blur(4px);
+}

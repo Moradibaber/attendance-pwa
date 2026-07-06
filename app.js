@@ -30,13 +30,10 @@ const APP_SESSION_START_PERF_MS = performance.now();
 let db = null;
 let currentPhoto = "";
 let pendingLocation = null;
-
 let syncRunning = false;
 let syncTimer = null;
-
 let adminMessageShownOnEntry = false;
-let lastAdminMessage = "";
-
+let lastAdminMessage = null; // تغییر از "" به null برای شروع دقیق
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
@@ -1088,10 +1085,12 @@ async function fetchMessages() {
     if (!profile || !profile.personnelCode) return;
 
     const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
-    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${personnelCode}&_t=${Date.now()}`;
+    // استفاده از هر دو پارامتر برای شکستن کش آیفون و اندروید
+    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${personnelCode}&_cachebuster=${Date.now()}`;
 
     const response = await fetch(url, {
       method: "GET",
+      cache: "no-store", // جلوگیری از کش در سطح مرورگر
       mode: "cors",
       redirect: "follow"
     });
@@ -1099,31 +1098,35 @@ async function fetchMessages() {
     if (!response.ok) return;
 
     const text = await response.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      data = text; // اگر پاسخ JSON نبود و متن خام بود
-    }
-
     let msg = "";
-    if (data && typeof data === 'object' && data.message) {
-      msg = String(data.message).trim();
-    } else if (typeof data === 'string') {
-      msg = data.trim();
+
+    // تلاش برای پارس کردن به عنوان JSON، اگر نشد به عنوان متن ساده
+    try {
+      const data = JSON.parse(text);
+      msg = (data && data.message) ? data.message : (typeof data === 'string' ? data : "");
+    } catch (e) {
+      msg = text; // پاسخ متن خام است
     }
 
-    // لیست سیاه کلمات سیستمی
-    const blackList = ["false", "null", "undefined", "0", "تردد", "", "error"];
+    msg = String(msg).trim();
+
+    // فیلتر کردن پیام‌های سیستمی و خالی
+    const blackList = ["false", "null", "undefined", "0", "تردد", "", "error", "none"];
     if (!msg || blackList.includes(msg.toLowerCase())) {
+      console.log("[Messages] Empty or system msg, ignoring.");
       return;
     }
 
-    // نمایش پیام اگر با پیام قبلی متفاوت باشد
+    // شرط طلایی برای نمایش در آیفون:
+    // اگر پیام با آخرین پیام متفاوت است، آن را نمایش بده
     if (msg !== lastAdminMessage) {
-      console.log("[Messages] New message to show:", msg);
+      console.log("[Messages] Showing new message:", msg);
       lastAdminMessage = msg;
-      showAdminMessage(msg);
+      
+      // فراخوانی نمایش با کمی تاخیر برای اطمینان از رندر شدن UI در موبایل
+      setTimeout(() => {
+        showAdminMessage(msg);
+      }, 300);
     }
   } catch (error) {
     console.error("[Messages Error]:", error);

@@ -412,7 +412,7 @@ function getProfileFromInputs() {
 
 async function loadProfile() {
   const p = await dbGet(STORE_PROFILE, "main");
-  if (!p) return;
+    if (!p) return;
 
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
   if ($("firstName")) $("firstName").value = p.firstName || "";
@@ -425,6 +425,20 @@ async function saveProfileSilent() {
     throw new Error("مشخصات پرسنلی کامل نیست.");
   }
   await dbPut(STORE_PROFILE, { id: "main", ...profile });
+await refreshPolicyIfPossible();
+await fetchMessages();
+
+btn.style.backgroundColor = "#28a745";
+btn.textContent = "ذخیره شد";
+showGpsToast("success", "مشخصات با موفقیت ثبت شد", "3000");
+
+setTimeout(() => {
+  ...
+}, 2500);
+
+} catch (_) {
+  ...
+  setStatus("خطا در ذخیره مشخصات");
 }
 
 async function getProfile() {

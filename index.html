@@ -296,6 +296,42 @@
     .app-hidden {
       display: none;
     }
+
+    /* Busy Overlay Loader Style */
+    .busy-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 999999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+      transition: opacity 0.2s ease;
+    }
+
+    .busy-box {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 20px 24px;
+      min-width: 220px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .busy-spinner {
+      width: 42px;
+      height: 42px;
+      margin: 0 auto 12px;
+      border: 4px solid #e5e7eb;
+      border-top-color: #f97316;
+      border-radius: 50%;
+      animation: busySpin 0.9s linear infinite;
+    }
+
+    @keyframes busySpin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 
@@ -306,6 +342,14 @@
       <img src="cover-rights-reserved.png" alt="خوش آمدید">
       <div class="splash-text">خوش آمدید</div>
       <div class="splash-subtext">لطفا کمی صبر کنید...</div>
+    </div>
+  </div>
+
+  <!-- Central Loading Overlay -->
+  <div id="busyOverlay" class="busy-overlay" style="display:none;">
+    <div class="busy-box">
+      <div class="busy-spinner"></div>
+      <div id="busyText">در حال پردازش...</div>
     </div>
   </div>
 

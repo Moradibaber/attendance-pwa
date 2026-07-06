@@ -416,17 +416,20 @@ async function saveProfile() {
     }
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    await refreshPolicyIfPossible();
-    await fetchMessages();
+    loadProfile(); 
+    setTimeout(() => {
+        refreshPolicyIfPossible();
+        fetchMessages();
+    }, 500);
 
     btn.style.backgroundColor = "#28a745";
     btn.textContent = "ذخیره شد";
-    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
+    showGpsToast("success", "مشخصات با موفقیت ثبت شد", "3000");
 
     setTimeout(() => {
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
+        btn.disabled = false;
+        btn.style.backgroundColor = originalBg;
+        btn.textContent = originalText;
     }, 2500);
   } catch (_) {
     btn.disabled = false;
@@ -525,48 +528,48 @@ async function ensurePolicyLoadedAtStartup() {
 }
 
 async function refreshPolicyIfPossible() {
-  if (!navigator.onLine) return null;
-
-  const profile = await dbGet(STORE_PROFILE, "main").catch(() => null);
-  if (!profile?.personnelCode) return null;
-
-  try {
-    const url =
-      `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
-      encodeURIComponent(profile.personnelCode) +
-      `&_=${Date.now()}`;
-
-    const res = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      redirect: "follow",
-      credentials: "omit",
-      headers: {
-        "Accept": "application/json, text/plain, */*"
-      }
-    });
-
-    if (!res.ok) return null;
-
-    const text = await res.text();
-    if (!text) return null;
-
-    const result = JSON.parse(text);
-    if (!result || result.ok !== true) return null;
-
-    const policyInfo = {
-      personnelCode: profile.personnelCode,
-      attendancePolicy: normalizeAttendancePolicy(result.attendancePolicy),
-      policyVersion: Number(result.policyVersion || 0),
-      policyFetchedAt: new Date().toISOString(),
-      policySource: "server"
-    };
-
-    await saveAttendancePolicyInfo(policyInfo);
-    return policyInfo;
-  } catch (_) {
-    return null;
-  }
+    if (!navigator.onLine) {
+        console.log("[Policy] Offline, skipping policy refresh.");
+        return;
+    }
+    try {
+        const profile = await dbGet(STORE_PROFILE, "main");
+        if (!profile || !profile.personnelCode) {
+            console.log("[Policy] Profile or personnel code not found yet.");
+            return;
+        }
+        
+        const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
+        const timestamp = Date.now();
+        const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${personnelCode}&_nocache=${timestamp}`;
+        
+        console.log("[Policy] Fetching policy from server...");
+        
+        const response = await fetch(url, {
+            method: "GET",
+            mode: "cors",
+            redirect: "follow"
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const text = await response.text();
+        const data = JSON.parse(text);
+        
+        if (data && typeof data === 'object') {
+            await saveAttendancePolicyInfo(data);
+            console.log("[Policy] Successfully updated and saved:", data);
+            
+            // اعمال تغییرات جدید در UI پس از دریافت پالسی
+            if (typeof updateOnlineBadge === "function") {
+                updateOnlineBadge();
+            }
+        }
+    } catch (error) {
+        console.error("[Policy] Failed to refresh policy on iOS/Safari:", error);
+    }
 }
 
 async function getCurrentAttendanceGate() {
@@ -1100,61 +1103,66 @@ function showAdminMessage(m) {
 }
 
 async function fetchMessages() {
-  if (!navigator.onLine) return;
-
-  try {
-    const profile = await dbGet(STORE_PROFILE, "main").catch(() => null);
-    if (!profile?.personnelCode) return;
-
-    const url =
-      APPS_SCRIPT_URL +
-      "?action=getMessages&personnelCode=" +
-      encodeURIComponent(profile.personnelCode) +
-      "&_=" +
-      Date.now();
-
-    const res = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      redirect: "follow",
-      credentials: "omit",
-      headers: {
-        "Accept": "application/json, text/plain, */*"
-      }
-    });
-
-    if (!res.ok) return;
-
-    const text = await res.text();
-    if (!text) return;
-
-    const result = JSON.parse(text);
-    if (!result || result.ok !== true) return;
-
-    const messages = Array.isArray(result.messages) ? result.messages : [];
-    const cleaned = messages
-      .map((m) => String(m ?? "").trim())
-      .filter(
-        (m) =>
-          m &&
-          m !== "false" &&
-          m !== "null" &&
-          m !== "undefined" &&
-          m !== "0" &&
-          m !== "تردد"
-      );
-
-    if (!cleaned.length) return;
-
-    const msg = cleaned.join(" | ");
-    if (msg !== lastAdminMessage) {
-      lastAdminMessage = msg;
-      adminMessageShownOnEntry = true;
-      showAdminMessage(msg);
+    if (!navigator.onLine) {
+        console.log("[Messages] Offline, skipping message fetch.");
+        return;
     }
-  } catch (e) {
-    console.error("Error fetching messages:", e);
-  }
+    try {
+        const profile = await dbGet(STORE_PROFILE, "main");
+        if (!profile || !profile.personnelCode) {
+            console.log("[Messages] Profile or personnel code not found yet.");
+            return;
+        }
+        
+        const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
+        const timestamp = Date.now();
+        const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${personnelCode}&_nocache=${timestamp}`;
+        
+        console.log("[Messages] Fetching admin messages from server...");
+        
+        const response = await fetch(url, {
+            method: "GET",
+            mode: "cors",
+            redirect: "follow"
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const text = await response.text();
+        const data = JSON.parse(text);
+        
+        let msg = "";
+        if (data && data.message) {
+            msg = data.message.toString().trim();
+        } else if (typeof data === 'string') {
+            msg = data.trim();
+        }
+        
+        // پاکسازی پیام از مقادیر نامعتبر یا پیش‌فرض سیستم
+        const invalidValues = ["false", "null", "undefined", "0", "تردد", ""];
+        if (invalidValues.includes(msg.toLowerCase())) {
+            console.log("[Messages] Message is empty or system default. Skipping display.");
+            return;
+        }
+        
+        // جلوگیری از تکرار نمایش پیام در طول یک سشن
+        if (msg === lastAdminMessage && adminMessageShownOnEntry) {
+            console.log("[Messages] Message already shown in this session.");
+            return;
+        }
+        
+        console.log("[Messages] New message received:", msg);
+        lastAdminMessage = msg;
+        adminMessageShownOnEntry = true;
+        
+        if (typeof showAdminMessage === "function") {
+            showAdminMessage(msg);
+        }
+    } catch (error) {
+        console.error("[Messages] Failed to fetch messages on iOS/Safari:", error);
+    }
 }
 
 /* =========================

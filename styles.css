@@ -770,14 +770,13 @@ button {
 .hero-cover {
   position: relative;
   width: 100%;
-  margin: 0 0 18px 0;
+  margin: 0 0 20px 0;
   border-radius: 18px;
   overflow: hidden;
-  background: linear-gradient(135deg, #fff7f2 0%, #ffe8dc 100%);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(210, 120, 70, 0.16);
+  background: #f0f0f0; /* رنگ رزرو تا عکس لود شود */
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
-hero-cover img {
+.hero-cover img {
   display: block;
   width: 100%;
   height: auto;
@@ -789,12 +788,10 @@ hero-cover img {
   position: absolute;
   right: 12px;
   bottom: 12px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: rgba(35, 25, 20, 0.78);
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
+  font-size: 10px;
   backdrop-filter: blur(4px);
 }

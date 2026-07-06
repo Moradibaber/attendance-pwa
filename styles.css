@@ -40,17 +40,13 @@ body.modal-open {
   display: none !important;
 }
 
-/* کارت‌ها جمع‌وجورتر */
 .card {
   background: var(--card) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-  padding: 12px !important;
-  margin: 8px 0 !important;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08) !important;
-  display: flex;
-  flex-direction: column;
-  gap: 8px !important;
+  border-radius: 16px !important;
+  padding: 14px !important;
+  margin: 10px 0 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1) !important;
 }
 
 .form-hero-image {
@@ -59,7 +55,7 @@ body.modal-open {
   max-width: 520px;
   height: auto;
   margin: 0 auto;
-  border-radius: 14px;
+  border-radius: 18px;
   object-fit: cover;
 }
 
@@ -68,48 +64,46 @@ body.modal-open {
   color: white;
 }
 
-/* تیترها کمی کوچکتر */
 h1 {
-  margin: 0 0 4px;
-  font-size: 20px;
+  margin: 0 0 6px;
+  font-size: 22px;
 }
 
 h2 {
-  font-size: 1.05rem !important;
+  font-size: 1.1rem !important;
   font-weight: 800 !important;
   color: #3f2f21 !important;
   text-align: center !important;
   margin-top: 0 !important;
-  margin-bottom: 10px !important;
+  margin-bottom: 12px !important;
 }
 
-/* کنترل فاصله پاراگراف‌ها */
 p {
-  line-height: 1.4;
-  margin: 3px 0;
+  line-height: 1.5;
+  margin: 4px 0;
 }
 
-/* هشدار مهم جمع‌وجور */
-.compact-warning, .warning {
+.compact-warning,
+.warning {
   background-color: #fff3e0 !important;
   border: 1.5px solid #ffb74d !important;
-  border-radius: 12px !important;
-  padding: 10px 14px !important;
+  border-radius: 14px !important;
+  padding: 12px 16px !important;
   color: #5c3e21 !important;
-  font-size: 0.8rem !important;
+  font-size: 0.85rem !important;
   text-align: right;
 }
 
-.compact-warning strong, .warning strong {
+.compact-warning strong,
+.warning strong {
   display: block;
   text-align: center;
-  font-size: 0.95rem;
-  margin-bottom: 4px;
+  font-size: 1rem;
+  margin-bottom: 5px;
   color: #d35400;
   font-weight: bold;
 }
 
-/* پیام مدیر */
 .admin-message-box {
   display: none;
   position: fixed;
@@ -125,7 +119,7 @@ p {
 
 .admin-message-content {
   margin: 5% auto;
-  padding: 16px;
+  padding: 20px;
   width: 80%;
   max-width: 500px;
   border-radius: 8px;
@@ -157,12 +151,11 @@ p {
   text-decoration: none;
 }
 
-/* المنت‌های loading */
 #saveLoading,
 #recordLoading {
   display: inline-block;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   margin: 0 5px;
   border: 3px solid rgba(0, 0, 0, 0.1);
   border-radius: 50%;
@@ -181,30 +174,32 @@ p {
   100% { transform: rotate(360deg); }
 }
 
-/* فرم پرسنلی فشرده‌تر */
 label {
   display: block;
-  margin: 4px 0;
+  margin: 5px 0;
   font-weight: 700;
 }
 
-/* فیلدهای مشخصات پرسنلی - زرد درخشان و بولد */
-#personnelCode, #firstName, #lastName {
+#personnelCode,
+#firstName,
+#lastName {
   background-color: #ffcc00 !important;
   color: #000 !important;
   font-weight: 900 !important;
-  font-size: 1.1rem !important;
+  font-size: 1.2rem !important;
   text-align: center !important;
   border: 1px solid #e0b000 !important;
-  border-radius: 10px !important;
-  padding: 10px !important;
+  border-radius: 12px !important;
+  padding: 12px !important;
   margin-bottom: 8px !important;
   width: 100% !important;
   box-sizing: border-box !important;
   outline: none;
 }
 
-#personnelCode::placeholder, #firstName::placeholder, #lastName::placeholder {
+#personnelCode::placeholder,
+#firstName::placeholder,
+#lastName::placeholder {
   color: #444 !important;
   font-weight: bold !important;
 }
@@ -212,10 +207,10 @@ label {
 input,
 button {
   width: 100%;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--border);
-  padding: 8px;
-  margin-top: 3px;
+  padding: 9px;
+  margin-top: 4px;
   font: inherit;
   text-align: center;
 }
@@ -236,18 +231,17 @@ button {
   margin-bottom: 2px;
 }
 
-/* دکمه ذخیره مشخصات (سبز) */
 #saveProfileBtn {
   background-color: #28a745 !important;
   color: #fff !important;
   font-weight: 800 !important;
-  font-size: 1.05rem !important;
+  font-size: 1.1rem !important;
   border: none !important;
-  border-radius: 10px !important;
-  padding: 12px !important;
+  border-radius: 12px !important;
+  padding: 15px !important;
   width: 100% !important;
   cursor: pointer !important;
-  box-shadow: 0 3px 5px rgba(40, 167, 69, 0.2) !important;
+  box-shadow: 0 4px 6px rgba(40, 167, 69, 0.2) !important;
   transition: transform 0.1s ease;
 }
 
@@ -274,12 +268,11 @@ button {
   color: #0f172a;
 }
 
-/* آیکون وضعیت آنلاین */
 .status {
-  min-height: 18px;
+  min-height: 20px;
   font-weight: 800;
-  font-size: 13px;
-  margin-top: 3px;
+  font-size: 14px;
+  margin-top: 4px;
   margin-bottom: 0;
 }
 
@@ -291,32 +284,30 @@ button {
   content: "🔴 ";
 }
 
-/* اگر پیام وضعیت کوچک‌تر باشد */
 .small-status {
-  font-size: 12px;
-  min-height: 16px;
+  font-size: 13px;
+  min-height: 18px;
 }
 
 .photo-row {
   display: flex;
   justify-content: center;
-  margin-top: 4px;
-  margin-bottom: 3px;
+  margin-top: 6px;
+  margin-bottom: 4px;
 }
 
 .preview {
   display: block;
-  width: 200px;
+  width: 220px;
   height: auto;
   max-width: 100%;
   object-fit: contain;
   object-position: center;
-  border-radius: 10px;
+  border-radius: 12px;
   margin: 0 auto;
   background: #f1f5f9;
 }
 
-/* آمار - ۳ ستون با رنگ‌های مشخص شده */
 .stats {
   display: grid !important;
   grid-template-columns: 1fr 1fr 1fr !important;
@@ -325,50 +316,47 @@ button {
 }
 
 .stats > div {
-  border-radius: 10px !important;
-  padding: 10px 4px !important;
+  border-radius: 12px !important;
+  padding: 10px 5px !important;
   text-align: center !important;
   color: #fff !important;
   font-weight: 900 !important;
-  box-shadow: 0 3px 5px rgba(0,0,0,0.1) !important;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
 }
 
-/* ۳ ستون: ۱. ارسال‌نشده (آبی)، ۲. ارسال‌شده (سبز)، ۳. ناموفق (قرمز) */
 .stats > div:nth-child(1) { background-color: #3399ff !important; }
 .stats > div:nth-child(2) { background-color: #00cc44 !important; }
 .stats > div:nth-child(3) { background-color: #ff1a1a !important; }
 
 .stats span {
   display: block !important;
-  font-size: 1.35rem !important;
+  font-size: 1.5rem !important;
   font-weight: 900 !important;
 }
 
 .stats small {
-  font-size: 0.75rem !important;
+  font-size: 0.8rem !important;
   font-weight: 700 !important;
   color: #fff !important;
   opacity: 0.9;
 }
 
-/* لیست تردد */
 .records {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-height: 200px;
+  gap: 6px;
+  max-height: 220px;
   overflow-y: auto;
   padding-top: 2px;
 }
 
-/* ردیف تردد فشرده */
 .record-item.compact-record {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 5px 4px;
-  font-size: 12px;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
 }
@@ -377,10 +365,9 @@ button {
   border-bottom: none;
 }
 
-/* فاصله کمتر بین آیتم‌ها */
 .record {
   border-bottom: 1px solid var(--border);
-  padding: 5px 0;
+  padding: 6px 0;
 }
 
 .record:last-child {
@@ -390,7 +377,7 @@ button {
 .badge {
   display: inline-block;
   background: rgba(255, 255, 255, 0.2);
-  padding: 4px 8px;
+  padding: 5px 10px;
   border-radius: 999px;
 }
 
@@ -401,56 +388,51 @@ button {
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 8px;
 }
 
-/* کارت‌های خاص برای حذف فضای اضافه پایین */
 .profile-card,
 .attendance-card,
 .status-card,
 .records-card,
 .top-status,
 .compact-warning {
-  padding-bottom: 4px;
+  padding-bottom: 6px;
 }
 
-/* آخرین عنصر داخل کارت فضای اضافه نداشته باشد */
 .card > *:last-child {
   margin-bottom: 0 !important;
 }
 
-/* اگر آخرین عنصر دکمه باشد */
 .card button:last-child {
   margin-bottom: 0;
 }
 
-/* اگر آخرین عنصر status یا پاراگراف باشد */
 .card .status:last-child,
 .card p:last-child {
   margin-bottom: 0;
 }
 
-/* راهنمای نصب و ثبت تردد */
 .guide-card {
   background: linear-gradient(135deg, #e0f2fe, #ccfbf1, #fef3c7);
   border: 1px solid rgba(15, 118, 110, 0.25);
-  padding: 6px;
+  padding: 8px;
 }
 
 .guide-button {
   background: linear-gradient(135deg, #2563eb, #0f766e);
   color: #ffffff;
   border: none;
-  border-radius: 12px;
-  padding: 9px 10px;
-  font-size: 14px;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 15px;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .guide-button:active {
   transform: scale(0.98);
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
 }
 
 .guide-button:hover {
@@ -462,7 +444,7 @@ button {
   inset: 0;
   display: none;
   z-index: 9999;
-  padding: 10px;
+  padding: 12px;
 }
 
 .guide-modal.show {
@@ -479,19 +461,19 @@ button {
 .guide-box {
   position: relative;
   width: min(720px, 100%);
-  max-height: 90vh;
-  margin: 5vh auto 0;
+  max-height: 92vh;
+  margin: 4vh auto 0;
   background: #ffffff;
-  border-radius: 18px;
+  border-radius: 22px;
   overflow: hidden;
-  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.3);
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.6);
   animation: guidePop 0.18s ease-out;
 }
 
 @keyframes guidePop {
   from {
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(12px) scale(0.98);
     opacity: 0;
   }
   to {
@@ -504,35 +486,35 @@ button {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 6px;
-  padding: 12px 12px 10px;
+  gap: 8px;
+  padding: 14px 14px 12px;
   background: linear-gradient(135deg, #0f766e, #14b8a6, #2563eb);
   color: #ffffff;
   text-align: right;
 }
 
 .guide-header h2 {
-  margin: 0 0 3px;
-  font-size: 17px;
+  margin: 0 0 4px;
+  font-size: 19px;
 }
 
 .guide-header p {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.95;
 }
 
 .guide-close {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
   margin: 0;
   padding: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.22);
   color: #ffffff;
-  font-size: 24px;
-  line-height: 34px;
+  font-size: 28px;
+  line-height: 38px;
   border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
@@ -541,36 +523,36 @@ button {
 }
 
 .guide-content {
-  max-height: calc(90vh - 130px);
+  max-height: calc(92vh - 150px);
   overflow-y: auto;
-  padding: 10px;
+  padding: 12px;
   background: linear-gradient(180deg, #f8fafc, #ffffff);
   text-align: right;
 }
 
 .guide-section {
-  border-radius: 12px;
-  padding: 10px;
-  margin-bottom: 8px;
+  border-radius: 16px;
+  padding: 12px;
+  margin-bottom: 10px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
 }
 
 .guide-section h3 {
-  margin: 0 0 6px;
-  font-size: 14px;
+  margin: 0 0 8px;
+  font-size: 15px;
 }
 
 .guide-section ol,
 .guide-section ul {
   margin: 0;
-  padding-right: 18px;
+  padding-right: 20px;
 }
 
 .guide-section li {
-  margin: 5px 0;
-  line-height: 1.6;
-  font-size: 13px;
+  margin: 7px 0;
+  line-height: 1.7;
+  font-size: 14px;
 }
 
 .guide-section strong {
@@ -603,7 +585,7 @@ button {
 }
 
 .guide-footer {
-  padding: 8px 10px 10px;
+  padding: 10px 12px 12px;
   background: #ffffff;
   border-top: 1px solid #e2e8f0;
 }
@@ -611,19 +593,18 @@ button {
 .guide-ok {
   background: linear-gradient(135deg, #16a34a, #0f766e);
   color: #ffffff;
-  border-radius: 12px;
-  padding: 9px;
-  box-shadow: 0 4px 10px rgba(22, 163, 74, 0.2);
+  border-radius: 14px;
+  padding: 11px;
+  box-shadow: 0 5px 14px rgba(22, 163, 74, 0.22);
 }
 
 .guide-ok:active {
   transform: scale(0.98);
 }
 
-/* ریسپانسیو موبایل */
 @media (max-width: 480px) {
   .preview {
-    width: 180px;
+    width: 200px;
     height: auto;
     max-width: 100%;
     object-fit: contain;
@@ -635,77 +616,84 @@ button {
   }
 
   .card {
-    padding: 10px !important;
-    border-radius: 10px !important;
-    margin: 6px 0 !important;
-    gap: 6px !important;
+    padding: 12px !important;
+    margin: 8px 0 !important;
+    border-radius: 12px !important;
   }
 
   h1 {
-    font-size: 18px;
+    font-size: 20px;
   }
 
   h2 {
-    font-size: 1rem !important;
-    margin-bottom: 8px !important;
+    font-size: 1.1rem !important;
   }
 
   input,
   button {
-    padding: 7px;
+    padding: 8px;
   }
 
   .photo-row {
-    margin-top: 4px;
-    margin-bottom: 3px;
+    display: flex;
+    justify-content: center;
+    margin-top: 6px;
+    margin-bottom: 4px;
+  }
+
+  .stats {
+    gap: 8px !important;
+  }
+
+  .stats > div {
+    padding: 10px 4px !important;
   }
 
   .stats span {
-    font-size: 1.3rem !important;
+    font-size: 1.5rem !important;
   }
 
   .guide-modal {
-    padding: 6px;
+    padding: 8px;
   }
 
   .guide-box {
-    max-height: 92vh;
-    margin-top: 4vh;
-    border-radius: 14px;
+    max-height: 94vh;
+    margin-top: 3vh;
+    border-radius: 18px;
   }
 
   .guide-header {
-    padding: 10px;
+    padding: 12px;
   }
 
   .guide-header h2 {
-    font-size: 15px;
+    font-size: 17px;
   }
 
   .guide-header p {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .guide-content {
-    max-height: calc(92vh - 120px);
-    padding: 8px;
+    max-height: calc(94vh - 145px);
+    padding: 10px;
   }
 
   .guide-section {
-    padding: 8px;
-    border-radius: 10px;
+    padding: 10px;
+    border-radius: 14px;
   }
 
   .guide-section h3 {
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .guide-section li {
-    font-size: 12px;
+    font-size: 13px;
   }
 }
 
-/* ورودی مخفی عکس سلفی */
 .hidden-file-input {
   position: fixed;
   left: -9999px;
@@ -730,23 +718,22 @@ button {
   border: 0;
 }
 
-/* دکمه دوربین / آپلود سلفی (آبی) */
 .selfie-upload-label {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   width: 100% !important;
-  min-height: 44px !important;
-  border-radius: 10px !important;
+  min-height: 48px !important;
+  border-radius: 12px !important;
   background-color: #3498db !important;
   border: none !important;
   color: #fff !important;
-  font-size: 1.05rem !important;
+  font-size: 1.1rem !important;
   font-weight: 800 !important;
   cursor: pointer !important;
   box-sizing: border-box !important;
   text-align: center !important;
-  box-shadow: 0 3px 5px rgba(52, 152, 219, 0.2) !important;
+  box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2) !important;
 }
 
 .selfie-upload-label:active {
@@ -757,13 +744,13 @@ button {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 8px !important;
-  padding: 12px 18px !important;
+  gap: 10px !important;
+  padding: 15px 20px !important;
   background-color: #3498db !important;
   color: #ffffff !important;
-  border-radius: 10px !important;
+  border-radius: 12px !important;
   font-weight: 900 !important;
-  font-size: 1.1rem !important;
+  font-size: 1.15rem !important;
   border: none !important;
   cursor: pointer !important;
 }
@@ -776,11 +763,11 @@ button {
 .hero-cover {
   position: relative;
   width: 100%;
-  margin: 0 0 15px 0;
-  border-radius: 14px;
+  margin: 0 0 14px 0;
+  border-radius: 18px;
   overflow: hidden;
   background: #f0f0f0;
-  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
 
 .hero-cover img {
@@ -793,17 +780,16 @@ button {
 
 .hero-cover-badge {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
-  padding: 4px 8px;
-  border-radius: 15px;
+  right: 12px;
+  bottom: 12px;
+  padding: 5px 10px;
+  border-radius: 20px;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  font-size: 9px;
+  font-size: 10px;
   backdrop-filter: blur(4px);
 }
 
-/* Splash */
 .splash-screen {
   position: fixed;
   inset: 0;
@@ -823,9 +809,9 @@ button {
 
 .splash-card {
   width: min(92vw, 520px);
-  border-radius: 18px;
+  border-radius: 22px;
   overflow: hidden;
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.15);
   background: #f6d2aa;
 }
 
@@ -837,10 +823,10 @@ button {
 }
 
 .splash-text {
-  padding: 12px 16px 16px;
+  padding: 14px 18px 18px;
   text-align: center;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 22px;
   color: #7a3a00;
 }
 
@@ -849,28 +835,28 @@ button {
 }
 
 .container {
+  gap: 10px !important;
+}
+
+.status-grid {
   gap: 8px !important;
+  margin-bottom: 4px !important;
+}
+
+.status-box {
+  padding: 10px 5px !important;
+}
+
+.records-list {
+  gap: 6px !important;
+}
+
+.record-item {
+  padding: 8px 12px !important;
 }
 
 .card-title {
   margin-bottom: 2px !important;
-}
-
-.status-grid {
-  gap: 6px !important;
-  margin-bottom: 3px !important;
-}
-
-.status-box {
-  padding: 8px 4px !important;
-}
-
-.records-list {
-  gap: 4px !important;
-}
-
-.record-item {
-  padding: 6px 10px !important;
 }
 
 .card,
@@ -878,5 +864,5 @@ section,
 .panel,
 .box {
   margin-top: 0 !important;
-  margin-bottom: 8px !important;
+  margin-bottom: 10px !important;
 }

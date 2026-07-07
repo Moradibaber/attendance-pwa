@@ -2,7 +2,7 @@
 /* REPLACE FULL FILE */ 
 
 const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 4; 
+const DB_VERSION = 6; // افزایش ورژن برای اعمال قطعی تغییرات ساختار دیتابیس
 
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
@@ -356,19 +356,25 @@ function scheduleSyncPendingRecords(delay = 0) {
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    // افزایش ورژن به 5 برای اطمینان از اجرای مجدد ساختار دیتابیس
-    const request = indexedDB.open("AttendanceDB", 5); 
+    const request = indexedDB.open(DB_NAME, DB_VERSION); 
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
       
-      // ساخت جدول رکوردها
-      if (!db.objectStoreNames.contains("RecordsStore")) {
-        db.createObjectStore("RecordsStore", { keyPath: "clientRecordId" });
+      // ساخت جدول رکوردها با کلید اصلی
+      if (!db.objectStoreNames.contains(STORE_RECORDS)) {
+        db.createObjectStore(STORE_RECORDS, { keyPath: "clientRecordId" });
       }
       
-      // اگر در کدتان برای پروفایل یا تنظیمات جدول دیگری دارید، اینجا اضافه کنید
-      // مثال: if (!db.objectStoreNames.contains("Settings")) { db.createObjectStore("Settings"); }
+      // ساخت جدول پروفایل پرسنلی با کلید اصلی id
+      if (!db.objectStoreNames.contains(STORE_PROFILE)) {
+        db.createObjectStore(STORE_PROFILE, { keyPath: "id" });
+      }
+
+      // ساخت جدول تنظیمات با کلید اصلی id
+      if (!db.objectStoreNames.contains(STORE_CONFIG)) {
+        db.createObjectStore(STORE_CONFIG, { keyPath: "id" });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -736,30 +742,86 @@ async function handlePhotoSelected() {
 ========================= */
 
 async function createRecord(type) {
-  // Read personnelCode from the input field
-  const pCode = document.getElementById('personnelCode')?.value || "Unknown";
-  
-  const record = {
-    clientRecordId: Date.now().toString(),
-    personnelCode: pCode,
-    type: "Attendance",
-    recordType: type, // 'In' or 'Out'
-    recordDate: new Date().toLocaleDateString('fa-IR'),
-    recordHour: new Date().toLocaleTimeString('fa-IR'),
-    offlineCreated: !navigator.onLine,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-    // Add other fields (GPS, Photo) here
-  };
+  try {
+    const profile = await getProfile();
+    const now = new Date();
+    const jalaliDateStr = getJalaliIsoDate(now);
+    const timeStr = getTime(now);
 
-  // Save to IndexedDB
-  await dbPut("RecordsStore", record);
-  
-  // Try to sync immediately
-  syncPendingRecords();
+    const deviceTimeAtGps = pendingLocation?.timestamp ? new Date(pendingLocation.timestamp).toISOString() : "";
+    const gpsWaitMs = pendingLocation?.timestamp ? Math.round(pendingLocation.timestamp - captureStartedAtMs) : "";
+
+    const localRecord = {
+      clientRecordId: createClientRecordId(profile.personnelCode, captureStartedAtMs),
+      personnelCode: profile.personnelCode,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      type: type,
+      recordType: type,
+      recordDate: jalaliDateStr,
+      recordHour: timeStr,
+      recordTime: timeStr,
+      latitude: pendingLocation ? String(pendingLocation.latitude) : "",
+      longitude: pendingLocation ? String(pendingLocation.longitude) : "",
+      accuracy: pendingLocation ? String(pendingLocation.accuracy) : "",
+      locationStatus: pendingLocation ? pendingLocation.status : "unknown",
+      locationError: pendingLocation ? (pendingLocation.error || "") : "",
+      deviceTime: now.toISOString(),
+      deviceTimeAtClick: new Date(captureStartedAtMs).toISOString(),
+      deviceTimeAtPhoto: photoSelectedAtMs ? new Date(photoSelectedAtMs).toISOString() : "",
+      deviceTimeAtPhotoCompressed: photoCompressedAtMs ? new Date(photoCompressedAtMs).toISOString() : "",
+      deviceTimeAtGps: deviceTimeAtGps,
+      gpsTimestamp: deviceTimeAtGps,
+      gpsWaitMs: gpsWaitMs,
+      photoDelayMs: photoSelectedAtMs ? Math.round(photoSelectedAtMs - captureStartedAtMs) : "",
+      submitDelayMs: Math.round(now.getTime() - captureStartedAtMs),
+      offlineCreated: !navigator.onLine,
+      createdOnline: navigator.onLine,
+      connectionStatus: navigator.onLine ? "online" : "offline",
+      connectionStatusFa: navigator.onLine ? "آنلاین" : "آفلاین",
+      firstConnectionAfterOfflineRecord: "",
+      lastConnectionBeforeUpload: navigator.onLine ? now.toISOString() : "",
+      uploadedAt: "",
+      delayAfterFirstConnectionMs: "",
+      photo: currentPhoto || "",
+      createdAt: now.toISOString(),
+      lastSyncTryAt: "",
+      syncTryCount: 0,
+      status: "pending"
+    };
+
+    const sessionDrift = getSessionClockDriftMs();
+    localRecord.sessionClockDriftMs = sessionDrift;
+
+    const netDrift = await getNetworkTimeDriftMs(now.getTime());
+    localRecord.networkClockDriftMs = netDrift;
+
+    const risk = calculateClockRisk(localRecord);
+    localRecord.clockRisk = risk.clockRisk;
+    localRecord.clockRiskReason = risk.clockRiskReason;
+
+    const policyInfo = await getAttendancePolicyInfo();
+    localRecord.attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+    localRecord.policyVersion = policyInfo.policyVersion || 0;
+    localRecord.policyFetchedAt = policyInfo.policyFetchedAt || "";
+    localRecord.policySource = policyInfo.policySource || "";
+
+    await dbPut(STORE_RECORDS, localRecord);
+    
+    setStatus("تردد در دیتابیس محلی ذخیره شد.");
+    await refreshUi();
+
+    if (navigator.onLine) {
+      scheduleSyncPendingRecords(500);
+    } else {
+      showGpsToast("تردد به صورت آفلاین ذخیره شد. در اولین اتصال ارسال خواهد شد.", 4000, "success");
+    }
+  } catch (err) {
+    console.error("Error creating record:", err);
+    setStatus("خطا در ایجاد رکورد: " + err.message);
+  }
 }
 
-// Sync pending records to Google Sheets
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -790,35 +852,67 @@ async function markFirstConnectionForOfflineRecords() {
 }
 
 async function syncPendingRecords() {
-  if (!navigator.onLine) return;
+  if (syncRunning || !navigator.onLine) return;
+  syncRunning = true;
+  setSyncStatus("در حال ارسال...");
 
-  const records = await dbGetAll("RecordsStore");
-  const pending = records.filter(r => r.status === "pending" || r.status === "failed");
+  try {
+    const records = await dbGetAll(STORE_RECORDS);
+    const pending = records.filter(
+      (r) => r.status === "pending" || r.status === "failed" || r.status === "syncing"
+    );
 
-  for (const record of pending) {
-    try {
-      // Mark as syncing
-      record.status = "syncing";
-      await dbPut("RecordsStore", record);
-
-      const response = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors", // Crucial for GAS Web Apps
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(record),
-      });
-
-      // Since mode is no-cors, we won't see response body, 
-      // but we assume success if no error is thrown
-      record.status = "sent";
-      record.syncedAt = new Date().toISOString();
-      await dbPut("RecordsStore", record);
-      
-    } catch (err) {
-      console.error("Sync failed for record:", record.clientRecordId, err);
-      record.status = "failed";
-      await dbPut("RecordsStore", record);
+    if (!pending.length) {
+      setSyncStatus("بروز");
+      syncRunning = false;
+      return;
     }
+
+    let successCount = 0;
+    for (const record of pending) {
+      record.status = "syncing";
+      record.lastSyncTryAt = new Date().toISOString();
+      record.syncTryCount = (record.syncTryCount || 0) + 1;
+      await dbPut(STORE_RECORDS, record);
+
+      const now = new Date();
+      if (record.offlineCreated && record.firstConnectionAfterOfflineRecord) {
+        const firstConnMs = new Date(record.firstConnectionAfterOfflineRecord).getTime();
+        record.delayAfterFirstConnectionMs = Math.max(0, now.getTime() - firstConnMs);
+      }
+      record.lastConnectionBeforeUpload = now.toISOString();
+
+      const payload = buildServerPayload(record);
+
+      try {
+        await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload),
+        });
+
+        record.status = "sent";
+        record.uploadedAt = new Date().toISOString();
+        await dbPut(STORE_RECORDS, record);
+        successCount++;
+      } catch (err) {
+        console.error("Sync fetch failed for clientRecordId:", record.clientRecordId, err);
+        record.status = "failed";
+        await dbPut(STORE_RECORDS, record);
+      }
+    }
+
+    if (successCount > 0) {
+      showGpsToast(`تعداد ${successCount} تردد با موفقیت ارسال شد.`, 3000, "success");
+    }
+    await refreshUi();
+    setSyncStatus("بروز");
+  } catch (err) {
+    console.error("Sync failed:", err);
+    setSyncStatus("خطا در ارسال");
+  } finally {
+    syncRunning = false;
   }
 }
 

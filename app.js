@@ -116,37 +116,44 @@ function getJalaliIsoDate(d = new Date()) {
    Boot
 ========================= */
 
+function showInitialNotice() {
+  const overlay = document.createElement("div");
+  overlay.id = "initial-notice-overlay";
+  overlay.style.cssText = `
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45);
+    z-index: 99998; display: flex; align-items: center; justify-content: center;
+    padding: 18px; box-sizing: border-box; direction: rtl;
+  `;
+  const box = document.createElement("div");
+  box.style.cssText = `
+    width: 100%; max-width: 430px; background: #fff3e0; border: 2px solid #ff9800;
+    border-radius: 16px; padding: 18px; box-shadow: 0 10px 25px rgba(0,0,0,.25);
+    color: #3f2f21; text-align: right; font-family: system-ui, -apple-system, sans-serif;
+  `;
+  box.innerHTML = `
+    <div style="font-size:17px;font-weight:900;color:#d35400;text-align:center;margin-bottom:10px;">هشدار مهم</div>
+    <div style="font-size:14px;line-height:1.8;text-align:justify;">
+      پاک کردن حافظه مرورگر، حذف برنامه یا بستن اجباری آن ممکن است باعث حذف اطلاعات ارسال‌نشده شود. 
+      لطفاً پس از ثبت تردد، در اولین فرصت اینترنت دستگاه را روشن نگه دارید تا اطلاعات ارسال شوند.
+    </div>
+  `;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  setTimeout(() => overlay.remove(), 6000);
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
-  try {
-    db = await openDb();
-  } catch (e) {
-    console.error("DB init error", e);
-  }
+  try { db = await openDb(); } catch (e) { console.error("DB init error", e); }
+  try { bindEvents(); } catch (_) {}
+  try { await loadProfile(); } catch (_) {}
+  
+  // Notice show after splash
+  setTimeout(showInitialNotice, 4200);
 
-  try {
-    bindEvents();
-  } catch (_) {}
-
-  try {
-    await loadProfile();
-  } catch (_) {}
-
-  try {
-    await ensurePolicyLoadedAtStartup();
-  } catch (_) {}
-
-  try {
-    await refreshUi();
-  } catch (_) {}
-
-  try {
-    await fetchMessages();
-  } catch (_) {}
-
-  try {
-    setupAutoSync();
-  } catch (_) {}
-
+  try { await ensurePolicyLoadedAtStartup(); } catch (_) {}
+  try { await refreshUi(); } catch (_) {}
+  try { await fetchMessages(); } catch (_) {}
+  try { setupAutoSync(); } catch (_) {}
   try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});

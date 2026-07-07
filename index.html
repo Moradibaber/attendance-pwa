@@ -7,330 +7,40 @@
   <link rel="manifest" href="manifest.json?v=4" />
   <title>ثبت تردد</title>
   <style>
-    :root{
-      --bg:#b1e4ec;
-      --card:#e3c4a8;
-      --text:#3f2f21;
-      --border:#c5a88d;
-      --primary:#28a745;
-      --blue:#3498db;
-      --warn:#fff3e0;
-      --warnBorder:#ffb74d;
-      --noteBg:#e8f4fd;
-      --noteBorder:#7fb3d5;
-      --noteText:#1f4e79;
-    }
-
+    :root{ --bg:#b1e4ec; --card:#e3c4a8; --text:#3f2f21; --border:#c5a88d; --primary:#28a745; --blue:#3498db; --warn:#fff3e0; --warnBorder:#ffb74d; }
     *{ box-sizing:border-box; }
-
-    html,body{
-      margin:0;
-      padding:0;
-      background:var(--bg)!important;
-      font-family:system-ui,-apple-system,sans-serif;
-      direction:rtl;
-      overflow-x:hidden;
-      min-height:100%;
-    }
-
-    body{
-      padding:4px;
-      min-height:100vh;
-    }
-
-    .app{
-      max-width:500px;
-      margin:0 auto;
-    }
-
-    .card{
-      background-color:var(--card)!important;
-      border:1px solid var(--border)!important;
-      border-radius:12px!important;
-      padding:6px 10px!important;
-      margin:0 0 4px 0!important;
-      box-shadow:0 2px 6px rgba(0,0,0,.08)!important;
-    }
-
-    .card h2{
-      font-size:.95rem!important;
-      font-weight:800!important;
-      color:var(--text)!important;
-      text-align:center!important;
-      margin:0 0 4px 0!important;
-      line-height:1.2;
-    }
-
-    .compact-warning{
-      background-color:var(--warn)!important;
-      border:1px solid var(--warnBorder)!important;
-      padding:6px 10px!important;
-    }
-
-    .compact-warning strong{
-      display:block;
-      text-align:center;
-      font-size:.85rem;
-      color:#d35400;
-      margin-bottom:2px;
-    }
-
-    .compact-warning p{
-      margin:0;
-      font-size:.75rem;
-      line-height:1.4;
-      text-align:justify;
-    }
-
-    #initialNoticeModal{
-      position:fixed;
-      inset:0;
-      z-index:99998;
-      display:none;
-      align-items:center;
-      justify-content:center;
-      background:rgba(0,0,0,.45);
-      padding:14px;
-    }
-
-    #initialNoticeModal.show{
-      display:flex;
-    }
-
-    .notice-box{
-      width:min(520px,100%);
-      background:#fff;
-      border-radius:14px;
-      border:2px solid var(--noteBorder);
-      box-shadow:0 12px 30px rgba(0,0,0,.25);
-      overflow:hidden;
-    }
-
-    .notice-head{
-      background:var(--noteBg);
-      color:var(--noteText);
-      font-weight:900;
-      padding:10px 12px;
-      text-align:center;
-      border-bottom:1px solid var(--noteBorder);
-      font-size:1.05rem;
-    }
-
-    .notice-body{
-      padding:14px 16px;
-      text-align:center;
-      color:#111827;
-      font-weight:900;
-      line-height:1.9;
-      font-size:.98rem;
-    }
-
-    #personnelCode,#firstName,#lastName{
-      background-color:#ffcc00!important;
-      color:#111827!important;
-      font-weight:900!important;
-      font-size:1rem!important;
-      text-align:center!important;
-      border:1px solid #e0b000!important;
-      border-radius:8px!important;
-      padding:8px!important;
-      margin:0 0 6px 0!important;
-      width:100%!important;
-      outline:none;
-    }
-
-    #saveProfileBtn{
-      background-color:var(--primary)!important;
-      color:#fff!important;
-      font-weight:800!important;
-      font-size:.9rem!important;
-      border:none!important;
-      border-radius:8px!important;
-      padding:8px!important;
-      width:100%!important;
-      cursor:pointer!important;
-    }
-
-    .camera-row{
-      margin:0!important;
-      padding:0!important;
-    }
-
-    .camera-btn{
-      display:flex!important;
-      align-items:center!important;
-      justify-content:center!important;
-      gap:6px!important;
-      padding:6px 10px!important;
-      background:var(--blue)!important;
-      color:#fff!important;
-      border-radius:8px!important;
-      font-weight:800!important;
-      font-size:.9rem!important;
-      min-height:34px!important;
-      line-height:1.2!important;
-      border:none!important;
-      cursor:pointer!important;
-      width:100%!important;
-      margin:0!important;
-    }
-
-    #splashScreen{
-      position:fixed;
-      inset:0;
-      z-index:99999;
-      background:var(--bg);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-
-    #splashScreen.is-hide{
-      display:none!important;
-    }
-
-    .splash-card{
-      width:80%;
-      max-width:360px;
-      text-align:center;
-      background:#f4d2aa;
-      border-radius:20px;
-      padding-bottom:15px;
-    }
-
-    .splash-card img{
-      width:100%;
-      display:block;
-      border-radius:20px 20px 0 0;
-    }
-
-    .stats{
-      display:grid!important;
-      grid-template-columns:1fr 1fr 1fr!important;
-      gap:6px!important;
-      margin:4px 0!important;
-    }
-
-    .stats>div{
-      border-radius:8px!important;
-      padding:6px 2px!important;
-      text-align:center!important;
-      color:#fff!important;
-      font-weight:800!important;
-    }
-
+    html,body{ margin:0; padding:4px; background:var(--bg)!important; font-family:system-ui,-apple-system,sans-serif; direction:rtl; min-height:100vh; }
+    .app{ max-width:500px; margin:0 auto; }
+    .card{ background-color:var(--card)!important; border:1px solid var(--border)!important; border-radius:12px!important; padding:6px 10px!important; margin:0 0 4px 0!important; box-shadow:0 2px 6px rgba(0,0,0,.08)!important; }
+    .card h2{ font-size:.95rem!important; font-weight:800!important; color:var(--text)!important; text-align:center!important; margin:0 0 4px 0!important; }
+    .compact-warning{ background-color:var(--warn)!important; border:1px solid var(--warnBorder)!important; padding:6px 10px!important; }
+    .compact-warning strong{ display:block; text-align:center; font-size:.85rem; color:#d35400; margin-bottom:2px; }
+    .compact-warning p{ margin:0; font-size:.75rem; line-height:1.4; text-align:justify; }
+    #personnelCode,#firstName,#lastName{ background-color:#ffcc00!important; color:#111827!important; font-weight:900!important; font-size:1rem!important; text-align:center!important; border:1px solid #e0b000!important; border-radius:8px!important; padding:8px!important; margin:0 0 6px 0!important; width:100%!important; outline:none; }
+    #saveProfileBtn{ background-color:var(--primary)!important; color:#fff!important; font-weight:800!important; font-size:.9rem!important; border:none!important; border-radius:8px!important; padding:8px!important; width:100%!important; cursor:pointer!important; }
+    .camera-row{ margin:0!important; padding:0!important; }
+    .camera-btn{ display:flex!important; align-items:center!important; justify-content:center!important; gap:6px!important; padding:6px 10px!important; background:var(--blue)!important; color:#fff!important; border-radius:8px!important; font-weight:800!important; font-size:.9rem!important; min-height:34px!important; border:none!important; cursor:pointer!important; width:100%!important; }
+    #splashScreen{ position:fixed; inset:0; z-index:99999; background:var(--bg); display:flex; align-items:center; justify-content:center; }
+    #splashScreen.is-hide{ display:none!important; }
+    .splash-card{ width:80%; max-width:360px; text-align:center; background:#f4d2aa; border-radius:20px; padding-bottom:15px; }
+    .splash-card img{ width:100%; display:block; border-radius:20px 20px 0 0; }
+    .stats{ display:grid!important; grid-template-columns:1fr 1fr 1fr!important; gap:6px!important; margin:4px 0!important; }
+    .stats>div{ border-radius:8px!important; padding:6px 2px!important; text-align:center!important; color:#fff!important; font-weight:800!important; }
     .stats>div:nth-child(1){ background:#3399ff!important; }
     .stats>div:nth-child(2){ background:#00cc44!important; }
     .stats>div:nth-child(3){ background:#ff1a1a!important; }
-
-    .stats span{
-      display:block;
-      font-size:1.1rem;
-    }
-
-    .stats small{
-      font-size:.65rem;
-      opacity:.9;
-    }
-
-    .records{
-      max-height:150px;
-      overflow-y:auto;
-      font-size:.8rem;
-    }
-
-    .record-item{
-      padding:4px;
-      border-bottom:1px solid var(--border);
-      text-align:center;
-    }
-
-    .status{
-      font-size:.75rem;
-      margin:2px 0;
-      min-height:14px;
-      text-align:center;
-    }
-
+    .records{ max-height:150px; overflow-y:auto; font-size:.8rem; }
+    .record-item{ padding:4px; border-bottom:1px solid var(--border); text-align:center; }
+    .status{ font-size:.75rem; margin:2px 0; min-height:14px; text-align:center; }
     #photoInput{ display:none!important; }
-
-    #photoPreview,.preview{
-      display:none!important;
-      width:140px!important;
-      height:auto!important;
-      border-radius:8px!important;
-      margin:0 auto!important;
-    }
-
+    #photoPreview,.preview{ display:none!important; width:140px!important; height:auto!important; border-radius:8px!important; margin:0 auto!important; }
     #photoPreview[src]{ display:block!important; }
-
-    .photo-row{
-      margin:0!important;
-      padding:0!important;
-      min-height:0!important;
-      height:auto!important;
-    }
-
-    .busy-overlay{
-      position:fixed;
-      inset:0;
-      background:rgba(0,0,0,.5);
-      z-index:10000;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-
-    .busy-box{
-      background:#fff;
-      padding:20px;
-      border-radius:12px;
-      text-align:center;
-    }
-
-    .busy-spinner{
-      width:30px;
-      height:30px;
-      border:3px solid #eee;
-      border-top-color:#f97316;
-      border-radius:50%;
-      animation:spin .8s linear infinite;
-      margin:0 auto 10px;
-    }
-
-    @keyframes spin{
-      to{ transform:rotate(360deg); }
-    }
-
-    #onlineBadge:empty,
-    #profileStatus:empty,
-    #captureStatus:empty,
-    #syncStatus:empty{
-      display:none!important;
-      min-height:0!important;
-      margin:0!important;
-      padding:0!important;
-    }
-
-    [id*="alert"],
-    [id*="Alert"],
-    [class*="alert"],
-    [class*="Alert"]{
-      display:none!important;
-      visibility:hidden!important;
-      height:0!important;
-      min-height:0!important;
-      max-height:0!important;
-      overflow:hidden!important;
-      margin:0!important;
-      padding:0!important;
-      border:0!important;
-      opacity:0!important;
-      pointer-events:none!important;
-    }
+    .busy-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:10000; display:flex; align-items:center; justify-content:center; }
+    .busy-box{ background:#fff; padding:20px; border-radius:12px; text-align:center; }
+    .busy-spinner{ width:30px; height:30px; border:3px solid #eee; border-top-color:#f97316; border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 10px; }
+    @keyframes spin{ to{ transform:rotate(360deg); } }
   </style>
 </head>
-
 <body>
   <div id="splashScreen">
     <div class="splash-card">
@@ -338,31 +48,18 @@
       <div style="font-weight:800;margin-top:10px;">خوش آمدید</div>
     </div>
   </div>
-
-  <!-- <div id="initialNoticeModal" aria-hidden="true">
-    <div class="notice-box" role="dialog" aria-modal="true">
-      <div class="notice-head">اعلام اولیه بابت باز کردن اینترنت و جی پی اس</div>
-      <div class="notice-body">
-        جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
-      </div>
-    </div>
-  </div> -->
-
   <div id="busyOverlay" class="busy-overlay" style="display:none;">
     <div class="busy-box">
       <div class="busy-spinner"></div>
       <div id="busyText" style="font-size:.85rem">در حال پردازش...</div>
     </div>
   </div>
-
   <main class="app" id="mainApp">
     <p id="onlineBadge" class="status"></p>
-
     <section class="card compact-warning">
       <strong>هشدار مهم</strong>
       <p>پاک کردن حافظه مرورگر یا حذف برنامه باعث حذف اطلاعات ارسال‌نشده می‌شود.</p>
     </section>
-
     <section class="card">
       <h2>مشخصات پرسنلی</h2>
       <input id="personnelCode" inputmode="numeric" placeholder="شماره پرسنلی" />
@@ -371,21 +68,15 @@
       <button id="saveProfileBtn">ذخیره مشخصات</button>
       <p id="profileStatus" class="status"></p>
     </section>
-
     <section class="card">
       <h2>ثبت تردد</h2>
       <input id="photoInput" type="file" accept="image/*" capture="user" />
       <div class="camera-row">
-        <label for="photoInput" class="camera-btn">
-          <span>عکس سلفی خود را بگیرید</span>
-        </label>
+        <label for="photoInput" class="camera-btn"><span>عکس سلفی خود را بگیرید</span></label>
       </div>
-      <div class="photo-row">
-        <img id="photoPreview" class="preview" style="display:none" />
-      </div>
+      <div class="photo-row"><img id="photoPreview" class="preview" /></div>
       <p id="captureStatus" class="status"></p>
     </section>
-
     <section class="card">
       <h2>وضعیت</h2>
       <div class="stats">
@@ -395,46 +86,19 @@
       </div>
       <p id="syncStatus" class="status"></p>
     </section>
-
     <section class="card">
       <h2>ترددهای اخیر</h2>
       <div id="recordsList" class="records"></div>
     </section>
   </main>
-
-  <script src="app.js?v=57"></script>
+  <script src="app.js?v=58"></script>
   <script>
-    (function () {
-      var SPLASH_MS = 4000;
-      var NOTICE_MS = 6000;
-
-      function showModal() {
-        var modal = document.getElementById('initialNoticeModal');
-        if (!modal) return;
-        modal.classList.add('show');
-        modal.setAttribute('aria-hidden', 'false');
-      }
-
-      function hideModal() {
-        var modal = document.getElementById('initialNoticeModal');
-        if (!modal) return;
-        modal.classList.remove('show');
-        modal.setAttribute('aria-hidden', 'true');
-      }
-
-      function hideSplash() {
-        var splash = document.getElementById('splashScreen');
-        if (splash) splash.classList.add('is-hide');
-      }
-
-      window.addEventListener('load', function () {
-        setTimeout(function () {
-          hideSplash();
-          showModal();
-          setTimeout(hideModal, NOTICE_MS);
-        }, SPLASH_MS);
-      });
-    })();
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        var s = document.getElementById('splashScreen');
+        if (s) s.classList.add('is-hide');
+      }, 4000);
+    });
   </script>
 </body>
 </html>

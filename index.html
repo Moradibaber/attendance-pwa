@@ -8,7 +8,7 @@
   <title>ثبت تردد</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
 
-  <style> 
+  <style>
     :root{
       --bg:#b1e4ec;
       --card:#e3c4a8;
@@ -89,16 +89,39 @@
     }
 
     .initial-note{
+      display:block!important;
       background:var(--noteBg)!important;
       border:1px solid var(--noteBorder)!important;
       color:var(--noteText)!important;
       border-radius:10px!important;
-      padding:8px 10px!important;
-      margin:0 0 4px 0!important;
+      padding:10px 12px!important;
+      margin:0 0 6px 0!important;
       text-align:center!important;
-      font-size:.8rem!important;
-      font-weight:700!important;
-      line-height:1.5!important;
+      font-size:.88rem!important;
+      font-weight:800!important;
+      line-height:1.7!important;
+      visibility:visible!important;
+      opacity:1!important;
+      height:auto!important;
+      min-height:auto!important;
+      max-height:none!important;
+      overflow:visible!important;
+      position:relative!important;
+      z-index:2!important;
+    }
+
+    #initialNotice{
+      display:block!important;
+      visibility:visible!important;
+      opacity:1!important;
+      height:auto!important;
+      min-height:auto!important;
+      max-height:none!important;
+      overflow:visible!important;
+      margin:0 0 6px 0!important;
+      padding:10px 12px!important;
+      border:1px solid var(--noteBorder)!important;
+      pointer-events:auto!important;
     }
 
     #personnelCode,#firstName,#lastName{
@@ -301,13 +324,8 @@
       padding:0!important;
     }
 
-    /* فقط اعلان‌ها و هشدارهای عمومی حذف شوند؛ GPS/Internet حفظ می‌شود */
-    [id*="notice"],
-    [id*="Notice"],
     [id*="alert"],
     [id*="Alert"],
-    [class*="notice"],
-    [class*="Notice"],
     [class*="alert"],
     [class*="Alert"]{
       display:none!important;
@@ -344,7 +362,7 @@
     <p id="onlineBadge" class="status"></p>
 
     <section class="initial-note" id="initialNotice">
-      حتما جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
+      جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
     </section>
 
     <section class="card compact-warning">
@@ -392,26 +410,37 @@
     </section>
   </main>
 
-  <script src="app.js?v=56"></script>
+  <script src="app.js?v=57"></script>
   <script>
     (function () {
-      function clearTopNodes() {
-        const bodyChildren = Array.from(document.body.children);
-        bodyChildren.forEach(el => {
-          if (!el) return;
-          if (el.id === 'splashScreen' || el.id === 'busyOverlay' || el.tagName === 'MAIN') return;
-          el.remove();
-        });
+      function showMainApp() {
+        var splash = document.getElementById('splashScreen');
+        var app = document.getElementById('mainApp');
+        var note = document.getElementById('initialNotice');
+
+        if (splash) splash.classList.add('is-hide');
+        if (app) app.classList.remove('app-hidden');
+
+        if (note) {
+          note.style.display = 'block';
+          note.style.visibility = 'visible';
+          note.style.opacity = '1';
+          note.hidden = false;
+        }
       }
 
-      document.addEventListener('DOMContentLoaded', () => {
-        clearTopNodes();
+      document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(showMainApp, 4000);
+      });
 
-        setTimeout(() => {
-          clearTopNodes();
-          document.getElementById('splashScreen').classList.add('is-hide');
-          document.getElementById('mainApp').classList.remove('app-hidden');
-        }, 4000);
+      window.addEventListener('load', function () {
+        var note = document.getElementById('initialNotice');
+        if (note) {
+          note.style.display = 'block';
+          note.style.visibility = 'visible';
+          note.style.opacity = '1';
+          note.hidden = false;
+        }
       });
     })();
   </script>

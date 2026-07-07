@@ -1590,6 +1590,9 @@ let heartbeatInterval = null;
 
 // Frontend.js (Append to end of file)
 
+// Frontend.js
+// REPLACE the fetch inside sendHeartbeat with this exact code
+
 function sendHeartbeat() {
   const personnelCode = localStorage.getItem("personnelCode");
   if (!personnelCode || !navigator.onLine) return;
@@ -1606,19 +1609,14 @@ function sendHeartbeat() {
 
   fetch(APPS_SCRIPT_URL, {
     method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: JSON.stringify(payload) 
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
   }).catch(() => {});
 }
 
-// Start interval
 setInterval(sendHeartbeat, 60000);
-function startHeartbeat() {
-  if (heartbeatInterval) return;
-  sendHeartbeat();
-  heartbeatInterval = setInterval(sendHeartbeat, 30000); // Every 30 seconds
-}
 
 function stopHeartbeat() {
   if (heartbeatInterval) {

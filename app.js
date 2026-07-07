@@ -1,5 +1,4 @@
 /* FILE: /app.js */
-/* REPLACE FULL FILE */
 
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
@@ -873,7 +872,11 @@ async function createRecord(type) {
   setStatus("تردد با GPS ذخیره شد.");
   await refreshUi();
 
-  if (navigator.onLine) scheduleSyncPendingRecords(500);
+  // --- IMMEDIATELY attempt to send to server if online ---
+  if (navigator.onLine) {
+    const serverPayload = buildServerPayload(record);
+    sendDataToBackend_ForImmediateSync(serverPayload); // Call the function to send
+  }
 }
 
 function createClientRecordId(personnelCode, baseMs) {
@@ -1584,4 +1587,39 @@ function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
   } catch (e) {
     return null;
   }
+}
+
+/* =========================
+   Immediate Send Logic
+========================= */
+
+async function sendDataToBackend_ForImmediateSync(payload) {
+    const scriptUrl = APPS_SCRIPT_URL; // Use the constant defined at the top
+
+    console.log("Attempting immediate send:", payload); // For debugging
+
+    try {
+        const response = await fetch(scriptUrl, {
+            method: 'POST',
+            headers: {
+                // Use the same headers as your sync logic, or adapt if different
+                'Content-Type': 'text/plain;charset=utf-8', // Or 'application/json' if GAS expects it
+            },
+            body: JSON.stringify(payload),
+            mode: 'no-cors', // IMPORTANT: Use no-cors for GAS Web Apps unless you have CORS configured on GAS
+        });
+
+        // With no-cors, we cannot read response.ok or response.text()
+        // We rely on the background sync to confirm delivery.
+        console.log(`Immediate send initiated. Response status is opaque due to no-cors.`);
+        showGpsToast("تردد در صف ارسال قرار گرفت.", 4000, "info"); // Inform user it's queued
+
+        // Optionally, you could try to update the record status here if you had a way to confirm,
+        // but with no-cors, it's safer to let the background sync handle the final status update.
+
+    } catch (error) {
+        console.error('Immediate send failed:', error);
+        // The record remains 'pending' in IndexedDB, and will be picked up by the background sync.
+        showGpsToast("خطا در ارسال فوری تردد. در صف ارسال باقی ماند.", 5000, "warning");
+    }
 }

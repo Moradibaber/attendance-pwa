@@ -30,10 +30,12 @@
       font-family:system-ui,-apple-system,sans-serif;
       direction:rtl;
       overflow-x:hidden;
+      min-height:100%;
     }
 
     body{
       padding:4px;
+      min-height:100vh;
     }
 
     .app{
@@ -64,8 +66,8 @@
     }
 
     .compact-warning{
-      background-color:#fff3e0!important;
-      border:1px solid #ffb74d!important;
+      background-color:var(--warn)!important;
+      border:1px solid var(--warnBorder)!important;
       padding:6px 10px!important;
     }
 
@@ -127,9 +129,11 @@
       font-weight:800!important;
       font-size:.9rem!important;
       min-height:34px!important;
+      line-height:1.2!important;
       border:none!important;
       cursor:pointer!important;
       width:100%!important;
+      margin:0!important;
     }
 
     .cam-ico{
@@ -145,14 +149,23 @@
     }
 
     .photo-row{
-      margin-top:4px;
+      margin:0!important;
+      padding:0!important;
+      min-height:0!important;
+      height:auto!important;
     }
 
+    #photoPreview,
     .preview{
-      display:block;
-      width:140px;
-      border-radius:8px;
-      margin:0 auto;
+      display:none!important;
+      width:140px!important;
+      height:auto!important;
+      border-radius:8px!important;
+      margin:0 auto!important;
+    }
+
+    #photoPreview[src]{
+      display:block!important;
     }
 
     .stats{
@@ -206,7 +219,7 @@
     #splashScreen{
       position:fixed;
       inset:0;
-      z-index:9999;
+      z-index:99999;
       background:var(--bg);
       display:flex;
       align-items:center;
@@ -219,6 +232,7 @@
 
     .splash-card{
       width:80%;
+      max-width:360px;
       text-align:center;
       background:#f4d2aa;
       border-radius:20px;
@@ -272,6 +286,7 @@
       padding:0!important;
     }
 
+    /* حذف هر اعلان/هشدار اولیه احتمالی */
     [id*="notice"],
     [id*="Notice"],
     [id*="alert"],
@@ -300,96 +315,6 @@
       opacity:0!important;
       pointer-events:none!important;
     }
-    /* === paste into style.css or inside <style> in index.html === */
-
-/* 1) کمتر کردن سفیدی صفحه */
-html, body {
-  margin: 0 !important;
-  padding: 0 !important;
-  background: #b1e4ec !important;
-}
-
-body {
-  min-height: 100vh !important;
-  overflow-x: hidden !important;
-}
-
-/* اگر بدنه خیلی خالی دیده می‌شود */
-.app {
-  padding: 4px !important;
-  margin: 0 auto !important;
-  max-width: 500px !important;
-}
-
-/* فاصله کارت‌ها را کم کن */
-.card {
-  margin-bottom: 4px !important;
-  padding: 6px 10px !important;
-}
-
-/* 2) حذف فضای خالی زیر دکمه سلفی */
-.photo-row,
-.preview-wrap,
-.selfie-preview-wrap,
-.selfie-box {
-  margin: 0 !important;
-  padding: 0 !important;
-  min-height: 0 !important;
-  height: auto !important;
-}
-
-.preview,
-#photoPreview {
-  display: none !important;   /* تا وقتی عکس گرفته نشده */
-  width: 140px !important;
-  height: auto !important;
-  margin: 0 auto !important;
-}
-
-/* اگر جا برای پیش‌نمایش از قبل رزرو شده */
-#photoPreview[src] {
-  display: block !important;
-}
-
-/* لیبل/دکمه سلفی فشرده‌تر */
-.camera-btn,
-.selfie-upload-label {
-  margin: 0 !important;
-  padding: 6px 10px !important;
-  min-height: 34px !important;
-  line-height: 1.2 !important;
-}
-
-/* 3) لوگوی اسپلش زود محو نشود */
-#splashScreen {
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 99999 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  background: #b1e4ec !important;
-}
-
-#splashScreen.is-hide {
-  display: none !important;
-}
-
-.splash-card {
-  width: 80% !important;
-  max-width: 360px !important;
-  text-align: center !important;
-  background: #f4d2aa !important;
-  border-radius: 20px !important;
-  padding-bottom: 12px !important;
-}
-
-.splash-card img {
-  width: 100% !important;
-  display: block !important;
-  border-radius: 20px 20px 0 0 !important;
-}
-
   </style>
 </head>
 
@@ -478,9 +403,7 @@ body {
           if (!txt) return;
 
           const matched = badTextList.some(t => txt.includes(t));
-          if (matched) {
-            el.remove();
-          }
+          if (matched) el.remove();
         });
       }
 
@@ -527,52 +450,15 @@ body {
           hardRemoveStartupTexts();
           document.getElementById('splashScreen').classList.add('is-hide');
           document.getElementById('mainApp').classList.remove('app-hidden');
-        }, 1500);
+        }, 4000); // زمان اسپلش بیشتر شد
 
         setTimeout(() => {
           clearTopNodes();
           hardRemoveBySelector();
           hardRemoveStartupTexts();
-        }, 2500);
+        }, 6500);
       });
     })();
-  </script>
-  <script>
-    // app.js یا اسکریپت انتهایی index.html
-
-document.addEventListener('DOMContentLoaded', () => {
-  const splash = document.getElementById('splashScreen');
-  const mainApp = document.getElementById('mainApp');
-  const preview = document.getElementById('photoPreview');
-
-  // اسپلش را زود نبند
-  if (splash && mainApp) {
-    splash.classList.remove('is-hide');
-    mainApp.classList.add('app-hidden');
-
-    setTimeout(() => {
-      splash.classList.add('is-hide');
-      mainApp.classList.remove('app-hidden');
-    }, 2800);
-  }
-
-  // پیش‌نمایش فقط وقتی عکس هست
-  if (preview) {
-    const updatePreview = () => {
-      const src = preview.getAttribute('src');
-      if (src && src.trim() !== '') {
-        preview.style.display = 'block';
-      } else {
-        preview.style.display = 'none';
-      }
-    };
-
-    updatePreview();
-    preview.addEventListener('load', updatePreview);
-    preview.addEventListener('error', updatePreview);
-  }
-});
-
   </script>
 </body>
 </html>

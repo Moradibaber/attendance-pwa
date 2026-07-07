@@ -1,169 +1,494 @@
-const CACHE_NAME = "attendance-pwa-v60";
-const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
+<!-- File: index.html (replace whole file with this) -->
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f766e" />
+  <link rel="manifest" href="manifest.json?v=4" />
+  <title>ثبت تردد</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
 
-const DB_NAME = "attendance-pwa-db"; 
-const DB_VERSION = 3; 
-const STORE_RECORDS = "records";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(FILES);
-    })
-  );
-
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      );
-    }).then(() => {
-      return self.clients.claim();
-    })
-  );
-});
-
-self.addEventListener('fetch', (event) => {
-  // خارج کردن کامل درخواست‌های ساعت جهانی از حیطه مدیریت سرویس‌ورکر
-  if (event.request.url.includes('worldtimeapi.org')) {
-    return; 
-  }
-
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request).catch(() => {
-        console.warn("Fetch failed and not in cache:", event.request.url);
-        return new Response("Offline Content Not Available", { status: 503 });
-      });
-    })
-  );
-});
-
-async function syncPendingRecordsInBackground() {
-  try {
-    const db = await openDbInServiceWorker();
-    const records = await dbGetAllInServiceWorker(db, STORE_RECORDS);
-    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
-
-    if (!list.length) {
-      await notifyClients("SYNC_COMPLETE");
-      return;
-    } 
-
-  for (const record of list) {
-
-  try {
-
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify(record)
-    });
-
-    const text = await response.text();
-
-    console.log("Sending to:", APPS_SCRIPT_URL);
-    console.log("HTTP Status:", response.status);
-    console.log("Response:", text);
-
-    const result = JSON.parse(text);
-
-    if (result.ok) {
-      record.status = "sent";
-    } else {
-      record.status = "failed";
+  <style>
+    :root{
+      --bg:#b1e4ec;
+      --card:#e3c4a8;
+      --text:#3f2f21;
+      --border:#c5a88d;
+      --primary:#28a745;
+      --blue:#3498db;
+      --warn:#fff3e0;
+      --warnBorder:#ffb74d;
+      --noteBg:#e8f4fd;
+      --noteBorder:#7fb3d5;
+      --noteText:#1f4e79;
     }
 
-    await dbPutInServiceWorker(db, STORE_RECORDS, record);
+    *{box-sizing:border-box}
 
-  } catch (err) {
+    html,body{
+      margin:0;
+      padding:0;
+      background:var(--bg)!important;
+      font-family:system-ui,-apple-system,sans-serif;
+      direction:rtl;
+      overflow-x:hidden;
+      min-height:100%;
+    }
 
-    console.error("SW Sync Error:", err);
-    console.error("URL:", APPS_SCRIPT_URL);
+    body{
+      padding:4px;
+      min-height:100vh;
+    }
 
-    record.status = "failed";
-    await dbPutInServiceWorker(db, STORE_RECORDS, record);
+    .app{
+      max-width:500px;
+      margin:0 auto;
+    }
 
-  }
+    .app-hidden{
+      display:none!important;
+    }
 
-}   // پایان حلقه for
+    .card{
+      background-color:var(--card)!important;
+      border:1px solid var(--border)!important;
+      border-radius:12px!important;
+      padding:6px 10px!important;
+      margin:0 0 4px 0!important;
+      box-shadow:0 2px 6px rgba(0,0,0,.08)!important;
+    }
 
-await notifyClients("SYNC_COMPLETE");
+    .card h2{
+      font-size:.95rem!important;
+      font-weight:800!important;
+      color:var(--text)!important;
+      text-align:center!important;
+      margin:0 0 4px 0!important;
+      line-height:1.2;
+    }
 
-} catch (err) {
+    .compact-warning{
+      background-color:var(--warn)!important;
+      border:1px solid var(--warnBorder)!important;
+      padding:6px 10px!important;
+    }
 
-  console.error("syncPendingRecordsInBackground Error:", err);
+    .compact-warning strong{
+      display:block;
+      text-align:center;
+      font-size:.85rem;
+      color:#d35400;
+      margin-bottom:2px;
+    }
 
-  await notifyClients("SYNC_FAILED");
-}
-function openDbInServiceWorker() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    .compact-warning p{
+      margin:0;
+      font-size:.75rem;
+      line-height:1.4;
+      text-align:justify;
+    }
 
-    req.onupgradeneeded = (e) => {
-      const openedDb = e.target.result;
+    /* ---- Popup (modal) shown on top of form ---- */
+    #initialNoticeModal{
+      position:fixed;
+      inset:0;
+      z-index:99998;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background:rgba(0,0,0,.45);
+      padding:14px;
+    }
 
-      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = openedDb.createObjectStore(STORE_RECORDS, {
-          keyPath: "id",
-          autoIncrement: true
-        });
+    #initialNoticeModal.show{
+      display:flex;
+    }
 
-        store.createIndex("status", "status");
+    .notice-box{
+      width:min(520px, 100%);
+      background:#ffffff;
+      border-radius:14px;
+      border:2px solid var(--noteBorder);
+      box-shadow:0 12px 30px rgba(0,0,0,.25);
+      overflow:hidden;
+    }
+
+    .notice-head{
+      background:var(--noteBg);
+      color:var(--noteText);
+      font-weight:900;
+      padding:10px 12px;
+      text-align:center;
+      border-bottom:1px solid var(--noteBorder);
+    }
+
+    .notice-body{
+      padding:12px 14px;
+      text-align:center;
+      color:#111827;
+      font-weight:900;
+      line-height:1.9;
+      font-size:.95rem;
+    }
+
+    .notice-actions{
+      display:flex;
+      gap:10px;
+      padding:12px 14px;
+      border-top:1px solid #eee;
+      background:#fafafa;
+    }
+
+    .notice-btn{
+      flex:1;
+      border:none;
+      border-radius:10px;
+      padding:10px 12px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    .notice-btn.primary{
+      background:#0f766e;
+      color:#fff;
+    }
+
+    .notice-btn.ghost{
+      background:#e5e7eb;
+      color:#111827;
+    }
+
+    #personnelCode,#firstName,#lastName{
+      background-color:#ffcc00!important;
+      color:#111827!important;
+      font-weight:900!important;
+      font-size:1rem!important;
+      text-align:center!important;
+      border:1px solid #e0b000!important;
+      border-radius:8px!important;
+      padding:8px!important;
+      margin:0 0 6px 0!important;
+      width:100%!important;
+      outline:none;
+    }
+
+    #saveProfileBtn{
+      background-color:var(--primary)!important;
+      color:#fff!important;
+      font-weight:800!important;
+      font-size:.9rem!important;
+      border:none!important;
+      border-radius:8px!important;
+      padding:8px!important;
+      width:100%!important;
+      cursor:pointer!important;
+    }
+
+    .camera-row{
+      margin:0!important;
+      padding:0!important;
+    }
+
+    .camera-btn{
+      display:flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      gap:6px!important;
+      padding:6px 10px!important;
+      background:var(--blue)!important;
+      color:#fff!important;
+      border-radius:8px!important;
+      font-weight:800!important;
+      font-size:.9rem!important;
+      min-height:34px!important;
+      line-height:1.2!important;
+      border:none!important;
+      cursor:pointer!important;
+      width:100%!important;
+      margin:0!important;
+    }
+
+    .cam-ico{
+      width:18px;
+      height:18px;
+      background:#fff;
+      -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
+      mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    #photoInput{ display:none!important; }
+
+    .photo-row{
+      margin:0!important;
+      padding:0!important;
+      min-height:0!important;
+      height:auto!important;
+    }
+
+    #photoPreview,.preview{
+      display:none!important;
+      width:140px!important;
+      height:auto!important;
+      border-radius:8px!important;
+      margin:0 auto!important;
+    }
+
+    #photoPreview[src]{ display:block!important; }
+
+    .stats{
+      display:grid!important;
+      grid-template-columns:1fr 1fr 1fr!important;
+      gap:6px!important;
+      margin:4px 0!important;
+    }
+
+    .stats>div{
+      border-radius:8px!important;
+      padding:6px 2px!important;
+      text-align:center!important;
+      color:#fff!important;
+      font-weight:800!important;
+    }
+
+    .stats>div:nth-child(1){background:#3399ff!important}
+    .stats>div:nth-child(2){background:#00cc44!important}
+    .stats>div:nth-child(3){background:#ff1a1a!important}
+
+    .stats span{ display:block; font-size:1.1rem; }
+    .stats small{ font-size:.65rem; opacity:.9; }
+
+    .records{
+      max-height:150px;
+      overflow-y:auto;
+      font-size:.8rem;
+    }
+
+    .record-item{
+      padding:4px;
+      border-bottom:1px solid var(--border);
+      text-align:center;
+    }
+
+    .status{
+      font-size:.75rem;
+      margin:2px 0;
+      min-height:14px;
+      text-align:center;
+    }
+
+    #splashScreen{
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      background:var(--bg);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    #splashScreen.is-hide{ display:none!important; }
+
+    .splash-card{
+      width:80%;
+      max-width:360px;
+      text-align:center;
+      background:#f4d2aa;
+      border-radius:20px;
+      padding-bottom:15px;
+    }
+
+    .splash-card img{
+      width:100%;
+      display:block;
+      border-radius:20px 20px 0 0;
+    }
+
+    .busy-overlay{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.5);
+      z-index:10000;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .busy-box{
+      background:#fff;
+      padding:20px;
+      border-radius:12px;
+      text-align:center;
+    }
+
+    .busy-spinner{
+      width:30px;
+      height:30px;
+      border:3px solid #eee;
+      border-top-color:#f97316;
+      border-radius:50%;
+      animation:spin .8s linear infinite;
+      margin:0 auto 10px;
+    }
+
+    @keyframes spin{ to{transform:rotate(360deg)} }
+
+    #onlineBadge:empty,
+    #profileStatus:empty,
+    #captureStatus:empty,
+    #syncStatus:empty{
+      display:none!important;
+      min-height:0!important;
+      margin:0!important;
+      padding:0!important;
+    }
+
+    [id*="alert"],
+    [id*="Alert"],
+    [class*="alert"],
+    [class*="Alert"]{
+      display:none!important;
+      visibility:hidden!important;
+      height:0!important;
+      min-height:0!important;
+      max-height:0!important;
+      overflow:hidden!important;
+      margin:0!important;
+      padding:0!important;
+      border:0!important;
+      opacity:0!important;
+      pointer-events:none!important;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="splashScreen">
+    <div class="splash-card">
+      <img src="cover-rights-reserved.png" alt="Welcome">
+      <div style="font-weight:800;margin-top:10px;">خوش آمدید</div>
+    </div>
+  </div>
+
+  <!-- Popup on top of form (NOT inside logo) -->
+  <div id="initialNoticeModal" aria-hidden="true">
+    <div class="notice-box" role="dialog" aria-modal="true">
+      <div class="notice-head">اعلام اولیه</div>
+      <div class="notice-body">
+        جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
+      </div>
+      <div class="notice-actions">
+        <button id="noticeOkBtn" class="notice-btn primary" type="button">متوجه شدم</button>
+        <button id="noticeCloseBtn" class="notice-btn ghost" type="button">بستن</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="busyOverlay" class="busy-overlay" style="display:none;">
+    <div class="busy-box">
+      <div class="busy-spinner"></div>
+      <div id="busyText" style="font-size:.85rem">در حال پردازش...</div>
+    </div>
+  </div>
+
+  <main class="app app-hidden" id="mainApp">
+    <p id="onlineBadge" class="status"></p>
+
+    <section class="card compact-warning">
+      <strong>هشدار مهم</strong>
+      <p>پاک کردن حافظه مرورگر یا حذف برنامه باعث حذف اطلاعات ارسال‌نشده می‌شود.</p>
+    </section>
+
+    <section class="card">
+      <h2>مشخصات پرسنلی</h2>
+      <input id="personnelCode" inputmode="numeric" placeholder="شماره پرسنلی" />
+      <input id="firstName" placeholder="نام" />
+      <input id="lastName" placeholder="نام خانوادگی" />
+      <button id="saveProfileBtn">ذخیره مشخصات</button>
+      <p id="profileStatus" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>ثبت تردد</h2>
+      <input id="photoInput" type="file" accept="image/*" capture="user" />
+      <div class="camera-row">
+        <label for="photoInput" class="camera-btn">
+          <span class="cam-ico"></span>
+          <span>عکس سلفی خود را بگیرید</span>
+        </label>
+      </div>
+      <div class="photo-row">
+        <img id="photoPreview" class="preview" style="display:none" />
+      </div>
+      <p id="captureStatus" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>وضعیت</h2>
+      <div class="stats">
+        <div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
+        <div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
+        <div><span id="failedCount">0</span><small>ناموفق</small></div>
+      </div>
+      <p id="syncStatus" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>ترددهای اخیر</h2>
+      <div id="recordsList" class="records"></div>
+    </section>
+  </main>
+
+  <script src="app.js?v=57"></script>
+  <script>
+    (function () {
+      var SPLASH_MS = 4000;   // logo duration
+      var NOTICE_MS = 4000;   // popup duration on form after splash
+
+      function showModal() {
+        var modal = document.getElementById('initialNoticeModal');
+        if (!modal) return;
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
       }
 
-      if (!openedDb.objectStoreNames.contains("profile")) {
-        openedDb.createObjectStore("profile", {
-          keyPath: "id"
-        });
+      function hideModal() {
+        var modal = document.getElementById('initialNoticeModal');
+        if (!modal) return;
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
       }
-    };
 
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
+      function showMainApp() {
+        var splash = document.getElementById('splashScreen');
+        var app = document.getElementById('mainApp');
+        if (splash) splash.classList.add('is-hide');
+        if (app) app.classList.remove('app-hidden');
+      }
 
-function dbGetAllInServiceWorker(db, store) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.getAll();
+      document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+          showMainApp();     // show form
+          showModal();       // show popup on top of form
 
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
+          setTimeout(function () {
+            hideModal();
+          }, NOTICE_MS);
+        }, SPLASH_MS);
 
-function dbPutInServiceWorker(db, store, value) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readwrite");
-    const st = tx.objectStore(store);
-    const req = st.put(value);
+        var ok = document.getElementById('noticeOkBtn');
+        var close = document.getElementById('noticeCloseBtn');
+        if (ok) ok.addEventListener('click', hideModal);
+        if (close) close.addEventListener('click', hideModal);
 
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function notifyClients(type) {
-  const clientsList = await self.clients.matchAll({
-    includeUncontrolled: true,
-    type: "window"
-  });
-
-  for (const client of clientsList) {
-    client.postMessage({
-      type
-    });
-  }
-}
-}
+        var modal = document.getElementById('initialNoticeModal');
+        if (modal) {
+          modal.addEventListener('click', function (e) {
+            if (e.target === modal) hideModal();
+          });
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-<!doctype html> 
+<!doctype html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
@@ -18,6 +18,9 @@
       --blue:#3498db;
       --warn:#fff3e0;
       --warnBorder:#ffb74d;
+      --noteBg:#e8f4fd;
+      --noteBorder:#7fb3d5;
+      --noteText:#1f4e79;
     }
 
     *{box-sizing:border-box}
@@ -83,6 +86,19 @@
       font-size:.75rem;
       line-height:1.4;
       text-align:justify;
+    }
+
+    .initial-note{
+      background:var(--noteBg)!important;
+      border:1px solid var(--noteBorder)!important;
+      color:var(--noteText)!important;
+      border-radius:10px!important;
+      padding:8px 10px!important;
+      margin:0 0 4px 0!important;
+      text-align:center!important;
+      font-size:.8rem!important;
+      font-weight:700!important;
+      line-height:1.5!important;
     }
 
     #personnelCode,#firstName,#lastName{
@@ -327,6 +343,10 @@
   <main class="app app-hidden" id="mainApp">
     <p id="onlineBadge" class="status"></p>
 
+    <section class="initial-note" id="initialNotice">
+      جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
+    </section>
+
     <section class="card compact-warning">
       <strong>هشدار مهم</strong>
       <p>پاک کردن حافظه مرورگر یا حذف برنامه باعث حذف اطلاعات ارسال‌نشده می‌شود.</p>
@@ -375,45 +395,6 @@
   <script src="app.js?v=56"></script>
   <script>
     (function () {
-      function hardRemoveStartupTexts() {
-        const badTextList = [
-          'اعلام اولیه بابت باز کردن اینترنت و ج پی اس'
-        ];
-
-        const all = document.body.querySelectorAll('*');
-        all.forEach(el => {
-          if (!el || !el.parentNode) return;
-          if (el.id === 'mainApp' || el.id === 'splashScreen' || el.id === 'busyOverlay') return;
-
-          const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-          if (!txt) return;
-
-          const matched = badTextList.some(t => txt.includes(t));
-          if (matched) el.remove();
-        });
-      }
-
-      function hardRemoveBySelector() {
-        const selectors = [
-          '#earlyNotice',
-          '#initNotice',
-          '#startupNotice',
-          '#tempNotice',
-          '#locationNotice',
-          '#networkNotice',
-          '.startup-notice',
-          '.temp-notice',
-          '.internet-gps-note',
-          '.gps-note',
-          '.notice',
-          '.alert'
-        ];
-
-        selectors.forEach(sel => {
-          document.querySelectorAll(sel).forEach(el => el.remove());
-        });
-      }
-
       function clearTopNodes() {
         const bodyChildren = Array.from(document.body.children);
         bodyChildren.forEach(el => {
@@ -425,22 +406,12 @@
 
       document.addEventListener('DOMContentLoaded', () => {
         clearTopNodes();
-        hardRemoveBySelector();
-        hardRemoveStartupTexts();
 
         setTimeout(() => {
           clearTopNodes();
-          hardRemoveBySelector();
-          hardRemoveStartupTexts();
           document.getElementById('splashScreen').classList.add('is-hide');
           document.getElementById('mainApp').classList.remove('app-hidden');
         }, 4000);
-
-        setTimeout(() => {
-          clearTopNodes();
-          hardRemoveBySelector();
-          hardRemoveStartupTexts();
-        }, 6500);
       });
     })();
   </script>

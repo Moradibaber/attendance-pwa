@@ -1593,31 +1593,68 @@ let heartbeatInterval = null;
 // Frontend.js
 // REPLACE the fetch inside sendHeartbeat with this exact code
 
+// app.js
+// ADD TO END OF FILE, OUTSIDE ALL OTHER FUNCTIONS
+
+let heartbeatInterval = null;
+
+// Ensure this function is defined or use the one from the frontend code.
+function getTime(d) {
+  if (!d) d = new Date();
+  var hh = String(d.getHours()).padStart(2, "0");
+  var mm = String(d.getMinutes()).padStart(2, "0");
+  var ss = String(d.getSeconds()).padStart(2, "0");
+  return hh + ":" + mm + ":" + ss;
+}
+
+// Function to send heartbeat data
 function sendHeartbeat() {
-  const personnelCode = localStorage.getItem("personnelCode");
-  if (!personnelCode || !navigator.onLine) return;
+  const personnelCode = localStorage.getItem("personnelCode") || "";
+  const url = APPS_SCRIPT_URL; // Use the defined APPS_SCRIPT_URL from the file
+
+  if (!personnelCode || !url) {
+    console.error("Heartbeat not sent: Missing personnelCode or APPS_SCRIPT_URL");
+    return;
+  }
+
+  if (!navigator.onLine) {
+    // console.log("Heartbeat skipped: Offline");
+    return;
+  }
 
   const payload = {
     type: "Heartbeat",
     personnelCode: personnelCode,
     firstName: localStorage.getItem("firstName") || "",
     lastName: localStorage.getItem("lastName") || "",
-    clientTime: new Date().toISOString(),
-    connectionStatus: "online",
-    connectionStatusFa: "آنلاین"
+    clientTime: new Date().toISOString()
   };
 
-  fetch(APPS_SCRIPT_URL, {
+  // Using URLSearchParams for the body as per backend expectation
+  const body = new URLSearchParams(payload).toString();
+
+  fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  }).catch(() => {});
+    mode: "no-cors", // Necessary for Apps Script POST without CORS issues
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body
+  }).catch(function(err) {
+    // console.error("Heartbeat fetch failed:", err);
+  });
 }
 
-setInterval(sendHeartbeat, 60000);
+// Function to start the heartbeat interval
+function startHeartbeat() {
+  if (heartbeatInterval) return; // Already running
 
+  // Initial send
+  sendHeartbeat();
+
+  // Set interval to send heartbeat every 30 seconds
+  heartbeatInterval = setInterval(sendHeartbeat, 30000);
+}
+
+// Function to stop the heartbeat interval
 function stopHeartbeat() {
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
@@ -1625,17 +1662,34 @@ function stopHeartbeat() {
   }
 }
 
-// Lifecycle Events
-document.addEventListener("DOMContentLoaded", () => {
-  if (localStorage.getItem("personnelCode")) startHeartbeat();
+// --- Event Listeners ---
+
+// Start heartbeat when the DOM is ready
+document.addEventListener("DOMContentLoaded", function() {
+  // Ensure policy is loaded before starting potentially conditional heartbeat
+  // This part might need adjustment based on exact policy loading logic
+  // For now, assume we start it and let the backend handle policy checks.
+  startHeartbeat();
 });
 
-window.addEventListener("online", startHeartbeat);
-window.addEventListener("offline", stopHeartbeat);
+// Send heartbeat and restart interval when connection is back online
+window.addEventListener("online", function() {
+  // console.log("Went online. Sending heartbeat and potentially restarting interval.");
+  sendHeartbeat();
+  startHeartbeat(); // Ensure it's running if it was stopped
+});
 
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && navigator.onLine) {
+// Stop sending heartbeat when offline (or handle differently if needed)
+window.addEventListener("offline", function() {
+  // console.log("Went offline. Stopping heartbeat interval.");
+  stopHeartbeat();
+});
+
+// Send heartbeat when the tab becomes visible again
+document.addEventListener("visibilitychange", function() {
+  if (!document.hidden) {
+    // console.log("Tab became visible. Sending heartbeat.");
     sendHeartbeat();
-    startHeartbeat();
+    startHeartbeat(); // Ensure it's running
   }
 });

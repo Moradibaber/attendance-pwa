@@ -1411,3 +1411,44 @@ async function compressImage(file) {
         reader.readAsDataURL(file);
     });
 }
+// File: app.js
+// Append the following code to the very end of the file, outside all existing function blocks.
+
+window.startHeartbeat = function() {
+    if (window.heartbeatInterval) return;
+    
+    sendHeartbeat();
+    
+    window.heartbeatInterval = setInterval(function() {
+        if (navigator.onLine) {
+            sendHeartbeat();
+        }
+    }, 30000);
+};
+
+window.sendHeartbeat = function() {
+    const code = localStorage.getItem("personnelCode");
+    const url = localStorage.getItem("APPS_SCRIPT_URL");
+    
+    if (!code || !url) return;
+
+    const payload = new URLSearchParams({
+        type: "Heartbeat",
+        personnelCode: code,
+        firstName: localStorage.getItem("firstName") || "",
+        lastName: localStorage.getItem("lastName") || "",
+        clientTime: new Date().toISOString()
+    });
+
+    fetch(url, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: payload
+    }).catch(err => console.error("Heartbeat error:", err));
+};
+
+document.addEventListener("DOMContentLoaded", function() {
+    window.startHeartbeat();
+});
+

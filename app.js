@@ -356,39 +356,23 @@ function scheduleSyncPendingRecords(delay = 0) {
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    // افزایش ورژن به 5 برای اطمینان از اجرای مجدد ساختار دیتابیس
+    const request = indexedDB.open("AttendanceDB", 5); 
 
-    req.onupgradeneeded = (e) => {
-      const openedDb = e.target.result;
-
-      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = openedDb.createObjectStore(STORE_RECORDS, {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        store.createIndex("status", "status");
-        store.createIndex("clientRecordId", "clientRecordId", { unique: false });
-      } else {
-        const tx = e.target.transaction;
-        const store = tx.objectStore(STORE_RECORDS);
-
-        if (!store.indexNames.contains("status")) store.createIndex("status", "status");
-        if (!store.indexNames.contains("clientRecordId")) {
-          store.createIndex("clientRecordId", "clientRecordId", { unique: false });
-        }
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      
+      // ساخت جدول رکوردها
+      if (!db.objectStoreNames.contains("RecordsStore")) {
+        db.createObjectStore("RecordsStore", { keyPath: "clientRecordId" });
       }
-
-      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
-        openedDb.createObjectStore(STORE_PROFILE, { keyPath: "id" });
-      }
-
-      if (!openedDb.objectStoreNames.contains(STORE_CONFIG)) {
-        openedDb.createObjectStore(STORE_CONFIG, { keyPath: "id" });
-      }
+      
+      // اگر در کدتان برای پروفایل یا تنظیمات جدول دیگری دارید، اینجا اضافه کنید
+      // مثال: if (!db.objectStoreNames.contains("Settings")) { db.createObjectStore("Settings"); }
     };
 
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 }
 

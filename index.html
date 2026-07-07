@@ -1,5 +1,6 @@
-<!doctype html> 
-<html lang="fa" dir="rtl"> 
+<!-- File: index.html (replace whole file with this) -->
+<!doctype html>
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -88,40 +89,19 @@
       text-align:justify;
     }
 
-    .initial-note{
-      display:block!important;
+    /* --- popup note shown after logo --- */
+    #initialNotice{
+      display:none;
       background:var(--noteBg)!important;
       border:1px solid var(--noteBorder)!important;
       color:var(--noteText)!important;
-      border-radius:10px!important;
+      border-radius:12px!important;
       padding:10px 12px!important;
-      margin:0 0 6px 0!important;
+      margin:10px 12px 0 12px!important;
       text-align:center!important;
-      font-size:.88rem!important;
-      font-weight:800!important;
+      font-size:.9rem!important;
+      font-weight:900!important;
       line-height:1.7!important;
-      visibility:visible!important;
-      opacity:1!important;
-      height:auto!important;
-      min-height:auto!important;
-      max-height:none!important;
-      overflow:visible!important;
-      position:relative!important;
-      z-index:2!important;
-    }
-
-    #initialNotice{
-      display:block!important;
-      visibility:visible!important;
-      opacity:1!important;
-      height:auto!important;
-      min-height:auto!important;
-      max-height:none!important;
-      overflow:visible!important;
-      margin:0 0 6px 0!important;
-      padding:10px 12px!important;
-      border:1px solid var(--noteBorder)!important;
-      pointer-events:auto!important;
     }
 
     #personnelCode,#firstName,#lastName{
@@ -348,6 +328,11 @@
     <div class="splash-card">
       <img src="cover-rights-reserved.png" alt="Welcome">
       <div style="font-weight:800;margin-top:10px;">خوش آمدید</div>
+
+      <!-- shown AFTER logo (end of splash) for 4 seconds -->
+      <div id="initialNotice">
+        جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
+      </div>
     </div>
   </div>
 
@@ -360,10 +345,6 @@
 
   <main class="app app-hidden" id="mainApp">
     <p id="onlineBadge" class="status"></p>
-
-    <section class="initial-note" id="initialNotice">
-      جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
-    </section>
 
     <section class="card compact-warning">
       <strong>هشدار مهم</strong>
@@ -413,34 +394,24 @@
   <script src="app.js?v=57"></script>
   <script>
     (function () {
-      function showMainApp() {
+      var SPLASH_MS = 4000;      // logo time
+      var NOTICE_MS = 4000;      // popup time after logo
+
+      function showNoticeThenApp() {
         var splash = document.getElementById('splashScreen');
-        var app = document.getElementById('mainApp');
         var note = document.getElementById('initialNotice');
+        var app = document.getElementById('mainApp');
 
-        if (splash) splash.classList.add('is-hide');
-        if (app) app.classList.remove('app-hidden');
+        if (note) note.style.display = 'block';
 
-        if (note) {
-          note.style.display = 'block';
-          note.style.visibility = 'visible';
-          note.style.opacity = '1';
-          note.hidden = false;
-        }
+        setTimeout(function () {
+          if (splash) splash.classList.add('is-hide');
+          if (app) app.classList.remove('app-hidden');
+        }, NOTICE_MS);
       }
 
       document.addEventListener('DOMContentLoaded', function () {
-        setTimeout(showMainApp, 6000);
-      });
-
-      window.addEventListener('load', function () {
-        var note = document.getElementById('initialNotice');
-        if (note) {
-          note.style.display = 'block';
-          note.style.visibility = 'visible';
-          note.style.opacity = '1';
-          note.hidden = false;
-        }
+        setTimeout(showNoticeThenApp, SPLASH_MS);
       });
     })();
   </script>

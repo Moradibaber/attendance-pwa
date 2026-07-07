@@ -1,8 +1,8 @@
 /* FILE: /app.js */
-/* REPLACE FULL FILE */ 
+/* REPLACE FULL FILE */
 
 const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 6; // افزایش ورژن برای اعمال قطعی تغییرات ساختار دیتابیس
+const DB_VERSION = 7;
 
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
@@ -28,93 +28,20 @@ const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
 
+const HEARTBEAT_INTERVAL_MS = 60 * 1000;
+
 let currentPhoto = "";
 let pendingLocation = null;
 let syncRunning = false;
 let syncTimer = null;
 let lastAdminMessage = null;
+let heartbeatTimer = null;
 
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
 
-// --- Heartbeat Configuration ---
-const HEARTBEAT_INTERVAL_MS = 60 * 1000; 
-let heartbeatTimer = null;
-// --- End Heartbeat Configuration ---
-
 const $ = (id) => document.getElementById(id);
-
-/* =========================
-   Busy Overlay (Loader)
-========================= */
-
-function setBusy(isBusy, message = "در حال پردازش...") {
-  const overlay = $("busyOverlay");
-  const text = $("busyText");
-  if (!overlay || !text) return;
-
-  text.textContent = message;
-  overlay.style.display = isBusy ? "flex" : "none";
-}
-
-/* =========================
-   Jalali (Persian) Date Converter
-========================= */
-
-function getJalaliDateParts(date = new Date()) {
-  const g_y = date.getFullYear();
-  const g_m = date.getMonth() + 1;
-  const g_d = date.getDate();
-
-  let g_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  let jy_days_in_month = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
-
-  let gy = g_y - 1600;
-  let gm = g_m - 1;
-  let gd = g_d - 1;
-
-  let g_day_no =
-    365 * gy +
-    Math.floor((gy + 3) / 4) -
-    Math.floor((gy + 99) / 100) +
-    Math.floor((gy + 399) / 400);
-
-  for (let i = 0; i < gm; ++i) g_day_no += g_days_in_month[i];
-
-  if (gm > 1 && ((gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0)) g_day_no++;
-
-  g_day_no += gd;
-
-  let j_day_no = g_day_no - 79;
-  let j_np = Math.floor(j_day_no / 12053);
-  j_day_no = j_day_no % 12053;
-
-  let jy = 979 + 33 * j_np + 4 * Math.floor(j_day_no / 1461);
-  j_day_no %= 1461;
-
-  if (j_day_no >= 366) {
-    jy += Math.floor((j_day_no - 1) / 365);
-    j_day_no = (j_day_no - 1) % 365;
-  }
-
-  let i = 0;
-  for (i = 0; i < 11 && j_day_no >= jy_days_in_month[i]; ++i) j_day_no -= jy_days_in_month[i];
-
-  let jm = i + 1;
-  let jd = j_day_no + 1;
-
-  return {
-    jy,
-    jm: String(jm).padStart(2, "0"),
-    jd: String(jd).padStart(2, "0"),
-  };
-}
-
-function getJalaliIsoDate(d = new Date()) {
-  const p = getJalaliDateParts(d);
-  return `${p.jy}/${p.jm}/${p.jd}`;
-}
 
 /* =========================
    Boot
@@ -123,13 +50,10 @@ function getJalaliIsoDate(d = new Date()) {
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     setTimeout(() => {
-      try {
-        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
-      } catch (_) {}
+      showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
     }, 4200);
   } catch (_) {}
 
-  // حذف تابع اولیه باز کردن سراسری برای دوری از خطای حالت کانکشن
   try {
     const testDb = await openDb();
     testDb.close();
@@ -168,22 +92,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   updateOnlineBadge();
+
   if (navigator.onLine) {
     startHeartbeat();
+    scheduleSyncPendingRecords(1000);
   }
-  window.addEventListener('online', () => {
-    updateOnlineBadge();
-    startHeartbeat();
-  });
-  window.addEventListener('offline', () => {
-    updateOnlineBadge();
-    stopHeartbeat();
-  });
 });
 
 /* =========================
    UI Helpers
 ========================= */
+
+function setBusy(isBusy, message = "در حال پردازش...") {
+  const overlay = $("busyOverlay");
+  const text = $("busyText");
+  if (!overlay || !text) return;
+
+  text.textContent = message;
+  overlay.style.display = isBusy ? "flex" : "none";
+}
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");
@@ -266,6 +193,68 @@ function escapeHtml(v) {
 }
 
 /* =========================
+   Jalali Date
+========================= */
+
+function getJalaliDateParts(date = new Date()) {
+  const g_y = date.getFullYear();
+  const g_m = date.getMonth() + 1;
+  const g_d = date.getDate();
+
+  const g_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const jy_days_in_month = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+
+  let gy = g_y - 1600;
+  let gm = g_m - 1;
+  let gd = g_d - 1;
+
+  let g_day_no =
+    365 * gy +
+    Math.floor((gy + 3) / 4) -
+    Math.floor((gy + 99) / 100) +
+    Math.floor((gy + 399) / 400);
+
+  for (let i = 0; i < gm; ++i) g_day_no += g_days_in_month[i];
+
+  if (gm > 1 && ((gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0)) {
+    g_day_no++;
+  }
+
+  g_day_no += gd;
+
+  let j_day_no = g_day_no - 79;
+  const j_np = Math.floor(j_day_no / 12053);
+  j_day_no %= 12053;
+
+  let jy = 979 + 33 * j_np + 4 * Math.floor(j_day_no / 1461);
+  j_day_no %= 1461;
+
+  if (j_day_no >= 366) {
+    jy += Math.floor((j_day_no - 1) / 365);
+    j_day_no = (j_day_no - 1) % 365;
+  }
+
+  let i = 0;
+  for (i = 0; i < 11 && j_day_no >= jy_days_in_month[i]; ++i) {
+    j_day_no -= jy_days_in_month[i];
+  }
+
+  const jm = i + 1;
+  const jd = j_day_no + 1;
+
+  return {
+    jy,
+    jm: String(jm).padStart(2, "0"),
+    jd: String(jd).padStart(2, "0"),
+  };
+}
+
+function getJalaliIsoDate(d = new Date()) {
+  const p = getJalaliDateParts(d);
+  return `${p.jy}/${p.jm}/${p.jd}`;
+}
+
+/* =========================
    Events
 ========================= */
 
@@ -291,160 +280,182 @@ function bindEvents() {
 }
 
 /* =========================
-   Auto Sync
-========================= */
-
-function setupAutoSync() {
-  updateOnlineBadge();
-
-  window.addEventListener("online", async () => {
-    updateOnlineBadge();
-    await refreshPolicyIfPossible();
-    await markFirstConnectionForOfflineRecords();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  window.addEventListener("offline", updateOnlineBadge);
-
-  window.addEventListener("focus", async () => {
-    if (!navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  document.addEventListener("visibilitychange", async () => {
-    if (document.hidden || !navigator.onLine) return;
-    await refreshPolicyIfPossible();
-    scheduleSyncPendingRecords(500);
-    await fetchMessages();
-  });
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.addEventListener("message", async (event) => {
-      if (!event.data) return;
-
-      if (event.data.type === "SYNC_COMPLETE") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار انجام شد");
-      }
-
-      if (event.data.type === "SYNC_FAILED") {
-        await refreshUi();
-        setSyncStatus("ارسال خودکار کامل نشد");
-      }
-    });
-  }
-
-  setInterval(() => {
-    if (navigator.onLine) scheduleSyncPendingRecords(0);
-  }, 60000);
-
-  if (navigator.onLine) {
-    refreshPolicyIfPossible().finally(() => scheduleSyncPendingRecords(1000));
-  }
-}
-
-function scheduleSyncPendingRecords(delay = 0) {
-  if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => syncPendingRecords(), delay);
-}
-
-/* =========================
    IndexedDB
 ========================= */
 
-// همیشه یک شی ارتباطی تازه ایجاد کرده و برمی‌گرداند تا احتمال قطع کانکشن به صفر برسد
 function openDb() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION); 
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
-      const dbInstance = event.target.result;
-      
-      // ساخت جدول رکوردها با کلید اصلی
-      if (!dbInstance.objectStoreNames.contains(STORE_RECORDS)) {
-        dbInstance.createObjectStore(STORE_RECORDS, { keyPath: "clientRecordId" });
-      }
-      
-      // ساخت جدول پروفایل پرسنلی با کلید اصلی id
-      if (!dbInstance.objectStoreNames.contains(STORE_PROFILE)) {
-        dbInstance.createObjectStore(STORE_PROFILE, { keyPath: "id" });
+      const db = event.target.result;
+
+      if (!db.objectStoreNames.contains(STORE_RECORDS)) {
+        db.createObjectStore(STORE_RECORDS, { keyPath: "clientRecordId" });
       }
 
-      // ساخت جدول تنظیمات با کلید اصلی id
-      if (!dbInstance.objectStoreNames.contains(STORE_CONFIG)) {
-        dbInstance.createObjectStore(STORE_CONFIG, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORE_PROFILE)) {
+        db.createObjectStore(STORE_PROFILE, { keyPath: "id" });
+      }
+
+      if (!db.objectStoreNames.contains(STORE_CONFIG)) {
+        db.createObjectStore(STORE_CONFIG, { keyPath: "id" });
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+
+      db.onversionchange = () => {
+        db.close();
+      };
+
+      resolve(db);
+    };
+
+    request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+    request.onblocked = () => reject(new Error("IndexedDB upgrade blocked"));
   });
 }
 
-// توابع تراکنشی بهینه‌سازی شده با چرخه کامل باز و بسته شدن خودکار درگاه دیتابیس
 async function dbPut(store, value) {
-  const localDb = await openDb();
+  const db = await openDb();
+
   return new Promise((resolve, reject) => {
-    const tx = localDb.transaction(store, "readwrite");
-    const st = tx.objectStore(store);
-    const req = st.put(value);
-    tx.oncomplete = () => {
-      localDb.close();
-      resolve(req.result);
-    };
-    tx.onerror = () => {
-      localDb.close();
-      reject(tx.error);
-    };
-    tx.onabort = () => {
-      localDb.close();
-      reject(new Error("Transaction aborted"));
-    };
+    let settled = false;
+
+    try {
+      const tx = db.transaction(store, "readwrite");
+      const st = tx.objectStore(store);
+      const req = st.put(value);
+
+      tx.oncomplete = () => {
+        settled = true;
+        db.close();
+        resolve(req.result);
+      };
+
+      tx.onerror = () => {
+        settled = true;
+        db.close();
+        reject(tx.error || req.error || new Error("IndexedDB put failed"));
+      };
+
+      tx.onabort = () => {
+        settled = true;
+        db.close();
+        reject(tx.error || new Error("IndexedDB transaction aborted"));
+      };
+    } catch (err) {
+      if (!settled) {
+        db.close();
+        reject(err);
+      }
+    }
   });
 }
 
 async function dbGet(store, key) {
-  const localDb = await openDb();
+  const db = await openDb();
+
   return new Promise((resolve, reject) => {
-    const tx = localDb.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.get(key);
-    tx.oncomplete = () => {
-      localDb.close();
-      resolve(req.result);
-    };
-    tx.onerror = () => {
-      localDb.close();
-      reject(tx.error);
-    };
-    tx.onabort = () => {
-      localDb.close();
-      reject(new Error("Transaction aborted"));
-    };
+    let settled = false;
+
+    try {
+      const tx = db.transaction(store, "readonly");
+      const st = tx.objectStore(store);
+      const req = st.get(key);
+
+      tx.oncomplete = () => {
+        settled = true;
+        db.close();
+        resolve(req.result);
+      };
+
+      tx.onerror = () => {
+        settled = true;
+        db.close();
+        reject(tx.error || req.error || new Error("IndexedDB get failed"));
+      };
+
+      tx.onabort = () => {
+        settled = true;
+        db.close();
+        reject(tx.error || new Error("IndexedDB transaction aborted"));
+      };
+    } catch (err) {
+      if (!settled) {
+        db.close();
+        reject(err);
+      }
+    }
   });
 }
 
 async function dbGetAll(store) {
-  const localDb = await openDb();
+  const db = await openDb();
+
   return new Promise((resolve, reject) => {
-    const tx = localDb.transaction(store, "readonly");
-    const st = tx.objectStore(store);
-    const req = st.getAll();
-    tx.oncomplete = () => {
-      localDb.close();
-      resolve(req.result || []);
-    };
-    tx.onerror = () => {
-      localDb.close();
-      reject(tx.error);
-    };
-    tx.onabort = () => {
-      localDb.close();
-      reject(new Error("Transaction aborted"));
-    };
+    let settled = false;
+
+    try {
+      const tx = db.transaction(store, "readonly");
+      const st = tx.objectStore(store);
+      const req = st.getAll();
+
+      tx.oncomplete = () => {
+        settled = true;
+        db.close();
+        resolve(req.result || []);
+      };
+
+      tx.onerror = () => {
+        settled = true;
+        db.close();
+        reject(tx.error || req.error || new Error("IndexedDB getAll failed"));
+      };
+
+      tx.onabort = () => {
+        settled = true;
+        db.close();
+        reject(tx.error || new Error("IndexedDB transaction aborted"));
+      };
+    } catch (err) {
+      if (!settled) {
+        db.close();
+        reject(err);
+      }
+    }
+  });
+}
+
+async function dbDelete(store, key) {
+  const db = await openDb();
+
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction(store, "readwrite");
+      const st = tx.objectStore(store);
+      const req = st.delete(key);
+
+      tx.oncomplete = () => {
+        db.close();
+        resolve(req.result);
+      };
+
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error || req.error || new Error("IndexedDB delete failed"));
+      };
+
+      tx.onabort = () => {
+        db.close();
+        reject(tx.error || new Error("IndexedDB transaction aborted"));
+      };
+    } catch (err) {
+      db.close();
+      reject(err);
+    }
   });
 }
 
@@ -473,6 +484,7 @@ async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();
     if (!profile.personnelCode || !profile.firstName || !profile.lastName) return;
+
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     await refreshPolicyIfPossible();
     await fetchMessages();
@@ -525,9 +537,11 @@ async function saveProfile() {
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     await loadProfile();
+
     setTimeout(() => {
       refreshPolicyIfPossible();
       fetchMessages();
+      startHeartbeat();
     }, 500);
 
     btn.style.backgroundColor = "#28a745";
@@ -553,6 +567,7 @@ async function saveProfile() {
 
 function normalizeAttendancePolicy(policy) {
   const p = String(policy || "").trim().toUpperCase();
+
   if (
     p === POLICY_NOT_ALLOWED ||
     p === POLICY_ONLINE_ONLY ||
@@ -563,19 +578,31 @@ function normalizeAttendancePolicy(policy) {
   ) {
     return p;
   }
+
   return DEFAULT_ATTENDANCE_POLICY;
 }
 
 function evaluateAttendancePolicy(policy, isOnline) {
   const normalized = normalizeAttendancePolicy(policy);
-  if (normalized === POLICY_NOT_ALLOWED) return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
-  if (normalized === POLICY_ONLINE_ONLY && !isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
-  if (normalized === POLICY_OFFLINE_ONLY && isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
+
+  if (normalized === POLICY_NOT_ALLOWED) {
+    return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
+  }
+
+  if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
+    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
+  }
+
+  if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
+    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
+  }
+
   return { ok: true, message: "" };
 }
 
 async function getAttendancePolicyInfo() {
   const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
+
   if (!policy) {
     return {
       id: "attendancePolicy",
@@ -586,6 +613,7 @@ async function getAttendancePolicyInfo() {
       policySource: "default",
     };
   }
+
   return policy;
 }
 
@@ -595,8 +623,8 @@ async function saveAttendancePolicyInfo(data) {
     personnelCode: data.personnelCode || "",
     attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
     policyVersion: Number(data.policyVersion || 0),
-    policyFetchedAt: data.policyFetchedAt || "",
-    policySource: data.policySource || "",
+    policyFetchedAt: data.policyFetchedAt || new Date().toISOString(),
+    policySource: data.policySource || "server",
   });
 }
 
@@ -605,6 +633,7 @@ async function ensurePolicyLoadedAtStartup() {
   if (!profile?.personnelCode) return;
 
   const cached = await getAttendancePolicyInfo();
+
   if (cached?.personnelCode === profile.personnelCode) {
     if (navigator.onLine) await refreshPolicyIfPossible();
     return;
@@ -633,16 +662,23 @@ async function refreshPolicyIfPossible() {
     const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
     const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${personnelCode}&_nocache=${Date.now()}`;
 
-    const response = await fetch(url, { method: "GET", mode: "cors", redirect: "follow" });
+    const response = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      redirect: "follow",
+      cache: "no-store",
+    });
+
     if (!response.ok) return null;
 
     const text = await response.text();
     const data = JSON.parse(text);
 
-    if (data && typeof data === "object") {
+    if (data && typeof data === "object" && data.ok !== false) {
       await saveAttendancePolicyInfo(data);
       return data;
     }
+
     return null;
   } catch (error) {
     console.error("[Policy] refresh failed:", error);
@@ -652,6 +688,7 @@ async function refreshPolicyIfPossible() {
 
 async function getCurrentAttendanceGate() {
   if (navigator.onLine) await refreshPolicyIfPossible();
+
   const policyInfo = await getAttendancePolicyInfo();
   const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
@@ -666,8 +703,7 @@ async function getCurrentAttendanceGate() {
 ========================= */
 
 async function startAttendanceCapture() {
-  const personnelCodeInput = $("personnelCode");
-  const personnelCode = personnelCodeInput?.value.trim() || "";
+  const personnelCode = $("personnelCode")?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
   const lastName = $("lastName")?.value.trim() || "";
 
@@ -679,6 +715,7 @@ async function startAttendanceCapture() {
   await saveProfileSilent();
 
   const { gate } = await getCurrentAttendanceGate();
+
   if (!gate.ok) {
     setStatus(gate.message);
     return;
@@ -709,6 +746,7 @@ async function startAttendanceCapture() {
 
 async function handlePhotoSelected() {
   const file = $("photoInput")?.files?.[0];
+
   if (!file) {
     setStatus("عکسی انتخاب نشد.");
     return;
@@ -717,9 +755,11 @@ async function handlePhotoSelected() {
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
+
     await saveProfileSilent();
 
     const { gate } = await getCurrentAttendanceGate();
+
     if (!gate.ok) {
       setBusy(false);
       setStatus(gate.message);
@@ -750,10 +790,12 @@ async function handlePhotoSelected() {
 
     if (!hasValidLocation(pendingLocation)) {
       setBusy(false);
+
       if (pendingLocation?.status === "denied") {
         setStatus("دسترسی GPS رد شد.");
         return;
       }
+
       setStatus("GPS دریافت نشد.");
       return;
     }
@@ -768,10 +810,6 @@ async function handlePhotoSelected() {
   }
 }
 
-/* =========================
-   Record Creation
-========================= */
-
 async function createRecord(type) {
   try {
     const profile = await getProfile();
@@ -782,63 +820,71 @@ async function createRecord(type) {
     const deviceTimeAtGps = pendingLocation?.timestamp ? new Date(pendingLocation.timestamp).toISOString() : "";
     const gpsWaitMs = pendingLocation?.timestamp ? Math.round(pendingLocation.timestamp - captureStartedAtMs) : "";
 
+    const policyInfo = await getAttendancePolicyInfo();
+
     const localRecord = {
       clientRecordId: createClientRecordId(profile.personnelCode, captureStartedAtMs),
       personnelCode: profile.personnelCode,
       firstName: profile.firstName,
       lastName: profile.lastName,
+
       type: type,
       recordType: type,
+
       recordDate: jalaliDateStr,
       recordHour: timeStr,
       recordTime: timeStr,
+
       latitude: pendingLocation ? String(pendingLocation.latitude) : "",
       longitude: pendingLocation ? String(pendingLocation.longitude) : "",
       accuracy: pendingLocation ? String(pendingLocation.accuracy) : "",
+
       locationStatus: pendingLocation ? pendingLocation.status : "unknown",
-      locationError: pendingLocation ? (pendingLocation.error || "") : "",
+      locationError: pendingLocation ? pendingLocation.error || "" : "",
+
       deviceTime: now.toISOString(),
       deviceTimeAtClick: new Date(captureStartedAtMs).toISOString(),
       deviceTimeAtPhoto: photoSelectedAtMs ? new Date(photoSelectedAtMs).toISOString() : "",
       deviceTimeAtPhotoCompressed: photoCompressedAtMs ? new Date(photoCompressedAtMs).toISOString() : "",
-      deviceTimeAtGps: deviceTimeAtGps,
+      deviceTimeAtGps,
       gpsTimestamp: deviceTimeAtGps,
-      gpsWaitMs: gpsWaitMs,
+      gpsWaitMs,
+
       photoDelayMs: photoSelectedAtMs ? Math.round(photoSelectedAtMs - captureStartedAtMs) : "",
       submitDelayMs: Math.round(now.getTime() - captureStartedAtMs),
+
       offlineCreated: !navigator.onLine,
       createdOnline: navigator.onLine,
       connectionStatus: navigator.onLine ? "online" : "offline",
       connectionStatusFa: navigator.onLine ? "آنلاین" : "آفلاین",
+
       firstConnectionAfterOfflineRecord: "",
       lastConnectionBeforeUpload: navigator.onLine ? now.toISOString() : "",
       uploadedAt: "",
       delayAfterFirstConnectionMs: "",
+
       photo: currentPhoto || "",
       createdAt: now.toISOString(),
+
       lastSyncTryAt: "",
       syncTryCount: 0,
-      status: "pending"
+      status: "pending",
+
+      sessionClockDriftMs: getSessionClockDriftMs(),
+      networkClockDriftMs: await getNetworkTimeDriftMs(now.getTime()),
+
+      attendancePolicy: policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: policyInfo.policyVersion || 0,
+      policyFetchedAt: policyInfo.policyFetchedAt || "",
+      policySource: policyInfo.policySource || "",
     };
-
-    const sessionDrift = getSessionClockDriftMs();
-    localRecord.sessionClockDriftMs = sessionDrift;
-
-    const netDrift = await getNetworkTimeDriftMs(now.getTime());
-    localRecord.networkClockDriftMs = netDrift;
 
     const risk = calculateClockRisk(localRecord);
     localRecord.clockRisk = risk.clockRisk;
     localRecord.clockRiskReason = risk.clockRiskReason;
 
-    const policyInfo = await getAttendancePolicyInfo();
-    localRecord.attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-    localRecord.policyVersion = policyInfo.policyVersion || 0;
-    localRecord.policyFetchedAt = policyInfo.policyFetchedAt || "";
-    localRecord.policySource = policyInfo.policySource || "";
-
     await dbPut(STORE_RECORDS, localRecord);
-    
+
     setStatus("تردد در دیتابیس محلی ذخیره شد.");
     await refreshUi();
 
@@ -859,14 +905,86 @@ function createClientRecordId(personnelCode, baseMs) {
 }
 
 /* =========================
-   Sync Logic
+   Sync
 ========================= */
+
+function setupAutoSync() {
+  updateOnlineBadge();
+
+  window.addEventListener("online", async () => {
+    updateOnlineBadge();
+    startHeartbeat();
+    await refreshPolicyIfPossible();
+    await markFirstConnectionForOfflineRecords();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
+
+  window.addEventListener("offline", () => {
+    updateOnlineBadge();
+    stopHeartbeat();
+  });
+
+  window.addEventListener("focus", async () => {
+    if (!navigator.onLine) return;
+
+    startHeartbeat();
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) {
+      stopHeartbeat();
+      return;
+    }
+
+    if (!navigator.onLine) return;
+
+    startHeartbeat();
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", async (event) => {
+      if (!event.data) return;
+
+      if (event.data.type === "SYNC_COMPLETE") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار انجام شد");
+      }
+
+      if (event.data.type === "SYNC_FAILED") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار کامل نشد");
+      }
+    });
+  }
+
+  setInterval(() => {
+    if (navigator.onLine) scheduleSyncPendingRecords(0);
+  }, 60000);
+
+  if (navigator.onLine) {
+    refreshPolicyIfPossible().finally(() => scheduleSyncPendingRecords(1000));
+  }
+}
+
+function scheduleSyncPendingRecords(delay = 0) {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncPendingRecords(), delay);
+}
 
 async function markFirstConnectionForOfflineRecords() {
   if (!navigator.onLine) return;
+
   try {
     const nowIso = new Date().toISOString();
     const records = await dbGetAll(STORE_RECORDS);
+
     const list = records.filter(
       (r) =>
         r.offlineCreated === true &&
@@ -878,12 +996,14 @@ async function markFirstConnectionForOfflineRecords() {
       r.firstConnectionAfterOfflineRecord = nowIso;
       await dbPut(STORE_RECORDS, r);
     }
+
     if (list.length) await refreshUi();
   } catch (_) {}
 }
 
 async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
+
   syncRunning = true;
   setSyncStatus("در حال ارسال...");
 
@@ -900,42 +1020,54 @@ async function syncPendingRecords() {
     }
 
     let successCount = 0;
+
     for (const record of pending) {
       record.status = "syncing";
       record.lastSyncTryAt = new Date().toISOString();
-      record.syncTryCount = (record.syncTryCount || 0) + 1;
+      record.syncTryCount = Number(record.syncTryCount || 0) + 1;
+
       await dbPut(STORE_RECORDS, record);
 
       const now = new Date();
+
       if (record.offlineCreated && record.firstConnectionAfterOfflineRecord) {
         const firstConnMs = new Date(record.firstConnectionAfterOfflineRecord).getTime();
         record.delayAfterFirstConnectionMs = Math.max(0, now.getTime() - firstConnMs);
       }
+
       record.lastConnectionBeforeUpload = now.toISOString();
 
       const payload = buildServerPayload(record);
 
       try {
-        // تغییر به حالت CORS همراه با متد صریح POST برای رفع مشکل عدم دریافت صحیح بدنه
         const response = await fetch(APPS_SCRIPT_URL, {
           method: "POST",
           mode: "cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          redirect: "follow",
+          cache: "no-store",
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8",
+          },
           body: JSON.stringify(payload),
         });
 
-        if (response.ok) {
-          const resJson = await response.json();
-          if (resJson && resJson.status === "success") {
-            record.status = "sent";
-            record.uploadedAt = new Date().toISOString();
-            await dbPut(STORE_RECORDS, record);
-            successCount++;
-            continue;
-          }
+        let resJson = null;
+
+        try {
+          const txt = await response.text();
+          resJson = txt ? JSON.parse(txt) : null;
+        } catch (_) {
+          resJson = null;
         }
-        
-        // در صورت عدم دریافت وضعیت موفقیت، رکورد به وضعیت ناموفق باز می‌گردد
+
+        if (response.ok && resJson && (resJson.ok === true || resJson.success === true || resJson.status === "success")) {
+          record.status = "sent";
+          record.uploadedAt = new Date().toISOString();
+          await dbPut(STORE_RECORDS, record);
+          successCount++;
+          continue;
+        }
+
         record.status = "failed";
         await dbPut(STORE_RECORDS, record);
       } catch (err) {
@@ -948,6 +1080,7 @@ async function syncPendingRecords() {
     if (successCount > 0) {
       showGpsToast(`تعداد ${successCount} تردد با موفقیت ارسال شد.`, 3000, "success");
     }
+
     await refreshUi();
     setSyncStatus("بروز");
   } catch (err) {
@@ -958,53 +1091,65 @@ async function syncPendingRecords() {
   }
 }
 
-// Auto-sync when coming back online
-window.addEventListener('online', syncPendingRecords);
-
 function buildServerPayload(record) {
-  // این تابع ساختاری دقیق و مشخص را بدون وابستگی به فرمت IndexedDB بسته‌بندی می‌کند
   return {
     action: "attendance",
+
     clientRecordId: record.clientRecordId || "",
+
     personnelCode: record.personnelCode || "",
     firstName: record.firstName || "",
     lastName: record.lastName || "",
+
     type: record.type || record.recordType || "",
     recordType: record.recordType || record.type || "",
+
     recordDate: record.recordDate || "",
     recordHour: record.recordHour || record.recordTime || "",
     recordTime: record.recordTime || record.recordHour || "",
+
     latitude: record.latitude || "",
     longitude: record.longitude || "",
     accuracy: record.accuracy || "",
+
+    deviceTime: record.deviceTime || "",
+    offlineCreated: !!record.offlineCreated,
+    clockRisk: record.clockRisk || "",
+
+    photo: record.photo || "",
+
     locationStatus: record.locationStatus || "",
     locationError: record.locationError || "",
-    deviceTime: record.deviceTime || "",
+
     deviceTimeAtClick: record.deviceTimeAtClick || "",
     deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
     deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
     deviceTimeAtGps: record.deviceTimeAtGps || "",
+
     gpsTimestamp: record.gpsTimestamp || "",
     gpsWaitMs: record.gpsWaitMs ?? "",
+
     photoDelayMs: record.photoDelayMs ?? "",
     submitDelayMs: record.submitDelayMs ?? "",
-    offlineCreated: !!record.offlineCreated,
+
     createdOnline: record.createdOnline === true,
     connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
     connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
+
     firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
     lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
     uploadedAt: record.uploadedAt || "",
     delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
-    clockRisk: record.clockRisk || "",
+
     clockRiskReason: record.clockRiskReason || "",
     sessionClockDriftMs: record.sessionClockDriftMs ?? "",
     networkClockDriftMs: record.networkClockDriftMs ?? "",
+
     attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
     policyVersion: Number(record.policyVersion || 0),
     policyFetchedAt: record.policyFetchedAt || "",
     policySource: record.policySource || "",
-    photo: record.photo || "",
+
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0),
@@ -1017,28 +1162,50 @@ function buildServerPayload(record) {
 
 async function refreshUi() {
   const rec = await dbGetAll(STORE_RECORDS);
-  if ($("pendingCount")) $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
-  if ($("sentCount")) $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
-  if ($("failedCount")) $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
+
+  if ($("pendingCount")) {
+    $("pendingCount").textContent = rec.filter((r) => r.status === "pending" || r.status === "syncing").length;
+  }
+
+  if ($("sentCount")) {
+    $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
+  }
+
+  if ($("failedCount")) {
+    $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
+  }
+
   renderRecords(rec);
 }
 
 function renderRecords(records) {
   const el = $("recordsList");
   if (!el) return;
+
   if (!records.length) {
     el.innerHTML = "<p>ترددی ثبت نشده</p>";
     return;
   }
+
   const sorted = [...records].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
   el.innerHTML = sorted
     .slice(0, 20)
     .map((r) => {
       const conn = r.connectionStatusFa || (r.offlineCreated ? "آفلاین" : "آنلاین");
+      const statusFa =
+        r.status === "sent"
+          ? "ارسال‌شده"
+          : r.status === "failed"
+            ? "ناموفق"
+            : r.status === "syncing"
+              ? "در حال ارسال"
+              : "در انتظار";
+
       return `
         <div class="record-item compact-record">
           <span>${escapeHtml(r.recordDate || "")}</span>
-          <span>${escapeHtml(r.recordHour || r.recordTime || "")} - ${escapeHtml(conn)}</span>
+          <span>${escapeHtml(r.recordHour || r.recordTime || "")} - ${escapeHtml(conn)} - ${escapeHtml(statusFa)}</span>
         </div>
       `;
     })
@@ -1051,20 +1218,43 @@ function renderRecords(records) {
 
 async function fetchMessages() {
   if (!navigator.onLine) return;
+
   try {
     const profile = await dbGet(STORE_PROFILE, "main");
     if (!profile || !profile.personnelCode) return;
+
     const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
     const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&_=${Date.now()}`;
-    const response = await fetch(url, { method: "GET", mode: "cors" });
+
+    const response = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+    });
+
     if (!response.ok) return;
+
     const rawText = await response.text();
     if (!rawText || rawText.trim() === "" || rawText === "[]") return;
-    let finalMsg = rawText;
+
+    let finalMsg = "";
+
     try {
       const data = JSON.parse(rawText);
-      finalMsg = Array.isArray(data) ? data[data.length - 1] : (data.message || data);
-    } catch (_) {}
+
+      if (Array.isArray(data)) {
+        finalMsg = data[data.length - 1] || "";
+      } else if (data && Array.isArray(data.messages)) {
+        finalMsg = data.messages[data.messages.length - 1] || "";
+      } else if (data && typeof data.message === "string") {
+        finalMsg = data.message;
+      } else if (typeof data === "string") {
+        finalMsg = data;
+      }
+    } catch (_) {
+      finalMsg = rawText;
+    }
+
     if (finalMsg && finalMsg !== lastAdminMessage) {
       lastAdminMessage = finalMsg;
       showAdminMessage(finalMsg);
@@ -1078,21 +1268,25 @@ function showAdminMessage(message) {
 
   const overlay = document.createElement("div");
   overlay.id = "admin-message-overlay";
-  overlay.style.cssText = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(5px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;`;
+  overlay.style.cssText =
+    "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(5px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;";
 
   const container = document.createElement("div");
-  container.style.cssText = `background:#fff7ed;border:2px solid #ea580c;border-radius:16px;padding:24px;width:100%;max-width:450px;text-align:right;direction:rtl;`;
+  container.style.cssText =
+    "background:#fff7ed;border:2px solid #ea580c;border-radius:16px;padding:24px;width:100%;max-width:450px;text-align:right;direction:rtl;";
 
   const title = document.createElement("div");
-  title.style.cssText = `font-weight:bold;color:#c2410c;margin-bottom:12px;`;
+  title.style.cssText = "font-weight:bold;color:#c2410c;margin-bottom:12px;";
   title.textContent = "🔔 پیام مدیریت";
 
   const body = document.createElement("div");
-  body.style.cssText = `font-size:15px;color:#431407;line-height:1.6;margin-bottom:20px;white-space:pre-wrap;`;
+  body.style.cssText =
+    "font-size:15px;color:#431407;line-height:1.6;margin-bottom:20px;white-space:pre-wrap;";
   body.textContent = message;
 
   const btn = document.createElement("button");
-  btn.style.cssText = `width:100%;background:#ea580c;color:#fff;border:none;padding:12px;border-radius:10px;font-weight:bold;cursor:pointer;`;
+  btn.style.cssText =
+    "width:100%;background:#ea580c;color:#fff;border:none;padding:12px;border-radius:10px;font-weight:bold;cursor:pointer;";
   btn.textContent = "متوجه شدم";
   btn.onclick = () => overlay.remove();
 
@@ -1104,30 +1298,6 @@ function showAdminMessage(message) {
 }
 
 /* =========================
-   Helpers
-========================= */
-
-function getTime(d) {
-  return d.toTimeString().split(' ')[0];
-}
-
-function getSessionClockDriftMs() {
-  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
-  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
-  return Math.round(wallElapsedMs - realElapsedMs);
-}
-
-async function getNetworkTimeDriftMs(deviceNowMs) {
-  return 0; // Simplified for stability
-}
-
-function calculateClockRisk(data) {
-  let score = data.offlineCreated ? 1 : 0;
-  if (Math.abs(data.sessionClockDriftMs) > CLOCK_DRIFT_SESSION_LIMIT_MS) score += 5;
-  return { clockRisk: score >= 5 ? "high" : "low", clockRiskReason: score >= 5 ? "Drift" : "OK" };
-}
-
-/* =========================
    Geolocation
 ========================= */
 
@@ -1136,31 +1306,65 @@ function isGeolocationUsable() {
 }
 
 function hasValidLocation(l) {
-  return l && l.status === "ok" && l.latitude !== "";
+  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
 }
 
 function emptyLocation(status, error) {
-  return { latitude: "", longitude: "", accuracy: "", timestamp: null, status, error };
-}
-
-function chooseBetterLocation(a, b) {
-  if (!a || !a.latitude) return b;
-  if (!b || !b.latitude) return a;
-  return a.accuracy <= b.accuracy ? a : b;
+  return {
+    latitude: "",
+    longitude: "",
+    accuracy: "",
+    timestamp: null,
+    status,
+    error,
+  };
 }
 
 function getCurrentPositionSafe(options) {
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: pos.timestamp, status: "ok" }),
-      (err) => resolve(emptyLocation("error", err.message)),
+      (pos) =>
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+          status: "ok",
+          error: "",
+        }),
+      (err) => {
+        const status = err && err.code === 1 ? "denied" : "error";
+        resolve(emptyLocation(status, err?.message || ""));
+      },
       options
     );
   });
 }
 
 async function getLocationIOSFriendly() {
-  return await getCurrentPositionSafe({ enableHighAccuracy: true, timeout: 15000 });
+  const first = await getCurrentPositionSafe({
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 0,
+  });
+
+  if (first.status === "ok" && Number(first.accuracy || 999999) <= GOOD_ACCURACY_METERS) {
+    return first;
+  }
+
+  const second = await getCurrentPositionSafe({
+    enableHighAccuracy: true,
+    timeout: GPS_RETRY_MS,
+    maximumAge: 0,
+  });
+
+  return chooseBetterLocation(first, second);
+}
+
+function chooseBetterLocation(a, b) {
+  if (!a || !a.latitude) return b;
+  if (!b || !b.latitude) return a;
+  return Number(a.accuracy || 999999) <= Number(b.accuracy || 999999) ? a : b;
 }
 
 /* =========================
@@ -1168,19 +1372,23 @@ async function getLocationIOSFriendly() {
 ========================= */
 
 function compressImage(file) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     const reader = new FileReader();
-    
+
+    reader.onerror = () => reject(reader.error || new Erro("FileReader failed"));
+
     reader.onload = (e) => {
       const img = new Image();
+
+      img.onerror = () => reject(new Error("Image load failed"));
+
       img.onload = () => {
-        // فشرده سازی بهینه بدون به هم خوردگی Aspect Ratio
         let width = img.width;
         let height = img.height;
         const maxDim = 800;
-        
+
         if (width > maxDim || height > maxDim) {
           if (width > height) {
             height = Math.round((height * maxDim) / width);
@@ -1190,47 +1398,121 @@ function compressImage(file) {
             height = maxDim;
           }
         }
-        
+
         canvas.width = width;
         canvas.height = height;
+
         ctx.drawImage(img, 0, 0, width, height);
+
         resolve(canvas.toDataURL("image/jpeg", 0.65));
       };
+
       img.src = e.target.result;
     };
+
     reader.readAsDataURL(file);
   });
 }
 
-// --- Heartbeat ---
+/* =========================
+   Heartbeat
+========================= */
 
 async function sendHeartbeat() {
   if (!navigator.onLine) return;
-  const pCode = $("personnelCode")?.value.trim() || "";
-  if (!pCode) return;
 
-  const formData = new URLSearchParams();
-  formData.append("type", "Heartbeat");
-  formData.append("personnelCode", pCode);
-  formData.append("timestamp", new Date().toISOString());
+  let profile = null;
+
+  try {
+    profile = await getProfile();
+  } catch (_) {
+    return;
+  }
+
+  if (!profile?.personnelCode) return;
+
+  const payload = {
+    type: "Heartbeat",
+    personnelCode: profile.personnelCode,
+    firstName: profile.firstName || "",
+    lastName: profile.lastName || "",
+    timestamp: new Date().toISOString(),
+  };
 
   try {
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formData.toString()
+      mode: "cors",
+      redirect: "follow",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify(payload),
     });
   } catch (_) {}
 }
 
 function startHeartbeat() {
   if (heartbeatTimer) return;
+  if (!navigator.onLine) return;
+
   sendHeartbeat();
   heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
 }
 
 function stopHeartbeat() {
-  clearInterval(heartbeatTimer);
-  heartbeatTimer = null;
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+/* =========================
+   Helpers
+========================= */
+
+function getTime(d) {
+  return d.toTimeString().split(" ")[0];
+}
+
+function getSessionClockDriftMs() {
+  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
+  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
+  return Math.round(wallElapsedMs - realElapsedMs);
+}
+
+async function getNetworkTimeDriftMs(deviceNowMs) {
+  return 0;
+}
+
+function calculateClockRisk(data) {
+  let score = data.offlineCreated ? 1 : 0;
+  const reasons = [];
+
+  if (data.offlineCreated) {
+    reasons.push("ثبت آفلاین");
+  }
+
+  if (Math.abs(Number(data.sessionClockDriftMs || 0)) > CLOCK_DRIFT_SESSION_LIMIT_MS) {
+    score += 5;
+    reasons.push("تغییر ساعت دستگاه");
+  }
+
+  if (String(data.locationStatus || "").toLowerCase() !== "ok") {
+    score += 2;
+    reasons.push("وضعیت GPS نامعتبر");
+  }
+
+  if (score >= 5) {
+    return {
+      clockRisk: "high",
+      clockRiskReason: reasons.join(" | ") || "High risk",
+    };
+  }
+
+  return {
+    clockRisk: "low",
+    clockRiskReason: reasons.join(" | ") || "OK",
+  };
 }

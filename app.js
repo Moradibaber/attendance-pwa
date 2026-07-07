@@ -1509,7 +1509,7 @@ function compressImage(file) {
 
       img.onload = () => {
         const OUT_W = 1080;
-        const OUT_H = 1080;
+        const OUT_H = 1350;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;

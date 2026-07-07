@@ -427,7 +427,7 @@
         if (splash) splash.classList.add('is-hide');
       }
 
-      document.addEventListener('DOMContentLoaded', function () {
+      window.addEventListener('load', function () {
         setTimeout(function () {
           hideSplash();
           showModal();

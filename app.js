@@ -1451,4 +1451,73 @@ window.sendHeartbeat = function() {
 document.addEventListener("DOMContentLoaded", function() {
     window.startHeartbeat();
 });
+let heartbeatInterval = null;
 
+function sendHeartbeat() {
+  const personnelCode =
+    localStorage.getItem("personnelCode") ||
+    localStorage.getItem("PersonnelCode") ||
+    "";
+
+  if (!personnelCode) return;
+  if (!navigator.onLine) return;
+
+  const payload = {
+    type: "Heartbeat",
+    personnelCode: personnelCode,
+    firstName:
+      localStorage.getItem("firstName") ||
+      localStorage.getItem("FirstName") ||
+      "",
+    lastName:
+      localStorage.getItem("lastName") ||
+      localStorage.getItem("LastName") ||
+      "",
+    clientTime: new Date().toISOString()
+  };
+
+  const body = new URLSearchParams(payload).toString();
+
+  fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+    },
+    body: body
+  }).catch(function () {});
+}
+
+function startHeartbeat() {
+  if (heartbeatInterval) return;
+
+  sendHeartbeat();
+
+  heartbeatInterval = setInterval(function () {
+    sendHeartbeat();
+  }, 30000);
+}
+
+function stopHeartbeat() {
+  if (!heartbeatInterval) return;
+  clearInterval(heartbeatInterval);
+  heartbeatInterval = null;
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  startHeartbeat();
+});
+
+window.addEventListener("online", function () {
+  sendHeartbeat();
+  startHeartbeat();
+});
+
+window.addEventListener("offline", function () {
+  stopHeartbeat();
+});
+
+document.addEventListener("visibilitychange", function () {
+  if (!document.hidden) {
+    sendHeartbeat();
+  }
+});

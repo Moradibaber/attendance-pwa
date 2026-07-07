@@ -300,6 +300,96 @@
       opacity:0!important;
       pointer-events:none!important;
     }
+    /* === paste into style.css or inside <style> in index.html === */
+
+/* 1) کمتر کردن سفیدی صفحه */
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #b1e4ec !important;
+}
+
+body {
+  min-height: 100vh !important;
+  overflow-x: hidden !important;
+}
+
+/* اگر بدنه خیلی خالی دیده می‌شود */
+.app {
+  padding: 4px !important;
+  margin: 0 auto !important;
+  max-width: 500px !important;
+}
+
+/* فاصله کارت‌ها را کم کن */
+.card {
+  margin-bottom: 4px !important;
+  padding: 6px 10px !important;
+}
+
+/* 2) حذف فضای خالی زیر دکمه سلفی */
+.photo-row,
+.preview-wrap,
+.selfie-preview-wrap,
+.selfie-box {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+.preview,
+#photoPreview {
+  display: none !important;   /* تا وقتی عکس گرفته نشده */
+  width: 140px !important;
+  height: auto !important;
+  margin: 0 auto !important;
+}
+
+/* اگر جا برای پیش‌نمایش از قبل رزرو شده */
+#photoPreview[src] {
+  display: block !important;
+}
+
+/* لیبل/دکمه سلفی فشرده‌تر */
+.camera-btn,
+.selfie-upload-label {
+  margin: 0 !important;
+  padding: 6px 10px !important;
+  min-height: 34px !important;
+  line-height: 1.2 !important;
+}
+
+/* 3) لوگوی اسپلش زود محو نشود */
+#splashScreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: #b1e4ec !important;
+}
+
+#splashScreen.is-hide {
+  display: none !important;
+}
+
+.splash-card {
+  width: 80% !important;
+  max-width: 360px !important;
+  text-align: center !important;
+  background: #f4d2aa !important;
+  border-radius: 20px !important;
+  padding-bottom: 12px !important;
+}
+
+.splash-card img {
+  width: 100% !important;
+  display: block !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+
   </style>
 </head>
 

@@ -1585,3 +1585,53 @@ function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
     return null;
   }
 }
+// --- HEARTBEAT SYSTEM ---
+let heartbeatInterval = null;
+
+function sendHeartbeat() {
+  const personnelCode = localStorage.getItem("personnelCode");
+  if (!personnelCode || !navigator.onLine) return;
+
+  const payload = {
+    type: "Heartbeat",
+    personnelCode: personnelCode,
+    firstName: localStorage.getItem("firstName") || "",
+    lastName: localStorage.getItem("lastName") || "",
+    clientTime: new Date().toISOString()
+  };
+
+  fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(payload).toString()
+  }).catch(() => { /* Silent fail to avoid console clutter */ });
+}
+
+function startHeartbeat() {
+  if (heartbeatInterval) return;
+  sendHeartbeat();
+  heartbeatInterval = setInterval(sendHeartbeat, 30000); // Every 30 seconds
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+}
+
+// Lifecycle Events
+document.addEventListener("DOMContentLoaded", () => {
+  if (localStorage.getItem("personnelCode")) startHeartbeat();
+});
+
+window.addEventListener("online", startHeartbeat);
+window.addEventListener("offline", stopHeartbeat);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && navigator.onLine) {
+    sendHeartbeat();
+    startHeartbeat();
+  }
+});

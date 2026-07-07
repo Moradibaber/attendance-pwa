@@ -1,6 +1,6 @@
-<!-- File: index.html (replace whole file with this) -->
+<!-- File: index.html (PLACE THIS AS YOUR FULL index.html, REPLACE EVERYTHING) -->
 <!doctype html>
-<html lang="fa" dir="rtl"> 
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -11,7 +11,7 @@
 
   <style>
     :root{
-      --bg:#b1e4ec; 
+      --bg:#b1e4ec;
       --card:#e3c4a8;
       --text:#3f2f21;
       --border:#c5a88d;
@@ -89,19 +89,73 @@
       text-align:justify;
     }
 
-    /* --- popup note shown after logo --- */
-    #initialNotice{
+    #initialNoticeModal{
+      position:fixed;
+      inset:0;
+      z-index:99998;
       display:none;
-      background:var(--noteBg)!important;
-      border:1px solid var(--noteBorder)!important;
-      color:var(--noteText)!important;
-      border-radius:12px!important;
-      padding:10px 12px!important;
-      margin:10px 12px 0 12px!important;
-      text-align:center!important;
-      font-size:.9rem!important;
-      font-weight:900!important;
-      line-height:1.7!important;
+      align-items:center;
+      justify-content:center;
+      background:rgba(0,0,0,.45);
+      padding:14px;
+    }
+
+    #initialNoticeModal.show{
+      display:flex;
+    }
+
+    .notice-box{
+      width:min(520px,100%);
+      background:#fff;
+      border-radius:14px;
+      border:2px solid var(--noteBorder);
+      box-shadow:0 12px 30px rgba(0,0,0,.25);
+      overflow:hidden;
+    }
+
+    .notice-head{
+      background:var(--noteBg);
+      color:var(--noteText);
+      font-weight:900;
+      padding:10px 12px;
+      text-align:center;
+      border-bottom:1px solid var(--noteBorder);
+    }
+
+    .notice-body{
+      padding:12px 14px;
+      text-align:center;
+      color:#111827;
+      font-weight:900;
+      line-height:1.9;
+      font-size:.95rem;
+    }
+
+    .notice-actions{
+      display:flex;
+      gap:10px;
+      padding:12px 14px;
+      border-top:1px solid #eee;
+      background:#fafafa;
+    }
+
+    .notice-btn{
+      flex:1;
+      border:none;
+      border-radius:10px;
+      padding:10px 12px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    .notice-btn.primary{
+      background:#0f766e;
+      color:#fff;
+    }
+
+    .notice-btn.ghost{
+      background:#e5e7eb;
+      color:#111827;
     }
 
     #personnelCode,#firstName,#lastName{
@@ -162,9 +216,7 @@
       mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
     }
 
-    #photoInput{
-      display:none!important;
-    }
+    #photoInput{ display:none!important; }
 
     .photo-row{
       margin:0!important;
@@ -173,8 +225,7 @@
       height:auto!important;
     }
 
-    #photoPreview,
-    .preview{
+    #photoPreview,.preview{
       display:none!important;
       width:140px!important;
       height:auto!important;
@@ -182,9 +233,7 @@
       margin:0 auto!important;
     }
 
-    #photoPreview[src]{
-      display:block!important;
-    }
+    #photoPreview[src]{ display:block!important; }
 
     .stats{
       display:grid!important;
@@ -205,15 +254,8 @@
     .stats>div:nth-child(2){background:#00cc44!important}
     .stats>div:nth-child(3){background:#ff1a1a!important}
 
-    .stats span{
-      display:block;
-      font-size:1.1rem;
-    }
-
-    .stats small{
-      font-size:.65rem;
-      opacity:.9;
-    }
+    .stats span{ display:block; font-size:1.1rem; }
+    .stats small{ font-size:.65rem; opacity:.9; }
 
     .records{
       max-height:150px;
@@ -244,9 +286,7 @@
       justify-content:center;
     }
 
-    #splashScreen.is-hide{
-      display:none!important;
-    }
+    #splashScreen.is-hide{ display:none!important; }
 
     .splash-card{
       width:80%;
@@ -290,9 +330,7 @@
       margin:0 auto 10px;
     }
 
-    @keyframes spin{
-      to{transform:rotate(360deg)}
-    }
+    @keyframes spin{ to{transform:rotate(360deg)} }
 
     #onlineBadge:empty,
     #profileStatus:empty,
@@ -328,10 +366,18 @@
     <div class="splash-card">
       <img src="cover-rights-reserved.png" alt="Welcome">
       <div style="font-weight:800;margin-top:10px;">خوش آمدید</div>
+    </div>
+  </div>
 
-      <!-- shown AFTER logo (end of splash) for 4 seconds -->
-      <div id="initialNotice">
+  <div id="initialNoticeModal" aria-hidden="true">
+    <div class="notice-box" role="dialog" aria-modal="true">
+      <div class="notice-head">اعلام اولیه بابت باز کردن اینترنت و جی پی اس</div>
+      <div class="notice-body">
         جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
+      </div>
+      <div class="notice-actions">
+        <button id="noticeOkBtn" class="notice-btn primary" type="button">متوجه شدم</button>
+        <button id="noticeCloseBtn" class="notice-btn ghost" type="button">بستن</button>
       </div>
     </div>
   </div>
@@ -394,24 +440,48 @@
   <script src="app.js?v=57"></script>
   <script>
     (function () {
-      var SPLASH_MS = 4000;      // logo time
-      var NOTICE_MS = 4000;      // popup time after logo
+      var SPLASH_MS = 4000;
+      var NOTICE_MS = 4000;
 
-      function showNoticeThenApp() {
+      function showMainApp() {
         var splash = document.getElementById('splashScreen');
-        var note = document.getElementById('initialNotice');
         var app = document.getElementById('mainApp');
+        if (splash) splash.classList.add('is-hide');
+        if (app) app.classList.remove('app-hidden');
+      }
 
-        if (note) note.style.display = 'block';
+      function showModal() {
+        var modal = document.getElementById('initialNoticeModal');
+        if (!modal) return;
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
+      }
 
-        setTimeout(function () {
-          if (splash) splash.classList.add('is-hide');
-          if (app) app.classList.remove('app-hidden');
-        }, NOTICE_MS);
+      function hideModal() {
+        var modal = document.getElementById('initialNoticeModal');
+        if (!modal) return;
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
       }
 
       document.addEventListener('DOMContentLoaded', function () {
-        setTimeout(showNoticeThenApp, SPLASH_MS);
+        setTimeout(function () {
+          showMainApp();
+          showModal();
+          setTimeout(hideModal, NOTICE_MS);
+        }, SPLASH_MS);
+
+        var ok = document.getElementById('noticeOkBtn');
+        var close = document.getElementById('noticeCloseBtn');
+        if (ok) ok.addEventListener('click', hideModal);
+        if (close) close.addEventListener('click', hideModal);
+
+        var modal = document.getElementById('initialNoticeModal');
+        if (modal) {
+          modal.addEventListener('click', function (e) {
+            if (e.target === modal) hideModal();
+          });
+        }
       });
     })();
   </script>

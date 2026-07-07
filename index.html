@@ -33,6 +33,7 @@
       margin: 0 auto;
     }
 
+    /* کاهش شدید فواصل کارت‌ها */
     .card {
       background-color: var(--card) !important;
       border: 1px solid var(--border) !important;
@@ -51,6 +52,7 @@
       line-height: 1.2;
     }
 
+    /* استایل هشدار */
     .compact-warning {
       background-color: #fff3e0 !important;
       border: 1px solid #ffb74d !important;
@@ -70,6 +72,7 @@
       text-align: justify;
     }
 
+    /* ورودی‌های متن */
     #personnelCode, #firstName, #lastName {
       background-color: #ffcc00 !important;
       color: #111827 !important;
@@ -84,6 +87,7 @@
       outline: none;
     }
 
+    /* دکمه سبز ذخیره مشخصات */
     #saveProfileBtn {
       background-color: var(--primary) !important;
       color: #ffffff !important;
@@ -96,6 +100,7 @@
       cursor: pointer !important;
     }
 
+    /* دکمه آبی ثبت تردد (سلفی) - فشرده شده */
     .camera-row {
       margin: 0 !important;
       padding: 0 !important;
@@ -106,13 +111,13 @@
       align-items: center !important;
       justify-content: center !important;
       gap: 6px !important;
-      padding: 6px 10px !important;
+      padding: 6px 10px !important; /* پدینگ کم برای ارتفاع کمتر */
       background: var(--blue) !important;
       color: #fff !important;
       border-radius: 8px !important;
       font-weight: 800 !important;
       font-size: 0.9rem !important;
-      min-height: 34px !important;
+      min-height: 34px !important; /* ارتفاع کنترل شده */
       border: none !important;
       cursor: pointer !important;
       width: 100%;
@@ -136,6 +141,7 @@
       margin: 0 auto;
     }
 
+    /* بخش آمار */
     .stats {
       display: grid !important;
       grid-template-columns: 1fr 1fr 1fr !important;
@@ -155,6 +161,7 @@
     .stats span { display: block; font-size: 1.1rem; }
     .stats small { font-size: 0.65rem; opacity: 0.9; }
 
+    /* لیست ترددها */
     .records {
       max-height: 150px;
       overflow-y: auto;
@@ -173,6 +180,7 @@
       text-align: center;
     }
 
+    /* Splash & Overlays */
     #splashScreen {
       position: fixed; inset: 0; z-index: 9999;
       background: var(--bg); display: flex; align-items: center; justify-content: center;

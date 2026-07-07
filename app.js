@@ -162,7 +162,7 @@ document.addEventListener("DOMContentLoaded", async () => {
    UI Helpers
 ========================= */
 
-function showGpsToast(message, duration = 3000, type = "success") {
+function showGpsToast(message, duration = 5000, type = "success") {
   const oldToast = document.getElementById("gps-toast");
   if (oldToast) oldToast.remove();
 

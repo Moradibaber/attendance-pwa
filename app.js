@@ -752,123 +752,30 @@ async function handlePhotoSelected() {
 ========================= */
 
 async function createRecord(type) {
-  const profile = await getProfile();
-  const { gate } = await getCurrentAttendanceGate();
-  if (!gate.ok) {
-    setStatus(gate.message);
-    return;
-  }
-
-  const attendancePolicyInfo = await getAttendancePolicyInfo();
-  const attendancePolicy = attendancePolicyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-    setStatus("GPS معتبر نیست.");
-    return;
-  }
-
-  const loc = hasValidLocation(pendingLocation)
-    ? pendingLocation
-    : emptyLocation("not_received", "GPS دریافت نشد");
-
-  const now = new Date();
-  const nowMs = now.getTime();
-  const clickMs = captureStartedAtMs || nowMs;
-  const photoMs = photoSelectedAtMs || "";
-  const photoCompressedMs = photoCompressedAtMs || "";
-  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
-
-  const deviceTime = now.toISOString();
-  const deviceTimeAtClick = new Date(clickMs).toISOString();
-  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
-  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
-  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
-  const gpsTimestamp = deviceTimeAtGps;
-
-  const offlineCreated = !navigator.onLine;
-  const createdOnline = navigator.onLine;
-
-  const sessionClockDriftMs = getSessionClockDriftMs();
-  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
-
-  const risk = calculateClockRisk({
-    clickMs,
-    gpsMs,
-    offlineCreated,
-    locationStatus: loc.status,
-    sessionClockDriftMs,
-  });
-
-  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-  const jalaliDateStr = getJalaliIsoDate(now);
-  const hourStr = getTime(now);
-
+  // Read personnelCode from the input field
+  const pCode = document.getElementById('personnelCode')?.value || "Unknown";
+  
   const record = {
-    clientRecordId,
-    personnelCode: profile.personnelCode,
-    firstName: profile.firstName,
-    lastName: profile.lastName,
-    type,
-    recordType: type,
-    recordDate: jalaliDateStr,
-    recordHour: hourStr,
-    recordTime: hourStr,
-
-    latitude: loc.latitude || "",
-    longitude: loc.longitude || "",
-    accuracy: loc.accuracy || "",
-    locationStatus: loc.status || "",
-    locationError: loc.error || "",
-
-    deviceTime,
-    deviceTimeAtClick,
-    deviceTimeAtPhoto,
-    deviceTimeAtPhotoCompressed,
-    deviceTimeAtGps,
-    gpsTimestamp,
-
-    gpsWaitMs: gpsMs ? Math.max(0, gpsMs - clickMs) : "",
-    photoDelayMs: photoMs ? Math.max(0, photoMs - clickMs) : "",
-    submitDelayMs: Math.max(0, nowMs - clickMs),
-
-    offlineCreated,
-    createdOnline,
-    connectionStatus: offlineCreated ? "offline" : "online",
-    connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
-
-    firstConnectionAfterOfflineRecord: "",
-    lastConnectionBeforeUpload: "",
-    uploadedAt: "",
-    delayAfterFirstConnectionMs: "",
-
-    clockRisk: risk.clockRisk,
-    clockRiskReason: risk.clockRiskReason,
-    sessionClockDriftMs,
-    networkClockDriftMs: networkClockDriftMs ?? "",
-
-    attendancePolicy: attendancePolicy,
-    policyVersion: Number(attendancePolicyInfo.policyVersion || 0),
-    policyFetchedAt: attendancePolicyInfo.policyFetchedAt || "",
-    policySource: attendancePolicyInfo.policySource || "",
-
-    photo: currentPhoto || "",
-
+    clientRecordId: Date.now().toString(),
+    personnelCode: pCode,
+    type: "Attendance",
+    recordType: type, // 'In' or 'Out'
+    recordDate: new Date().toLocaleDateString('fa-IR'),
+    recordHour: new Date().toLocaleTimeString('fa-IR'),
+    offlineCreated: !navigator.onLine,
     status: "pending",
-    createdAt: now.toISOString(),
-    lastSyncTryAt: "",
-    syncTryCount: 0,
-    syncedAt: "",
-    serverResponse: "",
+    createdAt: new Date().toISOString(),
+    // Add other fields (GPS, Photo) here
   };
 
-  await dbPut(STORE_RECORDS, record);
-  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-  setStatus("تردد با GPS ذخیره شد.");
-  await refreshUi();
-
-  if (navigator.onLine) scheduleSyncPendingRecords(500);
+  // Save to IndexedDB
+  await dbPut("RecordsStore", record);
+  
+  // Try to sync immediately
+  syncPendingRecords();
 }
 
+// Sync pending records to Google Sheets
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -899,98 +806,40 @@ async function markFirstConnectionForOfflineRecords() {
 }
 
 async function syncPendingRecords() {
-  if (syncRunning || !navigator.onLine) return;
-  syncRunning = true;
+  if (!navigator.onLine) return;
 
-  try {
-    const refreshed = await refreshPolicyIfPossible();
-    const policyInfo = refreshed || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
+  const records = await dbGetAll("RecordsStore");
+  const pending = records.filter(r => r.status === "pending" || r.status === "failed");
 
-    if (!syncGate.ok) {
-      setSyncStatus(syncGate.message);
-      return;
+  for (const record of pending) {
+    try {
+      // Mark as syncing
+      record.status = "syncing";
+      await dbPut("RecordsStore", record);
+
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors", // Crucial for GAS Web Apps
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(record),
+      });
+
+      // Since mode is no-cors, we won't see response body, 
+      // but we assume success if no error is thrown
+      record.status = "sent";
+      record.syncedAt = new Date().toISOString();
+      await dbPut("RecordsStore", record);
+      
+    } catch (err) {
+      console.error("Sync failed for record:", record.clientRecordId, err);
+      record.status = "failed";
+      await dbPut("RecordsStore", record);
     }
-
-    await markFirstConnectionForOfflineRecords();
-
-    const records = await dbGetAll(STORE_RECORDS);
-    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
-
-    if (!list.length) {
-      setSyncStatus("چیزی برای ارسال نیست");
-      return;
-    }
-
-    setSyncStatus("در حال ارسال...");
-
-    for (const r of list) {
-      if (r.status === "sent" || r.status === "syncing") continue;
-
-      const uploadStartIso = new Date().toISOString();
-      const uploadStartMs = new Date(uploadStartIso).getTime();
-
-      r.status = "syncing";
-      r.lastSyncTryAt = uploadStartIso;
-      r.lastConnectionBeforeUpload = uploadStartIso;
-      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
-
-      if (!r.connectionStatus) {
-        r.connectionStatus = r.offlineCreated ? "offline" : "online";
-        r.connectionStatusFa = r.offlineCreated ? "آفلاین" : "آنلاین";
-        r.createdOnline = !r.offlineCreated;
-      }
-
-      if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
-        r.firstConnectionAfterOfflineRecord = uploadStartIso;
-      }
-
-      if (r.firstConnectionAfterOfflineRecord) {
-        const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
-        if (firstConnectionMs && !isNaN(firstConnectionMs)) {
-          r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
-        }
-      }
-
-      await dbPut(STORE_RECORDS, r);
-      await refreshUi();
-
-      try {
-        const payload = buildServerPayload(r);
-
-        // FORM-DATA SIMULATION FOR GAS
-        const formData = new URLSearchParams();
-        for (const key in payload) {
-          formData.append(key, payload[key]);
-        }
-
-        await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: formData.toString(),
-        });
-
-        const sentIso = new Date().toISOString();
-        r.status = "sent";
-        r.syncedAt = sentIso;
-        r.uploadedAt = sentIso;
-        r.serverResponse = "opaque_no_cors";
-        await dbPut(STORE_RECORDS, r);
-      } catch (err) {
-        r.status = "failed";
-        r.serverResponse = JSON.stringify({ ok: false, error: err?.message || "network_error" });
-        await dbPut(STORE_RECORDS, r);
-      }
-    }
-
-    setSyncStatus("ارسال انجام شد");
-    await refreshUi();
-    await fetchMessages();
-  } finally {
-    syncRunning = false;
   }
 }
+
+// Auto-sync when coming back online
+window.addEventListener('online', syncPendingRecords);
 
 function buildServerPayload(record) {
   return {

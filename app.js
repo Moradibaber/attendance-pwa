@@ -1588,6 +1588,8 @@ function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
 // --- HEARTBEAT SYSTEM ---
 let heartbeatInterval = null;
 
+// Frontend.js (Append to end of file)
+
 function sendHeartbeat() {
   const personnelCode = localStorage.getItem("personnelCode");
   if (!personnelCode || !navigator.onLine) return;
@@ -1597,17 +1599,21 @@ function sendHeartbeat() {
     personnelCode: personnelCode,
     firstName: localStorage.getItem("firstName") || "",
     lastName: localStorage.getItem("lastName") || "",
-    clientTime: new Date().toISOString()
+    clientTime: new Date().toISOString(),
+    connectionStatus: "online",
+    connectionStatusFa: "آنلاین"
   };
 
   fetch(APPS_SCRIPT_URL, {
     method: "POST",
     mode: "no-cors",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(payload).toString()
-  }).catch(() => { /* Silent fail to avoid console clutter */ });
+    body: JSON.stringify(payload) 
+  }).catch(() => {});
 }
 
+// Start interval
+setInterval(sendHeartbeat, 60000);
 function startHeartbeat() {
   if (heartbeatInterval) return;
   sendHeartbeat();

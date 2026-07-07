@@ -43,10 +43,6 @@
       margin:0 auto;
     }
 
-    .app-hidden{
-      display:none!important;
-    }
-
     .card{
       background-color:var(--card)!important;
       border:1px solid var(--border)!important;
@@ -359,7 +355,7 @@
     </div>
   </div>
 
-  <main class="app app-hidden" id="mainApp">
+  <main class="app" id="mainApp">
     <p id="onlineBadge" class="status"></p>
 
     <section class="card compact-warning">
@@ -412,13 +408,6 @@
       var SPLASH_MS = 4000;
       var NOTICE_MS = 6000;
 
-      function showMainApp() {
-        var splash = document.getElementById('splashScreen');
-        var app = document.getElementById('mainApp');
-        if (splash) splash.classList.add('is-hide');
-        if (app) app.classList.remove('app-hidden');
-      }
-
       function showModal() {
         var modal = document.getElementById('initialNoticeModal');
         if (!modal) return;
@@ -433,9 +422,14 @@
         modal.setAttribute('aria-hidden', 'true');
       }
 
+      function hideSplash() {
+        var splash = document.getElementById('splashScreen');
+        if (splash) splash.classList.add('is-hide');
+      }
+
       document.addEventListener('DOMContentLoaded', function () {
         setTimeout(function () {
-          showMainApp();
+          hideSplash();
           showModal();
           setTimeout(hideModal, NOTICE_MS);
         }, SPLASH_MS);

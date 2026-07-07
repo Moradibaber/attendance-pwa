@@ -1,494 +1,1583 @@
-<!-- File: index.html (replace whole file with this) -->
-<!doctype html>
-<html lang="fa" dir="rtl">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0f766e" />
-  <link rel="manifest" href="manifest.json?v=4" />
-  <title>ثبت تردد</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
+/* FILE: /app.js */
+/* REPLACE FULL FILE */
 
-  <style>
-    :root{
-      --bg:#b1e4ec;
-      --card:#e3c4a8;
-      --text:#3f2f21;
-      --border:#c5a88d;
-      --primary:#28a745;
-      --blue:#3498db;
-      --warn:#fff3e0;
-      --warnBorder:#ffb74d;
-      --noteBg:#e8f4fd;
-      --noteBorder:#7fb3d5;
-      --noteText:#1f4e79;
+const DB_NAME = "attendance-pwa-db";
+const DB_VERSION = 3;
+
+const STORE_RECORDS = "records";
+const STORE_PROFILE = "profile";
+const STORE_CONFIG = "config";
+
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
+
+const GPS_RETRY_MS = 30000;
+const GOOD_ACCURACY_METERS = 1000;
+const GPS_REQUIRED = true;
+
+const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
+
+const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
+const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
+const POLICY_ONLINE_ONLY = "ONLINE_ONLY";
+const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
+const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
+const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
+const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
+
+const APP_SESSION_START_WALL_MS = Date.now();
+const APP_SESSION_START_PERF_MS = performance.now();
+
+let db = null;
+let currentPhoto = "";
+let pendingLocation = null;
+let syncRunning = false;
+let syncTimer = null;
+let lastAdminMessage = null;
+
+let captureStartedAtMs = 0;
+let photoSelectedAtMs = 0;
+let photoCompressedAtMs = 0;
+
+const $ = (id) => document.getElementById(id);
+
+/* =========================
+   Busy Overlay (Loader)
+========================= */
+
+function setBusy(isBusy, message = "در حال پردازش...") {
+  const overlay = $("busyOverlay");
+  const text = $("busyText");
+  if (!overlay || !text) return;
+
+  text.textContent = message;
+  overlay.style.display = isBusy ? "flex" : "none";
+}
+
+/* =========================
+   Jalali (Persian) Date Converter
+========================= */
+
+function getJalaliDateParts(date = new Date()) {
+  const g_y = date.getFullYear();
+  const g_m = date.getMonth() + 1;
+  const g_d = date.getDate();
+
+  let g_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let jy_days_in_month = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+
+  let gy = g_y - 1600;
+  let gm = g_m - 1;
+  let gd = g_d - 1;
+
+  let g_day_no =
+    365 * gy +
+    Math.floor((gy + 3) / 4) -
+    Math.floor((gy + 99) / 100) +
+    Math.floor((gy + 399) / 400);
+
+  for (let i = 0; i < gm; ++i) g_day_no += g_days_in_month[i];
+
+  if (gm > 1 && ((gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0)) g_day_no++;
+
+  g_day_no += gd;
+
+  let j_day_no = g_day_no - 79;
+  let j_np = Math.floor(j_day_no / 12053);
+  j_day_no = j_day_no % 12053;
+
+  let jy = 979 + 33 * j_np + 4 * Math.floor(j_day_no / 1461);
+  j_day_no %= 1461;
+
+  if (j_day_no >= 366) {
+    jy += Math.floor((j_day_no - 1) / 365);
+    j_day_no = (j_day_no - 1) % 365;
+  }
+
+  let i = 0;
+  for (i = 0; i < 11 && j_day_no >= jy_days_in_month[i]; ++i) j_day_no -= jy_days_in_month[i];
+
+  let jm = i + 1;
+  let jd = j_day_no + 1;
+
+  return {
+    jy,
+    jm: String(jm).padStart(2, "0"),
+    jd: String(jd).padStart(2, "0"),
+  };
+}
+
+function getJalaliIsoDate(d = new Date()) {
+  const p = getJalaliDateParts(d);
+  return `${p.jy}/${p.jm}/${p.jd}`;
+}
+
+/* =========================
+   Boot
+========================= */
+
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
+  } catch (_) {}
+
+  try {
+    db = await openDb();
+  } catch (e) {
+    console.error("DB init error", e);
+  }
+
+  try {
+    bindEvents();
+  } catch (_) {}
+
+  try {
+    await loadProfile();
+  } catch (_) {}
+
+  try {
+    await ensurePolicyLoadedAtStartup();
+  } catch (_) {}
+
+  try {
+    await refreshUi();
+  } catch (_) {}
+
+  try {
+    await fetchMessages();
+  } catch (_) {}
+
+  try {
+    setupAutoSync();
+  } catch (_) {}
+
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
     }
+  } catch (_) {}
+});
 
-    *{box-sizing:border-box}
+/* =========================
+   UI Helpers
+========================= */
 
-    html,body{
-      margin:0;
-      padding:0;
-      background:var(--bg)!important;
-      font-family:system-ui,-apple-system,sans-serif;
-      direction:rtl;
-      overflow-x:hidden;
-      min-height:100%;
-    }
+function showGpsToast(message, duration = 3000, type = "success") {
+  const oldToast = document.getElementById("gps-toast");
+  if (oldToast) oldToast.remove();
 
-    body{
-      padding:4px;
-      min-height:100vh;
-    }
+  const toast = document.createElement("div");
+  toast.id = "gps-toast";
+  toast.textContent = message;
 
-    .app{
-      max-width:500px;
-      margin:0 auto;
-    }
+  const isSuccess = type === "success";
 
-    .app-hidden{
-      display:none!important;
-    }
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%) scale(0.8)",
+    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
+    color: "#ffffff",
+    padding: "25px 40px",
+    borderRadius: "20px",
+    fontSize: "22px",
+    fontWeight: "bold",
+    fontFamily: "Tahoma, sans-serif",
+    boxShadow: isSuccess ? "0 15px 50px rgba(22, 163, 74, 0.45)" : "0 15px 50px rgba(0, 0, 0, 0.5)",
+    zIndex: "10000",
+    opacity: "0",
+    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+    direction: "rtl",
+    textAlign: "center",
+    width: "80%",
+    maxWidth: "400px",
+    border: "3px solid #ffffff",
+  });
 
-    .card{
-      background-color:var(--card)!important;
-      border:1px solid var(--border)!important;
-      border-radius:12px!important;
-      padding:6px 10px!important;
-      margin:0 0 4px 0!important;
-      box-shadow:0 2px 6px rgba(0,0,0,.08)!important;
-    }
+  document.body.appendChild(toast);
 
-    .card h2{
-      font-size:.95rem!important;
-      font-weight:800!important;
-      color:var(--text)!important;
-      text-align:center!important;
-      margin:0 0 4px 0!important;
-      line-height:1.2;
-    }
+  setTimeout(() => {
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%, -50%) scale(1)";
+  }, 100);
 
-    .compact-warning{
-      background-color:var(--warn)!important;
-      border:1px solid var(--warnBorder)!important;
-      padding:6px 10px!important;
-    }
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
+    setTimeout(() => toast.remove(), 400);
+  }, duration);
+}
 
-    .compact-warning strong{
-      display:block;
-      text-align:center;
-      font-size:.85rem;
-      color:#d35400;
-      margin-bottom:2px;
-    }
+function setStatus(m) {
+  const el = $("captureStatus");
+  if (el) el.textContent = m;
+}
 
-    .compact-warning p{
-      margin:0;
-      font-size:.75rem;
-      line-height:1.4;
-      text-align:justify;
-    }
+function setSyncStatus(m) {
+  const el = $("syncStatus");
+  if (el) el.textContent = m;
+}
 
-    /* ---- Popup (modal) shown on top of form ---- */
-    #initialNoticeModal{
-      position:fixed;
-      inset:0;
-      z-index:99998;
-      display:none;
-      align-items:center;
-      justify-content:center;
-      background:rgba(0,0,0,.45);
-      padding:14px;
-    }
+function updateOnlineBadge() {
+  const el = $("onlineBadge");
+  if (!el) return;
 
-    #initialNoticeModal.show{
-      display:flex;
-    }
+  if (navigator.onLine) {
+    el.textContent = "آنلاین";
+    el.className = "status online";
+  } else {
+    el.textContent = "آفلاین";
+    el.className = "status offline";
+  }
+}
 
-    .notice-box{
-      width:min(520px, 100%);
-      background:#ffffff;
-      border-radius:14px;
-      border:2px solid var(--noteBorder);
-      box-shadow:0 12px 30px rgba(0,0,0,.25);
-      overflow:hidden;
-    }
+function escapeHtml(v) {
+  if (!v) return "";
+  return String(v)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
-    .notice-head{
-      background:var(--noteBg);
-      color:var(--noteText);
-      font-weight:900;
-      padding:10px 12px;
-      text-align:center;
-      border-bottom:1px solid var(--noteBorder);
-    }
+/* =========================
+   Events
+========================= */
 
-    .notice-body{
-      padding:12px 14px;
-      text-align:center;
-      color:#111827;
-      font-weight:900;
-      line-height:1.9;
-      font-size:.95rem;
-    }
+function bindEvents() {
+  $("saveProfileBtn")?.addEventListener("click", saveProfile);
+  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
+  $("photoInput")?.addEventListener("change", handlePhotoSelected);
 
-    .notice-actions{
-      display:flex;
-      gap:10px;
-      padding:12px 14px;
-      border-top:1px solid #eee;
-      background:#fafafa;
-    }
+  const cameraBtn = $("cameraBtn");
+  const photoInput = $("photoInput");
 
-    .notice-btn{
-      flex:1;
-      border:none;
-      border-radius:10px;
-      padding:10px 12px;
-      font-weight:900;
-      cursor:pointer;
-    }
+  if (cameraBtn && photoInput) {
+    const openCamera = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      photoInput.value = "";
+      photoInput.click();
+    };
 
-    .notice-btn.primary{
-      background:#0f766e;
-      color:#fff;
-    }
+    cameraBtn.addEventListener("click", openCamera);
+    cameraBtn.addEventListener("touchend", openCamera, { passive: false });
+  }
+}
 
-    .notice-btn.ghost{
-      background:#e5e7eb;
-      color:#111827;
-    }
+/* =========================
+   Auto Sync
+========================= */
 
-    #personnelCode,#firstName,#lastName{
-      background-color:#ffcc00!important;
-      color:#111827!important;
-      font-weight:900!important;
-      font-size:1rem!important;
-      text-align:center!important;
-      border:1px solid #e0b000!important;
-      border-radius:8px!important;
-      padding:8px!important;
-      margin:0 0 6px 0!important;
-      width:100%!important;
-      outline:none;
-    }
+function setupAutoSync() {
+  updateOnlineBadge();
 
-    #saveProfileBtn{
-      background-color:var(--primary)!important;
-      color:#fff!important;
-      font-weight:800!important;
-      font-size:.9rem!important;
-      border:none!important;
-      border-radius:8px!important;
-      padding:8px!important;
-      width:100%!important;
-      cursor:pointer!important;
-    }
+  window.addEventListener("online", async () => {
+    updateOnlineBadge();
+    await refreshPolicyIfPossible();
+    await markFirstConnectionForOfflineRecords();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
 
-    .camera-row{
-      margin:0!important;
-      padding:0!important;
-    }
+  window.addEventListener("offline", updateOnlineBadge);
 
-    .camera-btn{
-      display:flex!important;
-      align-items:center!important;
-      justify-content:center!important;
-      gap:6px!important;
-      padding:6px 10px!important;
-      background:var(--blue)!important;
-      color:#fff!important;
-      border-radius:8px!important;
-      font-weight:800!important;
-      font-size:.9rem!important;
-      min-height:34px!important;
-      line-height:1.2!important;
-      border:none!important;
-      cursor:pointer!important;
-      width:100%!important;
-      margin:0!important;
-    }
+  window.addEventListener("focus", async () => {
+    if (!navigator.onLine) return;
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
 
-    .cam-ico{
-      width:18px;
-      height:18px;
-      background:#fff;
-      -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
-      mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
-    }
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden || !navigator.onLine) return;
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
 
-    #photoInput{ display:none!important; }
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", async (event) => {
+      if (!event.data) return;
 
-    .photo-row{
-      margin:0!important;
-      padding:0!important;
-      min-height:0!important;
-      height:auto!important;
-    }
-
-    #photoPreview,.preview{
-      display:none!important;
-      width:140px!important;
-      height:auto!important;
-      border-radius:8px!important;
-      margin:0 auto!important;
-    }
-
-    #photoPreview[src]{ display:block!important; }
-
-    .stats{
-      display:grid!important;
-      grid-template-columns:1fr 1fr 1fr!important;
-      gap:6px!important;
-      margin:4px 0!important;
-    }
-
-    .stats>div{
-      border-radius:8px!important;
-      padding:6px 2px!important;
-      text-align:center!important;
-      color:#fff!important;
-      font-weight:800!important;
-    }
-
-    .stats>div:nth-child(1){background:#3399ff!important}
-    .stats>div:nth-child(2){background:#00cc44!important}
-    .stats>div:nth-child(3){background:#ff1a1a!important}
-
-    .stats span{ display:block; font-size:1.1rem; }
-    .stats small{ font-size:.65rem; opacity:.9; }
-
-    .records{
-      max-height:150px;
-      overflow-y:auto;
-      font-size:.8rem;
-    }
-
-    .record-item{
-      padding:4px;
-      border-bottom:1px solid var(--border);
-      text-align:center;
-    }
-
-    .status{
-      font-size:.75rem;
-      margin:2px 0;
-      min-height:14px;
-      text-align:center;
-    }
-
-    #splashScreen{
-      position:fixed;
-      inset:0;
-      z-index:99999;
-      background:var(--bg);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-
-    #splashScreen.is-hide{ display:none!important; }
-
-    .splash-card{
-      width:80%;
-      max-width:360px;
-      text-align:center;
-      background:#f4d2aa;
-      border-radius:20px;
-      padding-bottom:15px;
-    }
-
-    .splash-card img{
-      width:100%;
-      display:block;
-      border-radius:20px 20px 0 0;
-    }
-
-    .busy-overlay{
-      position:fixed;
-      inset:0;
-      background:rgba(0,0,0,.5);
-      z-index:10000;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-
-    .busy-box{
-      background:#fff;
-      padding:20px;
-      border-radius:12px;
-      text-align:center;
-    }
-
-    .busy-spinner{
-      width:30px;
-      height:30px;
-      border:3px solid #eee;
-      border-top-color:#f97316;
-      border-radius:50%;
-      animation:spin .8s linear infinite;
-      margin:0 auto 10px;
-    }
-
-    @keyframes spin{ to{transform:rotate(360deg)} }
-
-    #onlineBadge:empty,
-    #profileStatus:empty,
-    #captureStatus:empty,
-    #syncStatus:empty{
-      display:none!important;
-      min-height:0!important;
-      margin:0!important;
-      padding:0!important;
-    }
-
-    [id*="alert"],
-    [id*="Alert"],
-    [class*="alert"],
-    [class*="Alert"]{
-      display:none!important;
-      visibility:hidden!important;
-      height:0!important;
-      min-height:0!important;
-      max-height:0!important;
-      overflow:hidden!important;
-      margin:0!important;
-      padding:0!important;
-      border:0!important;
-      opacity:0!important;
-      pointer-events:none!important;
-    }
-  </style>
-</head>
-
-<body>
-  <div id="splashScreen">
-    <div class="splash-card">
-      <img src="cover-rights-reserved.png" alt="Welcome">
-      <div style="font-weight:800;margin-top:10px;">خوش آمدید</div>
-    </div>
-  </div>
-
-  <!-- Popup on top of form (NOT inside logo) -->
-  <div id="initialNoticeModal" aria-hidden="true">
-    <div class="notice-box" role="dialog" aria-modal="true">
-      <div class="notice-head">اعلام اولیه</div>
-      <div class="notice-body">
-        جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
-      </div>
-      <div class="notice-actions">
-        <button id="noticeOkBtn" class="notice-btn primary" type="button">متوجه شدم</button>
-        <button id="noticeCloseBtn" class="notice-btn ghost" type="button">بستن</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="busyOverlay" class="busy-overlay" style="display:none;">
-    <div class="busy-box">
-      <div class="busy-spinner"></div>
-      <div id="busyText" style="font-size:.85rem">در حال پردازش...</div>
-    </div>
-  </div>
-
-  <main class="app app-hidden" id="mainApp">
-    <p id="onlineBadge" class="status"></p>
-
-    <section class="card compact-warning">
-      <strong>هشدار مهم</strong>
-      <p>پاک کردن حافظه مرورگر یا حذف برنامه باعث حذف اطلاعات ارسال‌نشده می‌شود.</p>
-    </section>
-
-    <section class="card">
-      <h2>مشخصات پرسنلی</h2>
-      <input id="personnelCode" inputmode="numeric" placeholder="شماره پرسنلی" />
-      <input id="firstName" placeholder="نام" />
-      <input id="lastName" placeholder="نام خانوادگی" />
-      <button id="saveProfileBtn">ذخیره مشخصات</button>
-      <p id="profileStatus" class="status"></p>
-    </section>
-
-    <section class="card">
-      <h2>ثبت تردد</h2>
-      <input id="photoInput" type="file" accept="image/*" capture="user" />
-      <div class="camera-row">
-        <label for="photoInput" class="camera-btn">
-          <span class="cam-ico"></span>
-          <span>عکس سلفی خود را بگیرید</span>
-        </label>
-      </div>
-      <div class="photo-row">
-        <img id="photoPreview" class="preview" style="display:none" />
-      </div>
-      <p id="captureStatus" class="status"></p>
-    </section>
-
-    <section class="card">
-      <h2>وضعیت</h2>
-      <div class="stats">
-        <div><span id="pendingCount">0</span><small>ارسال‌نشده</small></div>
-        <div><span id="sentCount">0</span><small>ارسال‌شده</small></div>
-        <div><span id="failedCount">0</span><small>ناموفق</small></div>
-      </div>
-      <p id="syncStatus" class="status"></p>
-    </section>
-
-    <section class="card">
-      <h2>ترددهای اخیر</h2>
-      <div id="recordsList" class="records"></div>
-    </section>
-  </main>
-
-  <script src="app.js?v=57"></script>
-  <script>
-    (function () {
-      var SPLASH_MS = 4000;   // logo duration
-      var NOTICE_MS = 4000;   // popup duration on form after splash
-
-      function showModal() {
-        var modal = document.getElementById('initialNoticeModal');
-        if (!modal) return;
-        modal.classList.add('show');
-        modal.setAttribute('aria-hidden', 'false');
+      if (event.data.type === "SYNC_COMPLETE") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار انجام شد");
       }
 
-      function hideModal() {
-        var modal = document.getElementById('initialNoticeModal');
-        if (!modal) return;
-        modal.classList.remove('show');
-        modal.setAttribute('aria-hidden', 'true');
+      if (event.data.type === "SYNC_FAILED") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار کامل نشد");
       }
+    });
+  }
 
-      function showMainApp() {
-        var splash = document.getElementById('splashScreen');
-        var app = document.getElementById('mainApp');
-        if (splash) splash.classList.add('is-hide');
-        if (app) app.classList.remove('app-hidden');
-      }
+  setInterval(() => {
+    if (navigator.onLine) scheduleSyncPendingRecords(0);
+  }, 60000);
 
-      document.addEventListener('DOMContentLoaded', function () {
-        setTimeout(function () {
-          showMainApp();     // show form
-          showModal();       // show popup on top of form
+  if (navigator.onLine) {
+    refreshPolicyIfPossible().finally(() => scheduleSyncPendingRecords(1000));
+  }
+}
 
-          setTimeout(function () {
-            hideModal();
-          }, NOTICE_MS);
-        }, SPLASH_MS);
+function scheduleSyncPendingRecords(delay = 0) {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncPendingRecords(), delay);
+}
 
-        var ok = document.getElementById('noticeOkBtn');
-        var close = document.getElementById('noticeCloseBtn');
-        if (ok) ok.addEventListener('click', hideModal);
-        if (close) close.addEventListener('click', hideModal);
+/* =========================
+   IndexedDB
+========================= */
 
-        var modal = document.getElementById('initialNoticeModal');
-        if (modal) {
-          modal.addEventListener('click', function (e) {
-            if (e.target === modal) hideModal();
-          });
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+    req.onupgradeneeded = (e) => {
+      const openedDb = e.target.result;
+
+      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
+        const store = openedDb.createObjectStore(STORE_RECORDS, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+        store.createIndex("status", "status");
+        store.createIndex("clientRecordId", "clientRecordId", { unique: false });
+      } else {
+        const tx = e.target.transaction;
+        const store = tx.objectStore(STORE_RECORDS);
+
+        if (!store.indexNames.contains("status")) store.createIndex("status", "status");
+        if (!store.indexNames.contains("clientRecordId")) {
+          store.createIndex("clientRecordId", "clientRecordId", { unique: false });
         }
-      });
-    })();
-  </script>
-</body>
-</html>
+      }
+
+      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
+        openedDb.createObjectStore(STORE_PROFILE, { keyPath: "id" });
+      }
+
+      if (!openedDb.objectStoreNames.contains(STORE_CONFIG)) {
+        openedDb.createObjectStore(STORE_CONFIG, { keyPath: "id" });
+      }
+    };
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbPut(store, value) {
+  if (!db) db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    const st = tx.objectStore(store);
+    const req = st.put(value);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGet(store, key) {
+  if (!db) db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const st = tx.objectStore(store);
+    const req = st.get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGetAll(store) {
+  if (!db) db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const st = tx.objectStore(store);
+    const req = st.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/* =========================
+   Profile
+========================= */
+
+function getProfileFromInputs() {
+  return {
+    personnelCode: $("personnelCode")?.value.trim() || "",
+    firstName: $("firstName")?.value.trim() || "",
+    lastName: $("lastName")?.value.trim() || "",
+  };
+}
+
+async function loadProfile() {
+  const p = await dbGet(STORE_PROFILE, "main");
+  if (!p) return;
+
+  if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
+  if ($("firstName")) $("firstName").value = p.firstName || "";
+  if ($("lastName")) $("lastName").value = p.lastName || "";
+}
+
+async function saveProfileSilent() {
+  try {
+    const profile = getProfileFromInputs();
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) throw new Error("مشخصات پرسنلی کامل نیست.");
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await refreshPolicyIfPossible();
+    await fetchMessages();
+  } catch (err) {
+    console.error("Silent profile save failed:", err);
+  }
+}
+
+async function getProfile() {
+  const saved = await dbGet(STORE_PROFILE, "main");
+  const inputProfile = getProfileFromInputs();
+
+  const profile = {
+    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
+    firstName: inputProfile.firstName || saved?.firstName || "",
+    lastName: inputProfile.lastName || saved?.lastName || "",
+  };
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    throw new Error("مشخصات پرسنلی کامل نیست.");
+  }
+
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
+  return profile;
+}
+
+async function saveProfile() {
+  if (!db) db = await openDb();
+
+  const btn = $("saveProfileBtn");
+  if (!btn) return;
+
+  const originalText = "ذخیره مشخصات";
+  const originalBg = "#ff9800";
+
+  btn.disabled = true;
+  btn.style.backgroundColor = "#6c757d";
+  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
+
+  try {
+    const profile = getProfileFromInputs();
+
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      btn.classList.add("shake");
+      setTimeout(() => btn.classList.remove("shake"), 500);
+
+      setStatus("اطلاعات پرسنلی کامل نیست.");
+
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await loadProfile();
+    setTimeout(() => {
+      refreshPolicyIfPossible();
+      fetchMessages();
+    }, 500);
+
+    btn.style.backgroundColor = "#28a745";
+    btn.textContent = "ذخیره شد";
+    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
+
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+    }, 2500);
+  } catch (_) {
+    btn.disabled = false;
+    btn.style.backgroundColor = originalBg;
+    btn.textContent = originalText;
+    setStatus("خطا در ذخیره مشخصات");
+  }
+}
+
+/* =========================
+   Policy
+========================= */
+
+function normalizeAttendancePolicy(policy) {
+  const p = String(policy || "").trim().toUpperCase();
+
+  if (
+    p === POLICY_NOT_ALLOWED ||
+    p === POLICY_ONLINE_ONLY ||
+    p === POLICY_OFFLINE_ONLY ||
+    p === POLICY_ONLINE_PREFERRED ||
+    p === POLICY_ONLINE_OR_OFFLINE ||
+    p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
+  ) {
+    return p;
+  }
+
+  return DEFAULT_ATTENDANCE_POLICY;
+}
+
+function evaluateAttendancePolicy(policy, isOnline) {
+  const normalized = normalizeAttendancePolicy(policy);
+
+  if (normalized === POLICY_NOT_ALLOWED) return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
+  if (normalized === POLICY_ONLINE_ONLY && !isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
+  if (normalized === POLICY_OFFLINE_ONLY && isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
+
+  return { ok: true, message: "" };
+}
+
+async function getAttendancePolicyInfo() {
+  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
+  if (!policy) {
+    return {
+      id: "attendancePolicy",
+      personnelCode: "",
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default",
+    };
+  }
+  return policy;
+}
+
+async function saveAttendancePolicyInfo(data) {
+  await dbPut(STORE_CONFIG, {
+    id: "attendancePolicy",
+    personnelCode: data.personnelCode || "",
+    attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
+    policyVersion: Number(data.policyVersion || 0),
+    policyFetchedAt: data.policyFetchedAt || "",
+    policySource: data.policySource || "",
+  });
+}
+
+async function ensurePolicyLoadedAtStartup() {
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile?.personnelCode) return;
+
+  const cached = await getAttendancePolicyInfo();
+  if (cached?.personnelCode === profile.personnelCode) {
+    if (navigator.onLine) await refreshPolicyIfPossible();
+    return;
+  }
+
+  if (navigator.onLine) {
+    await refreshPolicyIfPossible();
+  } else {
+    await saveAttendancePolicyInfo({
+      personnelCode: profile.personnelCode,
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default_offline",
+    });
+  }
+}
+
+async function refreshPolicyIfPossible() {
+  if (!navigator.onLine) return null;
+
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return null;
+
+    const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${personnelCode}&_nocache=${Date.now()}`;
+
+    const response = await fetch(url, { method: "GET", mode: "cors", redirect: "follow" });
+    if (!response.ok) return null;
+
+    const text = await response.text();
+    const data = JSON.parse(text);
+
+    if (data && typeof data === "object") {
+      await saveAttendancePolicyInfo(data);
+      return data;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Policy] refresh failed:", error);
+    return null;
+  }
+}
+
+async function getCurrentAttendanceGate() {
+  if (navigator.onLine) await refreshPolicyIfPossible();
+  const policyInfo = await getAttendancePolicyInfo();
+  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+  return {
+    policyInfo,
+    gate: evaluateAttendancePolicy(policy, navigator.onLine),
+  };
+}
+
+/* =========================
+   Attendance Capture
+========================= */
+
+async function startAttendanceCapture() {
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
+
+  if (!personnelCode || !firstName || !lastName) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
+    return;
+  }
+
+  await saveProfileSilent();
+
+  const { gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
+    return;
+  }
+
+  captureStartedAtMs = Date.now();
+  photoSelectedAtMs = 0;
+  photoCompressedAtMs = 0;
+  currentPhoto = "";
+  pendingLocation = null;
+
+  const preview = $("photoPreview");
+  if (preview) {
+    preview.removeAttribute("src");
+    preview.style.display = "none";
+  }
+
+  const photoInput = $("photoInput");
+  if (!photoInput) {
+    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
+    return;
+  }
+
+  photoInput.value = "";
+  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+  photoInput.click();
+}
+
+async function handlePhotoSelected() {
+  const file = $("photoInput")?.files?.[0];
+
+  if (!file) {
+    setStatus("عکسی انتخاب نشد.");
+    return;
+  }
+
+  try {
+    setBusy(true, "در حال آماده‌سازی عکس...");
+    photoSelectedAtMs = Date.now();
+
+    await saveProfileSilent();
+
+    const { gate } = await getCurrentAttendanceGate();
+    if (!gate.ok) {
+      setBusy(false);
+      setStatus(gate.message);
+      $("photoInput").value = "";
+      currentPhoto = "";
+      return;
+    }
+
+    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
+
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setBusy(false);
+      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      return;
+    }
+
+    setBusy(true, "در حال دریافت GPS...");
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    pendingLocation = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(pendingLocation)) {
+      setBusy(false);
+
+      if (pendingLocation?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "unavailable") {
+        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "timeout") {
+        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        return;
+      }
+
+      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      return;
+    }
+
+    setBusy(true, "در حال ذخیره تردد...");
+    await createRecord("تردد");
+    setBusy(false);
+  } catch (err) {
+    console.error(err);
+    setBusy(false);
+    setStatus("خطا در پردازش عکس یا ثبت تردد");
+  }
+}
+
+/* =========================
+   Record Creation
+========================= */
+
+async function createRecord(type) {
+  const profile = await getProfile();
+
+  const { policyInfo, gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
+    return;
+  }
+
+  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
+    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
+    return;
+  }
+
+  const loc = hasValidLocation(pendingLocation)
+    ? pendingLocation
+    : emptyLocation("not_received", "GPS دریافت نشد");
+
+  const now = new Date();
+  const nowMs = now.getTime();
+
+  const clickMs = captureStartedAtMs || nowMs;
+  const photoMs = photoSelectedAtMs || "";
+  const photoCompressedMs = photoCompressedAtMs || "";
+  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
+
+  const deviceTime = now.toISOString();
+  const deviceTimeAtClick = new Date(clickMs).toISOString();
+  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
+  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
+  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
+  const gpsTimestamp = deviceTimeAtGps;
+
+  const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
+  const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
+  const submitDelayMs = Math.max(0, nowMs - clickMs);
+
+  const offlineCreated = !navigator.onLine;
+  const createdOnline = navigator.onLine;
+
+  const sessionClockDriftMs = getSessionClockDriftMs();
+  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+
+  const risk = calculateClockRisk({
+    clickMs,
+    gpsMs,
+    offlineCreated,
+    locationStatus: loc.status,
+    sessionClockDriftMs,
+  });
+
+  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
+
+  const jalaliDateStr = getJalaliIsoDate(now);
+  const hourStr = getTime(now);
+
+  const record = {
+    clientRecordId,
+    personnelCode: profile.personnelCode,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    type,
+    recordType: type,
+    recordDate: jalaliDateStr,
+    recordHour: hourStr,
+    recordTime: hourStr,
+
+    latitude: loc.latitude || "",
+    longitude: loc.longitude || "",
+    accuracy: loc.accuracy || "",
+    locationStatus: loc.status || "",
+    locationError: loc.error || "",
+
+    deviceTime,
+    deviceTimeAtClick,
+    deviceTimeAtPhoto,
+    deviceTimeAtPhotoCompressed,
+    deviceTimeAtGps,
+    gpsTimestamp,
+
+    gpsWaitMs,
+    photoDelayMs,
+    submitDelayMs,
+
+    offlineCreated,
+    createdOnline,
+    connectionStatus: offlineCreated ? "offline" : "online",
+    connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
+
+    firstConnectionAfterOfflineRecord: "",
+    lastConnectionBeforeUpload: "",
+    uploadedAt: "",
+    delayAfterFirstConnectionMs: "",
+
+    clockRisk: risk.clockRisk,
+    clockRiskReason: risk.clockRiskReason,
+    sessionClockDriftMs,
+    networkClockDriftMs: networkClockDriftMs ?? "",
+
+    attendancePolicy,
+    policyVersion: Number(policyInfo.policyVersion || 0),
+    policyFetchedAt: policyInfo.policyFetchedAt || "",
+    policySource: policyInfo.policySource || "",
+
+    photo: currentPhoto || "",
+
+    status: "pending",
+    createdAt: now.toISOString(),
+    lastSyncTryAt: "",
+    syncTryCount: 0,
+    syncedAt: "",
+    serverResponse: "",
+  };
+
+  await dbPut(STORE_RECORDS, record);
+
+  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
+  setStatus("تردد با GPS ذخیره شد.");
+  await refreshUi();
+
+  if (navigator.onLine) scheduleSyncPendingRecords(500);
+}
+
+function createClientRecordId(personnelCode, baseMs) {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `${personnelCode}-${baseMs}-${randomPart}`;
+}
+
+/* =========================
+   Sync (CORS-SAFE)
+========================= */
+
+async function markFirstConnectionForOfflineRecords() {
+  if (!db || !navigator.onLine) return;
+
+  try {
+    const nowIso = new Date().toISOString();
+    const records = await dbGetAll(STORE_RECORDS);
+    const list = records.filter(
+      (r) =>
+        r.offlineCreated === true &&
+        (r.status === "pending" || r.status === "failed") &&
+        !r.firstConnectionAfterOfflineRecord
+    );
+
+    for (const r of list) {
+      r.firstConnectionAfterOfflineRecord = nowIso;
+      await dbPut(STORE_RECORDS, r);
+    }
+
+    if (list.length) await refreshUi();
+  } catch (_) {}
+}
+
+async function syncPendingRecords() {
+  if (syncRunning || !navigator.onLine) return;
+  syncRunning = true;
+
+  try {
+    const refreshed = await refreshPolicyIfPossible();
+    const policyInfo = refreshed || (await getAttendancePolicyInfo());
+    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
+
+    if (!syncGate.ok) {
+      setSyncStatus(syncGate.message);
+      return;
+    }
+
+    await markFirstConnectionForOfflineRecords();
+
+    const records = await dbGetAll(STORE_RECORDS);
+    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
+
+    if (!list.length) {
+      setSyncStatus("چیزی برای ارسال نیست");
+      return;
+    }
+
+    setSyncStatus("در حال ارسال...");
+
+    for (const r of list) {
+      if (r.status === "sent" || r.status === "syncing") continue;
+
+      const uploadStartIso = new Date().toISOString();
+      const uploadStartMs = new Date(uploadStartIso).getTime();
+
+      r.status = "syncing";
+      r.lastSyncTryAt = uploadStartIso;
+      r.lastConnectionBeforeUpload = uploadStartIso;
+      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
+
+      if (!r.connectionStatus) {
+        r.connectionStatus = r.offlineCreated ? "offline" : "online";
+        r.connectionStatusFa = r.offlineCreated ? "آفلاین" : "آنلاین";
+        r.createdOnline = !r.offlineCreated;
+      }
+
+      if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
+        r.firstConnectionAfterOfflineRecord = uploadStartIso;
+      }
+
+      if (r.firstConnectionAfterOfflineRecord) {
+        const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
+        if (firstConnectionMs && !isNaN(firstConnectionMs)) {
+          r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
+        }
+      }
+
+      await dbPut(STORE_RECORDS, r);
+      await refreshUi();
+
+      try {
+        const payload = buildServerPayload(r);
+
+        await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload),
+        });
+
+        const sentIso = new Date().toISOString();
+        r.status = "sent";
+        r.syncedAt = sentIso;
+        r.uploadedAt = sentIso;
+        r.serverResponse = "opaque_no_cors";
+        await dbPut(STORE_RECORDS, r);
+      } catch (err) {
+        r.status = "failed";
+        r.serverResponse = JSON.stringify({ ok: false, error: err?.message || "network_error" });
+        await dbPut(STORE_RECORDS, r);
+      }
+    }
+
+    setSyncStatus("ارسال انجام شد");
+    await refreshUi();
+    await fetchMessages();
+  } finally {
+    syncRunning = false;
+  }
+}
+
+function buildServerPayload(record) {
+  return {
+    clientRecordId: record.clientRecordId || "",
+    personnelCode: record.personnelCode || "",
+    firstName: record.firstName || "",
+    lastName: record.lastName || "",
+    type: record.type || record.recordType || "",
+    recordType: record.recordType || record.type || "",
+    recordDate: record.recordDate || "",
+    recordHour: record.recordHour || record.recordTime || "",
+    recordTime: record.recordTime || record.recordHour || "",
+    latitude: record.latitude || "",
+    longitude: record.longitude || "",
+    accuracy: record.accuracy || "",
+    locationStatus: record.locationStatus || "",
+    locationError: record.locationError || "",
+    deviceTime: record.deviceTime || "",
+    deviceTimeAtClick: record.deviceTimeAtClick || "",
+    deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
+    deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
+    deviceTimeAtGps: record.deviceTimeAtGps || "",
+    gpsTimestamp: record.gpsTimestamp || "",
+    gpsWaitMs: record.gpsWaitMs ?? "",
+    photoDelayMs: record.photoDelayMs ?? "",
+    submitDelayMs: record.submitDelayMs ?? "",
+    offlineCreated: !!record.offlineCreated,
+    createdOnline: record.createdOnline === true,
+    connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
+    connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
+    firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
+    lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
+    uploadedAt: record.uploadedAt || "",
+    delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
+    clockRisk: record.clockRisk || "",
+    clockRiskReason: record.clockRiskReason || "",
+    sessionClockDriftMs: record.sessionClockDriftMs ?? "",
+    networkClockDriftMs: record.networkClockDriftMs ?? "",
+    attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+    policyVersion: Number(record.policyVersion || 0),
+    policyFetchedAt: record.policyFetchedAt || "",
+    policySource: record.policySource || "",
+    photo: record.photo || "",
+    createdAt: record.createdAt || "",
+    lastSyncTryAt: record.lastSyncTryAt || "",
+    syncTryCount: Number(record.syncTryCount || 0),
+  };
+}
+
+/* =========================
+   Records UI
+========================= */
+
+async function refreshUi() {
+  const rec = await dbGetAll(STORE_RECORDS);
+
+  if ($("pendingCount")) $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
+  if ($("sentCount")) $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
+  if ($("failedCount")) $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
+
+  renderRecords(rec);
+}
+
+function renderRecords(records) {
+  const el = $("recordsList");
+  if (!el) return;
+
+  if (!records.length) {
+    el.innerHTML = "<p>ترددی ثبت نشده</p>";
+    return;
+  }
+
+  const sorted = [...records].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+  el.innerHTML = sorted
+    .slice(0, 20)
+    .map((r) => {
+      const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
+      const connectionText = r.connectionStatusFa
+        ? ` - ${escapeHtml(r.connectionStatusFa)}`
+        : r.offlineCreated
+          ? " - آفلاین"
+          : " - آنلاین";
+
+      return `
+        <div class="record-item compact-record">
+          <span>${escapeHtml(r.recordDate || "")}</span>
+          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+/* =========================
+   Admin Messages
+========================= */
+
+async function fetchMessages() {
+  if (!navigator.onLine) return;
+
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&_=${Date.now()}`;
+
+    const response = await fetch(url, { method: "GET", mode: "cors", credentials: "omit" });
+    if (!response.ok) return;
+
+    const rawText = await response.text();
+    if (!rawText || rawText.trim() === "" || rawText === "[]" || rawText === "false" || rawText === "null") return;
+
+    let finalMsg = "";
+    try {
+      const data = JSON.parse(rawText);
+      if (data && typeof data === "object") {
+        const msgSource = data.messages || data.message || data;
+        if (Array.isArray(msgSource)) finalMsg = msgSource[msgSource.length - 1];
+        else if (typeof msgSource === "string") finalMsg = msgSource;
+        else finalMsg = JSON.stringify(msgSource);
+      } else if (Array.isArray(data)) {
+        finalMsg = data[data.length - 1];
+      } else {
+        finalMsg = String(data);
+      }
+    } catch (e) {
+      finalMsg = rawText.replace(/["\[\]]/g, "").trim();
+    }
+
+    if (typeof finalMsg === "string") finalMsg = finalMsg.trim();
+
+    if (finalMsg && finalMsg !== "false" && finalMsg !== "null" && finalMsg !== "undefined") {
+      if (finalMsg !== lastAdminMessage) {
+        lastAdminMessage = finalMsg;
+        showAdminMessage(finalMsg);
+      }
+    }
+  } catch (err) {
+    console.error("Fetch messages failed:", err);
+  }
+}
+
+function showAdminMessage(message) {
+  const existingOverlay = document.getElementById("admin-message-overlay");
+  if (existingOverlay) existingOverlay.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "admin-message-overlay";
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+  `;
+
+  const container = document.createElement("div");
+  container.style.cssText = `
+    background-color: #fff7ed;
+    border: 2px solid #ea580c;
+    border-radius: 16px;
+    padding: 24px;
+    width: 100%;
+    max-width: 450px;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3);
+    text-align: right;
+    direction: rtl;
+    box-sizing: border-box;
+    animation: zoomInAdmin 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  `;
+
+  const styleSheet = document.createElement("style");
+  styleSheet.innerText = `
+    @keyframes zoomInAdmin {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(styleSheet);
+
+  const title = document.createElement("div");
+  title.style.cssText = `
+    font-size: 18px;
+    font-weight: bold;
+    color: #c2410c;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+  title.textContent = "🔔 پیام جدید از طرف مدیریت";
+
+  const body = document.createElement("div");
+  body.style.cssText = `
+    font-size: 15px;
+    color: #431407;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  `;
+  body.textContent = message;
+
+  const btn = document.createElement("button");
+  btn.style.cssText = `
+    width: 100%;
+    background-color: #ea580c;
+    color: #ffffff;
+    border: none;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  `;
+  btn.textContent = "متوجه شدم و تایید می‌کنم";
+
+  const dismiss = (e) => {
+    e.preventDefault();
+    overlay.remove();
+  };
+  btn.addEventListener("click", dismiss, { passive: false });
+  btn.addEventListener("touchstart", dismiss, { passive: false });
+
+  container.appendChild(title);
+  container.appendChild(body);
+  container.appendChild(btn);
+  overlay.appendChild(container);
+
+  document.body.appendChild(overlay);
+}
+
+/* =========================
+   Time / Date
+========================= */
+
+function getIsoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
+}
+
+function getTime(d) {
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+/* =========================
+   Clock Risk
+========================= */
+
+function getSessionClockDriftMs() {
+  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
+  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
+  return Math.round(wallElapsedMs - realElapsedMs);
+}
+
+async function getNetworkTimeDriftMs(deviceNowMs) {
+  try {
+    const networkMs = Date.now();
+    if (!networkMs || isNaN(networkMs)) return null;
+    return Math.abs(networkMs - deviceNowMs);
+  } catch (_) {
+    return null;
+  }
+}
+
+function calculateClockRisk(data) {
+  const reasons = [];
+  let score = 0;
+
+  const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
+  if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
+    score += 6;
+    reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
+  }
+
+  if (data.offlineCreated) {
+    score += 1;
+    reasons.push("ثبت آفلاین");
+  }
+
+  if (String(data.locationStatus || "").toLowerCase() !== "ok") {
+    score += 4;
+    reasons.push("GPS نامعتبر/خاموش");
+  }
+
+  return {
+    clockRisk: score >= 6 ? "high" : score >= 3 ? "medium" : "low",
+    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال",
+  };
+}
+
+/* =========================
+   Geolocation
+========================= */
+
+function isGeolocationUsable() {
+  return !!navigator.geolocation && window.isSecureContext;
+}
+
+function hasValidLocation(l) {
+  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
+}
+
+function emptyLocation(status, error) {
+  return {
+    latitude: "",
+    longitude: "",
+    accuracy: "",
+    timestamp: null,
+    status,
+    error,
+  };
+}
+
+function chooseBetterLocation(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+
+  if (!hasValidLocation(a)) return b;
+  if (!hasValidLocation(b)) return a;
+
+  return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
+}
+
+function geoErrorToLocation(err) {
+  if (err.code === 1) return emptyLocation("denied", "دسترسی رد شد");
+  if (err.code === 2) return emptyLocation("unavailable", "موقعیت در دسترس نیست");
+  if (err.code === 3) return emptyLocation("timeout", "زمان تمام شد");
+  return emptyLocation("error", "خطای GPS");
+}
+
+function getCurrentPositionSafe(options) {
+  return new Promise((resolve) => {
+    let done = false;
+
+    const timeoutId = setTimeout(() => {
+      if (done) return;
+      done = true;
+      resolve(emptyLocation("timeout", "زمان تمام شد"));
+    }, (options.timeout || 20000) + 3000);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+          status: "ok",
+          error: "",
+        });
+      },
+      (err) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+        resolve(geoErrorToLocation(err));
+      },
+      options
+    );
+  });
+}
+
+function getLocationWithWatch(waitMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    let best = null;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const loc = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+          status: "ok",
+          error: "",
+        };
+
+        best = chooseBetterLocation(best, loc);
+        if (loc.accuracy <= GOOD_ACCURACY_METERS) finish(loc);
+      },
+      (err) => finish(geoErrorToLocation(err)),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: waitMs,
+      }
+    );
+
+    const timeoutId = setTimeout(() => finish(best), waitMs + 3000);
+
+    function finish(loc) {
+      if (done) return;
+      done = true;
+      navigator.geolocation.clearWatch(watchId);
+      clearTimeout(timeoutId);
+      resolve(loc || emptyLocation("timeout", "GPS دریافت نشد"));
+    }
+  });
+}
+
+async function getLocationIOSFriendly() {
+  if (!isGeolocationUsable()) return emptyLocation("unavailable", "GPS در دسترس نیست");
+
+  const firstLocation = await getCurrentPositionSafe({
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 25000,
+  });
+
+  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) return firstLocation;
+  if (firstLocation?.status === "denied") return firstLocation;
+
+  const secondLocation = await getCurrentPositionSafe({
+    enableHighAccuracy: false,
+    maximumAge: 0,
+    timeout: 15000,
+  });
+
+  if (secondLocation?.status === "denied") return secondLocation;
+
+  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
+  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) return bestLocation;
+
+  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
+  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
+
+  return bestLocation;
+}
+
+/* =========================
+   Image
+========================= */
+
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const img = new Image();
+
+      img.onload = () => {
+        const OUT_W = 1080;
+        const OUT_H = 1350;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = OUT_W;
+        canvas.height = OUT_H;
+
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, OUT_W, OUT_H);
+
+        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
+        const drawW = Math.round(img.width * scale);
+        const drawH = Math.round(img.height * scale);
+        const dx = Math.round((OUT_W - drawW) / 2);
+        const dy = Math.round((OUT_H - drawH) / 2);
+
+        ctx.drawImage(img, dx, dy, drawW, drawH);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return reject(new Error("خطا در ساخت تصویر فشرده"));
+
+            const r = new FileReader();
+            r.onloadend = () => resolve(r.result);
+            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
+            r.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          0.7
+        );
+      };
+
+      img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
+      img.src = e.target.result;
+    };
+
+    reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/* =========================
+   Jalali -> Gregorian (helpers)
+========================= */
+
+function jalaliToGregorian_(jy, jm, jd) {
+  const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
+  const jy2 = jy === 979 ? 0 : jy - 979;
+  let leapJ = -14;
+  let jp = salA[0];
+
+  for (let i = 1; i < 20; i += 1) {
+    const temp = salA[i];
+    const dy = temp - jp;
+    if (jy2 < temp) {
+      const q = Math.floor(jy2 / 33);
+      const r = jy2 % 33;
+      leapJ += q * 8 + Math.floor((r + 4) / 4);
+      if (dy - r > 0 && r === 30) leapJ += 1;
+      break;
+    }
+    leapJ += Math.floor(dy / 33) * 8 + Math.floor(((dy % 33) + 3) / 4);
+    jp = temp;
+  }
+
+  const q = Math.floor(jy2 / 33);
+  leapJ += q * 8 + Math.floor(((jy2 % 33) + 3) / 4);
+
+  const gDays = 365 * jy2 + leapJ + 79;
+  const gy2 = 1600 + 400 * Math.floor(gDays / 146097);
+  let gdm = gDays % 146097;
+
+  let leapG = true;
+  if (gdm >= 36525) {
+    gdm -= 1;
+    gdm %= 36524;
+    if (gdm >= 365) gdm += 1;
+    else leapG = false;
+  }
+
+  let gy = gy2 + 4 * Math.floor(gdm / 1461);
+  gdm %= 1461;
+
+  if (gdm >= 366) {
+    leapG = false;
+    gdm -= 1;
+    gy += Math.floor(gdm / 365);
+    gdm %= 365;
+  }
+
+  let i = 0;
+  const salG = [0, 31, leapG ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  for (i = 1; i <= 12; i += 1) {
+    if (gdm < salG[i]) break;
+    gdm -= salG[i];
+  }
+
+  return [gy, i, gdm + 1];
+}
+
+function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
+  try {
+    const cleanD = dateStr
+      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+      .replace(/[^\d/]/g, "");
+    const cleanT = timeStr
+      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+      .replace(/[^\d:]/g, "");
+
+    const dp = cleanD.split("/");
+    const tp = cleanT.split(":");
+    if (dp.length < 3 || tp.length < 2) return null;
+
+    const jy = parseInt(dp[0], 10);
+    const jm = parseInt(dp[1], 10);
+    const jd = parseInt(dp[2], 10);
+
+    const th = parseInt(tp[0], 10);
+    const tm = parseInt(tp[1], 10);
+    const ts = tp[2] ? parseInt(tp[2], 10) : 0;
+
+    const [gy, gm, gd] = jalaliToGregorian_(jy, jm, jd);
+    return new Date(gy, gm - 1, gd, th, tm, ts);
+  } catch (e) {
+    return null;
+  }
+}

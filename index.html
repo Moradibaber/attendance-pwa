@@ -1,4 +1,3 @@
-<!-- FILE: index.html -->
 <!doctype html>
 <html lang="fa" dir="rtl">
 <head>
@@ -286,23 +285,15 @@
       padding:0!important;
     }
 
-    /* حذف هر اعلان/هشدار اولیه احتمالی */
+    /* فقط اعلان‌ها و هشدارهای عمومی حذف شوند؛ GPS/Internet حفظ می‌شود */
     [id*="notice"],
     [id*="Notice"],
     [id*="alert"],
     [id*="Alert"],
-    [id*="gps"],
-    [id*="Gps"],
-    [id*="internet"],
-    [id*="Internet"],
     [class*="notice"],
     [class*="Notice"],
     [class*="alert"],
-    [class*="Alert"],
-    [class*="gps"],
-    [class*="Gps"],
-    [class*="internet"],
-    [class*="Internet"]{
+    [class*="Alert"]{
       display:none!important;
       visibility:hidden!important;
       height:0!important;
@@ -386,20 +377,15 @@
     (function () {
       function hardRemoveStartupTexts() {
         const badTextList = [
-          'اعلام اولیه بابت باز کردن اینترنت و ج پی اس',
-          'باز کردن اینترنت و ج پی اس',
-          'روشن کردن اینترنت و ج پی اس',
-          'اینترنت و ج پی اس را روشن کنید',
-          'لطفا اینترنت و gps را روشن کنید',
-          'لطفا gps را روشن کنید',
-          'لطفا جی پی اس را روشن کنید'
+          'اعلام اولیه بابت باز کردن اینترنت و ج پی اس'
         ];
 
         const all = document.body.querySelectorAll('*');
         all.forEach(el => {
           if (!el || !el.parentNode) return;
           if (el.id === 'mainApp' || el.id === 'splashScreen' || el.id === 'busyOverlay') return;
-          const txt = (el.innerText || el.textContent || '').replace(/\s+/g,' ').trim();
+
+          const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
           if (!txt) return;
 
           const matched = badTextList.some(t => txt.includes(t));
@@ -412,19 +398,17 @@
           '#earlyNotice',
           '#initNotice',
           '#startupNotice',
-          '#internetGpsNotice',
-          '#gpsNotice',
           '#tempNotice',
           '#locationNotice',
           '#networkNotice',
           '.startup-notice',
-          '.gps-warning-alert',
           '.temp-notice',
           '.internet-gps-note',
           '.gps-note',
           '.notice',
           '.alert'
         ];
+
         selectors.forEach(sel => {
           document.querySelectorAll(sel).forEach(el => el.remove());
         });
@@ -450,7 +434,7 @@
           hardRemoveStartupTexts();
           document.getElementById('splashScreen').classList.add('is-hide');
           document.getElementById('mainApp').classList.remove('app-hidden');
-        }, 4000); // زمان اسپلش بیشتر شد
+        }, 4000);
 
         setTimeout(() => {
           clearTopNodes();

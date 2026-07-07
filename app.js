@@ -1,5 +1,5 @@
 /* FILE: /app.js */
-/* REPLACE FULL FILE */
+/* REPLACE FULL FILE */ 
 
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;

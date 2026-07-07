@@ -655,7 +655,8 @@ async function getCurrentAttendanceGate() {
 ========================= */
 
 async function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const personnelCodeInput = $("personnelCode");
+  const personnelCode = personnelCodeInput?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
   const lastName = $("lastName")?.value.trim() || "";
 
@@ -775,13 +776,14 @@ async function handlePhotoSelected() {
 async function createRecord(type) {
   const profile = await getProfile();
 
-  const { policyInfo, gate } = await getCurrentAttendanceGate();
+  const { gate } = await getCurrentAttendanceGate();
   if (!gate.ok) {
     setStatus(gate.message);
     return;
   }
 
-  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+  const attendancePolicyInfo = await getAttendancePolicyInfo();
+  const attendancePolicy = attendancePolicyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
@@ -873,10 +875,10 @@ async function createRecord(type) {
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
 
-    attendancePolicy,
-    policyVersion: Number(policyInfo.policyVersion || 0),
-    policyFetchedAt: policyInfo.policyFetchedAt || "",
-    policySource: policyInfo.policySource || "",
+    attendancePolicy: attendancePolicy,
+    policyVersion: Number(attendancePolicyInfo.policyVersion || 0),
+    policyFetchedAt: attendancePolicyInfo.policyFetchedAt || "",
+    policySource: attendancePolicyInfo.policySource || "",
 
     photo: currentPhoto || "",
 
@@ -1615,13 +1617,12 @@ async function sendHeartbeat() {
     return;
   }
 
-  // Retrieve personnelCode. Adjust this based on how you store it.
-  // Assuming it's stored in localStorage or accessible globally.
-  const personnelCode = localStorage.getItem("personnelCode");
-  // Or: const personnelCode = getPersonnelCode(); // if you have a getter function
+  // Retrieve personnelCode from the input field
+  const personnelCodeInput = $("personnelCode");
+  const personnelCode = personnelCodeInput ? personnelCodeInput.value.trim() : "";
 
   if (!personnelCode) {
-    console.warn("Heartbeat: personnelCode not found. Cannot send heartbeat.");
+    console.warn("Heartbeat: personnelCode not found from input. Cannot send heartbeat.");
     // Optionally, you might want to stop the heartbeat or prompt the user to log in.
     stopHeartbeat();
     return;
@@ -1651,11 +1652,11 @@ async function sendHeartbeat() {
       return;
     }
 
-    const result = await response.json();
-    console.log("Heartbeat Response:", result);
-
-    // Optional: Handle response from backend if it contains important info
-    // e.g., if (result.message) { console.log("Backend message:", result.message); }
+    // The backend script uses CORS-unsafe POST, so response is opaque.
+    // We can't reliably read JSON here due to 'no-cors' mode.
+    // If the backend returns specific statuses or data, you'd need to adjust the backend
+    // to allow CORS or use a different approach for response handling.
+    console.log("Heartbeat sent (response is opaque due to no-cors mode).");
 
   } catch (error) {
     console.error("Heartbeat Network Error:", error);
@@ -1670,9 +1671,11 @@ function startHeartbeat() {
     return;
   }
   // Ensure personnelCode is available before starting
-  const personnelCode = localStorage.getItem("personnelCode"); // Or your method to get it
+  const personnelCodeInput = $("personnelCode");
+  const personnelCode = personnelCodeInput ? personnelCodeInput.value.trim() : "";
+
   if (!personnelCode) {
-    console.warn("Heartbeat: Cannot start, personnelCode not found.");
+    console.warn("Heartbeat: Cannot start, personnelCode not found from input.");
     return;
   }
 

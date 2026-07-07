@@ -28,7 +28,6 @@ const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
 
-let db = null;
 let currentPhoto = "";
 let pendingLocation = null;
 let syncRunning = false;
@@ -130,8 +129,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }, 4200);
   } catch (_) {}
 
+  // حذف تابع اولیه باز کردن سراسری برای دوری از خطای حالت کانکشن
   try {
-    db = await openDb();
+    const testDb = await openDb();
+    testDb.close();
   } catch (e) {
     console.error("DB init error", e);
   }
@@ -354,26 +355,27 @@ function scheduleSyncPendingRecords(delay = 0) {
    IndexedDB
 ========================= */
 
+// همیشه یک شی ارتباطی تازه ایجاد کرده و برمی‌گرداند تا احتمال قطع کانکشن به صفر برسد
 function openDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION); 
 
     request.onupgradeneeded = (event) => {
-      const db = event.target.result;
+      const dbInstance = event.target.result;
       
       // ساخت جدول رکوردها با کلید اصلی
-      if (!db.objectStoreNames.contains(STORE_RECORDS)) {
-        db.createObjectStore(STORE_RECORDS, { keyPath: "clientRecordId" });
+      if (!dbInstance.objectStoreNames.contains(STORE_RECORDS)) {
+        dbInstance.createObjectStore(STORE_RECORDS, { keyPath: "clientRecordId" });
       }
       
       // ساخت جدول پروفایل پرسنلی با کلید اصلی id
-      if (!db.objectStoreNames.contains(STORE_PROFILE)) {
-        db.createObjectStore(STORE_PROFILE, { keyPath: "id" });
+      if (!dbInstance.objectStoreNames.contains(STORE_PROFILE)) {
+        dbInstance.createObjectStore(STORE_PROFILE, { keyPath: "id" });
       }
 
       // ساخت جدول تنظیمات با کلید اصلی id
-      if (!db.objectStoreNames.contains(STORE_CONFIG)) {
-        db.createObjectStore(STORE_CONFIG, { keyPath: "id" });
+      if (!dbInstance.objectStoreNames.contains(STORE_CONFIG)) {
+        dbInstance.createObjectStore(STORE_CONFIG, { keyPath: "id" });
       }
     };
 
@@ -382,36 +384,67 @@ function openDb() {
   });
 }
 
+// توابع تراکنشی بهینه‌سازی شده با چرخه کامل باز و بسته شدن خودکار درگاه دیتابیس
 async function dbPut(store, value) {
-  if (!db) db = await openDb();
+  const localDb = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readwrite");
+    const tx = localDb.transaction(store, "readwrite");
     const st = tx.objectStore(store);
     const req = st.put(value);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => {
+      localDb.close();
+      resolve(req.result);
+    };
+    tx.onerror = () => {
+      localDb.close();
+      reject(tx.error);
+    };
+    tx.onabort = () => {
+      localDb.close();
+      reject(new Error("Transaction aborted"));
+    };
   });
 }
 
 async function dbGet(store, key) {
-  if (!db) db = await openDb();
+  const localDb = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
+    const tx = localDb.transaction(store, "readonly");
     const st = tx.objectStore(store);
     const req = st.get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => {
+      localDb.close();
+      resolve(req.result);
+    };
+    tx.onerror = () => {
+      localDb.close();
+      reject(tx.error);
+    };
+    tx.onabort = () => {
+      localDb.close();
+      reject(new Error("Transaction aborted"));
+    };
   });
 }
 
 async function dbGetAll(store) {
-  if (!db) db = await openDb();
+  const localDb = await openDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
+    const tx = localDb.transaction(store, "readonly");
     const st = tx.objectStore(store);
     const req = st.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => {
+      localDb.close();
+      resolve(req.result || []);
+    };
+    tx.onerror = () => {
+      localDb.close();
+      reject(tx.error);
+    };
+    tx.onabort = () => {
+      localDb.close();
+      reject(new Error("Transaction aborted"));
+    };
   });
 }
 
@@ -467,8 +500,6 @@ async function getProfile() {
 }
 
 async function saveProfile() {
-  if (!db) db = await openDb();
-
   const btn = $("saveProfileBtn");
   if (!btn) return;
 
@@ -832,7 +863,7 @@ function createClientRecordId(personnelCode, baseMs) {
 ========================= */
 
 async function markFirstConnectionForOfflineRecords() {
-  if (!db || !navigator.onLine) return;
+  if (!navigator.onLine) return;
   try {
     const nowIso = new Date().toISOString();
     const records = await dbGetAll(STORE_RECORDS);
@@ -885,17 +916,28 @@ async function syncPendingRecords() {
       const payload = buildServerPayload(record);
 
       try {
-        await fetch(APPS_SCRIPT_URL, {
+        // تغییر به حالت CORS همراه با متد صریح POST برای رفع مشکل عدم دریافت صحیح بدنه
+        const response = await fetch(APPS_SCRIPT_URL, {
           method: "POST",
-          mode: "no-cors",
+          mode: "cors",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify(payload),
         });
 
-        record.status = "sent";
-        record.uploadedAt = new Date().toISOString();
+        if (response.ok) {
+          const resJson = await response.json();
+          if (resJson && resJson.status === "success") {
+            record.status = "sent";
+            record.uploadedAt = new Date().toISOString();
+            await dbPut(STORE_RECORDS, record);
+            successCount++;
+            continue;
+          }
+        }
+        
+        // در صورت عدم دریافت وضعیت موفقیت، رکورد به وضعیت ناموفق باز می‌گردد
+        record.status = "failed";
         await dbPut(STORE_RECORDS, record);
-        successCount++;
       } catch (err) {
         console.error("Sync fetch failed for clientRecordId:", record.clientRecordId, err);
         record.status = "failed";
@@ -920,7 +962,9 @@ async function syncPendingRecords() {
 window.addEventListener('online', syncPendingRecords);
 
 function buildServerPayload(record) {
+  // این تابع ساختاری دقیق و مشخص را بدون وابستگی به فرمت IndexedDB بسته‌بندی می‌کند
   return {
+    action: "attendance",
     clientRecordId: record.clientRecordId || "",
     personnelCode: record.personnelCode || "",
     firstName: record.firstName || "",
@@ -1125,15 +1169,32 @@ async function getLocationIOSFriendly() {
 
 function compressImage(file) {
   return new Promise((resolve) => {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
     const reader = new FileReader();
+    
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        canvas.width = 800; canvas.height = 1000;
-        ctx.drawImage(img, 0, 0, 800, 1000);
-        resolve(canvas.toDataURL("image/jpeg", 0.6));
+        // فشرده سازی بهینه بدون به هم خوردگی Aspect Ratio
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 800;
+        
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.65));
       };
       img.src = e.target.result;
     };

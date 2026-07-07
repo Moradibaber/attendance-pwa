@@ -537,5 +537,42 @@ body {
       });
     })();
   </script>
+  <script>
+    // app.js یا اسکریپت انتهایی index.html
+
+document.addEventListener('DOMContentLoaded', () => {
+  const splash = document.getElementById('splashScreen');
+  const mainApp = document.getElementById('mainApp');
+  const preview = document.getElementById('photoPreview');
+
+  // اسپلش را زود نبند
+  if (splash && mainApp) {
+    splash.classList.remove('is-hide');
+    mainApp.classList.add('app-hidden');
+
+    setTimeout(() => {
+      splash.classList.add('is-hide');
+      mainApp.classList.remove('app-hidden');
+    }, 2800);
+  }
+
+  // پیش‌نمایش فقط وقتی عکس هست
+  if (preview) {
+    const updatePreview = () => {
+      const src = preview.getAttribute('src');
+      if (src && src.trim() !== '') {
+        preview.style.display = 'block';
+      } else {
+        preview.style.display = 'none';
+      }
+    };
+
+    updatePreview();
+    preview.addEventListener('load', updatePreview);
+    preview.addEventListener('error', updatePreview);
+  }
+});
+
+  </script>
 </body>
 </html>

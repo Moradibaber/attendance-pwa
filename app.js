@@ -2,7 +2,7 @@
 /* REPLACE FULL FILE */ 
 
 const DB_NAME = "attendance-pwa-db";
-const DB_VERSION = 4;
+const DB_VERSION = 4; 
 
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";

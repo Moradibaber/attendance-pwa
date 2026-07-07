@@ -1,65 +1,232 @@
-<!doctype html> 
+<!doctype html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#0f766e" />
-  <link rel="manifest" href="manifest.json?v=4" />
+  <link rel="manifest" href="manifest.json?v=2" />
   <title>ثبت تردد</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
+
   <style>
-    :root{ --bg:#b1e4ec; --card:#e3c4a8; --text:#3f2f21; --border:#c5a88d; --primary:#28a745; --blue:#3498db; --warn:#fff3e0; --warnBorder:#ffb74d; }
-    *{ box-sizing:border-box; }
-    html,body{ margin:0; padding:4px; background:var(--bg)!important; font-family:system-ui,-apple-system,sans-serif; direction:rtl; min-height:100vh; }
-    .app{ max-width:500px; margin:0 auto; }
-    .card{ background-color:var(--card)!important; border:1px solid var(--border)!important; border-radius:12px!important; padding:6px 10px!important; margin:0 0 4px 0!important; box-shadow:0 2px 6px rgba(0,0,0,.08)!important; }
-    .card h2{ font-size:.95rem!important; font-weight:800!important; color:var(--text)!important; text-align:center!important; margin:0 0 4px 0!important; }
-    .compact-warning{ background-color:var(--warn)!important; border:1px solid var(--warnBorder)!important; padding:6px 10px!important; }
-    .compact-warning strong{ display:block; text-align:center; font-size:.85rem; color:#d35400; margin-bottom:2px; }
-    .compact-warning p{ margin:0; font-size:.75rem; line-height:1.4; text-align:justify; }
-    #personnelCode,#firstName,#lastName{ background-color:#ffcc00!important; color:#111827!important; font-weight:900!important; font-size:1rem!important; text-align:center!important; border:1px solid #e0b000!important; border-radius:8px!important; padding:8px!important; margin:0 0 6px 0!important; width:100%!important; outline:none; }
-    #saveProfileBtn{ background-color:var(--primary)!important; color:#fff!important; font-weight:800!important; font-size:.9rem!important; border:none!important; border-radius:8px!important; padding:8px!important; width:100%!important; cursor:pointer!important; }
-    .camera-row{ margin:0!important; padding:0!important; }
-    .camera-btn{ display:flex!important; align-items:center!important; justify-content:center!important; gap:6px!important; padding:6px 10px!important; background:var(--blue)!important; color:#fff!important; border-radius:8px!important; font-weight:800!important; font-size:.9rem!important; min-height:34px!important; border:none!important; cursor:pointer!important; width:100%!important; }
-    #splashScreen{ position:fixed; inset:0; z-index:99999; background:var(--bg); display:flex; align-items:center; justify-content:center; }
-    #splashScreen.is-hide{ display:none!important; }
-    .splash-card{ width:80%; max-width:360px; text-align:center; background:#f4d2aa; border-radius:20px; padding-bottom:15px; }
-    .splash-card img{ width:100%; display:block; border-radius:20px 20px 0 0; }
-    .stats{ display:grid!important; grid-template-columns:1fr 1fr 1fr!important; gap:6px!important; margin:4px 0!important; }
-    .stats>div{ border-radius:8px!important; padding:6px 2px!important; text-align:center!important; color:#fff!important; font-weight:800!important; }
-    .stats>div:nth-child(1){ background:#3399ff!important; }
-    .stats>div:nth-child(2){ background:#00cc44!important; }
-    .stats>div:nth-child(3){ background:#ff1a1a!important; }
-    .records{ max-height:150px; overflow-y:auto; font-size:.8rem; }
-    .record-item{ padding:4px; border-bottom:1px solid var(--border); text-align:center; }
-    .status{ font-size:.75rem; margin:2px 0; min-height:14px; text-align:center; }
-    #photoInput{ display:none!important; }
-    #photoPreview,.preview{ display:none!important; width:140px!important; height:auto!important; border-radius:8px!important; margin:0 auto!important; }
-    #photoPreview[src]{ display:block!important; }
-    .busy-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:10000; display:flex; align-items:center; justify-content:center; }
-    .busy-box{ background:#fff; padding:20px; border-radius:12px; text-align:center; }
-    .busy-spinner{ width:30px; height:30px; border:3px solid #eee; border-top-color:#f97316; border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 10px; }
-    @keyframes spin{ to{ transform:rotate(360deg); } }
+    :root {
+      --bg: #b1e4ec;
+      --card: #e3c4a8;
+      --text: #3f2f21;
+      --border: #c5a88d;
+      --primary: #28a745;
+      --blue: #3498db;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background-color: var(--bg) !important;
+      margin: 0;
+      padding: 4px;
+      font-family: system-ui, -apple-system, sans-serif;
+      direction: rtl;
+    }
+
+    .app {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* کاهش شدید فواصل کارت‌ها */
+    .card {
+      background-color: var(--card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 12px !important;
+      padding: 6px 10px !important;
+      margin-bottom: 4px !important;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+    }
+
+    .card h2 {
+      font-size: 0.95rem !important;
+      font-weight: 800 !important;
+      color: var(--text) !important;
+      text-align: center !important;
+      margin: 0 0 4px 0 !important;
+      line-height: 1.2;
+    }
+
+    /* استایل هشدار */
+    .compact-warning {
+      background-color: #fff3e0 !important;
+      border: 1px solid #ffb74d !important;
+      padding: 6px 10px !important;
+    }
+    .compact-warning strong {
+      display: block;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #d35400;
+      margin-bottom: 2px;
+    }
+    .compact-warning p {
+      margin: 0;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      text-align: justify;
+    }
+
+    /* ورودی‌های متن */
+    #personnelCode, #firstName, #lastName {
+      background-color: #ffcc00 !important;
+      color: #111827 !important;
+      font-weight: 900 !important;
+      font-size: 1rem !important;
+      text-align: center !important;
+      border: 1px solid #e0b000 !important;
+      border-radius: 8px !important;
+      padding: 8px !important;
+      margin-bottom: 6px !important;
+      width: 100% !important;
+      outline: none;
+    }
+
+    /* دکمه سبز ذخیره مشخصات */
+    #saveProfileBtn {
+      background-color: var(--primary) !important;
+      color: #ffffff !important;
+      font-weight: 800 !important;
+      font-size: 0.9rem !important;
+      border: none !important;
+      border-radius: 8px !important;
+      padding: 8px !important;
+      width: 100% !important;
+      cursor: pointer !important;
+    }
+
+    /* دکمه آبی ثبت تردد (سلفی) - فشرده شده */
+    .camera-row {
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    .camera-btn {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 6px !important;
+      padding: 6px 10px !important; /* پدینگ کم برای ارتفاع کمتر */
+      background: var(--blue) !important;
+      color: #fff !important;
+      border-radius: 8px !important;
+      font-weight: 800 !important;
+      font-size: 0.9rem !important;
+      min-height: 34px !important; /* ارتفاع کنترل شده */
+      border: none !important;
+      cursor: pointer !important;
+      width: 100%;
+    }
+
+    .cam-ico {
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    #photoInput { display: none; }
+
+    .photo-row { margin-top: 4px; }
+    .preview {
+      display: block;
+      width: 140px;
+      border-radius: 8px;
+      margin: 0 auto;
+    }
+
+    /* بخش آمار */
+    .stats {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr 1fr !important;
+      gap: 6px !important;
+      margin: 4px 0 !important;
+    }
+    .stats > div {
+      border-radius: 8px !important;
+      padding: 6px 2px !important;
+      text-align: center !important;
+      color: #fff !important;
+      font-weight: 800 !important;
+    }
+    .stats > div:nth-child(1) { background: #3399ff !important; }
+    .stats > div:nth-child(2) { background: #00cc44 !important; }
+    .stats > div:nth-child(3) { background: #ff1a1a !important; }
+    .stats span { display: block; font-size: 1.1rem; }
+    .stats small { font-size: 0.65rem; opacity: 0.9; }
+
+    /* لیست ترددها */
+    .records {
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+    }
+    .record-item {
+      padding: 4px;
+      border-bottom: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .status {
+      font-size: 0.75rem;
+      margin: 2px 0;
+      min-height: 14px;
+      text-align: center;
+    }
+
+    /* Splash & Overlays */
+    #splashScreen {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--bg); display: flex; align-items: center; justify-content: center;
+    }
+    #splashScreen.is-hide { display: none; }
+    .splash-card { width: 80%; text-align: center; background: #f4d2aa; border-radius: 20px; padding-bottom: 15px;}
+    .splash-card img { width: 100%; border-radius: 20px 20px 0 0; }
+
+    .busy-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 10000; display: flex; align-items: center; justify-content: center;
+    }
+    .busy-box { background: #fff; padding: 20px; border-radius: 12px; text-align: center; }
+    .busy-spinner {
+      width: 30px; height: 30px; border: 3px solid #eee; border-top-color: #f97316;
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .app-hidden { display: none; }
   </style>
 </head>
+
 <body>
   <div id="splashScreen">
     <div class="splash-card">
       <img src="cover-rights-reserved.png" alt="Welcome">
-      <div style="font-weight:800;margin-top:10px;">خوش آمدید</div>
+      <div style="font-weight:800; margin-top:10px;">خوش آمدید</div>
     </div>
   </div>
+
   <div id="busyOverlay" class="busy-overlay" style="display:none;">
     <div class="busy-box">
       <div class="busy-spinner"></div>
-      <div id="busyText" style="font-size:.85rem">در حال پردازش...</div>
+      <div id="busyText" style="font-size:0.85rem">در حال پردازش...</div>
     </div>
   </div>
-  <main class="app" id="mainApp">
+
+  <main class="app app-hidden" id="mainApp">
     <p id="onlineBadge" class="status"></p>
+
     <section class="card compact-warning">
       <strong>هشدار مهم</strong>
       <p>پاک کردن حافظه مرورگر یا حذف برنامه باعث حذف اطلاعات ارسال‌نشده می‌شود.</p>
     </section>
+
     <section class="card">
       <h2>مشخصات پرسنلی</h2>
       <input id="personnelCode" inputmode="numeric" placeholder="شماره پرسنلی" />
@@ -68,15 +235,22 @@
       <button id="saveProfileBtn">ذخیره مشخصات</button>
       <p id="profileStatus" class="status"></p>
     </section>
+
     <section class="card">
       <h2>ثبت تردد</h2>
       <input id="photoInput" type="file" accept="image/*" capture="user" />
       <div class="camera-row">
-        <label for="photoInput" class="camera-btn"><span>عکس سلفی خود را بگیرید</span></label>
+        <label for="photoInput" class="camera-btn">
+          <span class="cam-ico"></span>
+          <span>عکس سلفی خود را بگیرید</span>
+        </label>
       </div>
-      <div class="photo-row"><img id="photoPreview" class="preview" /></div>
+      <div class="photo-row">
+        <img id="photoPreview" class="preview" style="display:none" />
+      </div>
       <p id="captureStatus" class="status"></p>
     </section>
+
     <section class="card">
       <h2>وضعیت</h2>
       <div class="stats">
@@ -86,18 +260,20 @@
       </div>
       <p id="syncStatus" class="status"></p>
     </section>
+
     <section class="card">
       <h2>ترددهای اخیر</h2>
       <div id="recordsList" class="records"></div>
     </section>
   </main>
-  <script src="app.js?v=59"></script>
+
+  <script src="app.js?v=54"></script>
   <script>
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        var s = document.getElementById('splashScreen');
-        if (s) s.classList.add('is-hide');
-      }, 4000);
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        document.getElementById('splashScreen').classList.add('is-hide');
+        document.getElementById('mainApp').classList.remove('app-hidden');
+      }, 1500);
     });
   </script>
 </body>

@@ -118,7 +118,11 @@ function getJalaliIsoDate(d = new Date()) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
+    setTimeout(() => {
+      try {
+        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
+      } catch (_) {}
+    }, 4200);
   } catch (_) {}
 
   try {

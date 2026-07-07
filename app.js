@@ -39,6 +39,11 @@ let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
 
+// --- Heartbeat Configuration ---
+const HEARTBEAT_INTERVAL_MS = 60 * 1000; // Send heartbeat every 60 seconds
+let heartbeatTimer = null;
+// --- End Heartbeat Configuration ---
+
 const $ = (id) => document.getElementById(id);
 
 /* =========================
@@ -160,6 +165,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
   } catch (_) {}
+
+  // --- Heartbeat Initialization ---
+  updateOnlineBadge(); // Set initial badge state
+  if (navigator.onLine) {
+    startHeartbeat();
+  }
+  // Add event listeners for network status changes
+  window.addEventListener('online', () => {
+    updateOnlineBadge();
+    startHeartbeat();
+  });
+  window.addEventListener('offline', () => {
+    updateOnlineBadge();
+    stopHeartbeat();
+  });
+  // --- End Heartbeat Initialization ---
 });
 
 /* =========================
@@ -1585,3 +1606,88 @@ function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
     return null;
   }
 }
+
+// --- Heartbeat Functions ---
+
+async function sendHeartbeat() {
+  if (!navigator.onLine) {
+    console.log("Heartbeat: Not online, skipping send.");
+    return;
+  }
+
+  // Retrieve personnelCode. Adjust this based on how you store it.
+  // Assuming it's stored in localStorage or accessible globally.
+  const personnelCode = localStorage.getItem("personnelCode");
+  // Or: const personnelCode = getPersonnelCode(); // if you have a getter function
+
+  if (!personnelCode) {
+    console.warn("Heartbeat: personnelCode not found. Cannot send heartbeat.");
+    // Optionally, you might want to stop the heartbeat or prompt the user to log in.
+    stopHeartbeat();
+    return;
+  }
+
+  console.log(`Heartbeat: Sending for ${personnelCode}...`);
+
+  try {
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "Heartbeat",
+        personnelCode: personnelCode,
+        timestamp: new Date().toISOString(), // Include current timestamp
+      }),
+      // Add timeout for fetch request if needed
+      // signal: AbortSignal.timeout(10000) // Requires modern browser support
+    });
+
+    if (!response.ok) {
+      console.error(`Heartbeat Error: Server responded with status ${response.status}`);
+      // Handle specific HTTP errors if necessary
+      // e.g., if (response.status === 401) { // Unauthorized }
+      return;
+    }
+
+    const result = await response.json();
+    console.log("Heartbeat Response:", result);
+
+    // Optional: Handle response from backend if it contains important info
+    // e.g., if (result.message) { console.log("Backend message:", result.message); }
+
+  } catch (error) {
+    console.error("Heartbeat Network Error:", error);
+    // Consider more robust error handling, like retries or stopping heartbeat
+    // if errors persist.
+  }
+}
+
+function startHeartbeat() {
+  if (heartbeatTimer) {
+    console.log("Heartbeat already running.");
+    return;
+  }
+  // Ensure personnelCode is available before starting
+  const personnelCode = localStorage.getItem("personnelCode"); // Or your method to get it
+  if (!personnelCode) {
+    console.warn("Heartbeat: Cannot start, personnelCode not found.");
+    return;
+  }
+
+  console.log("Starting heartbeat...");
+  // Send immediately on start, then set interval
+  sendHeartbeat();
+  heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    console.log("Stopping heartbeat...");
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+// --- End Heartbeat Functions ---

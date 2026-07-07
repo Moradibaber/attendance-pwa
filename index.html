@@ -1,5 +1,4 @@
-<!-- File: index.html (PLACE THIS AS YOUR FULL index.html, REPLACE EVERYTHING) -->
-<!doctype html> 
+<!doctype html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
@@ -7,8 +6,6 @@
   <meta name="theme-color" content="#0f766e" />
   <link rel="manifest" href="manifest.json?v=4" />
   <title>ثبت تردد</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
-
   <style>
     :root{
       --bg:#b1e4ec;
@@ -24,7 +21,7 @@
       --noteText:#1f4e79;
     }
 
-    *{box-sizing:border-box}
+    *{ box-sizing:border-box; }
 
     html,body{
       margin:0;
@@ -120,42 +117,16 @@
       padding:10px 12px;
       text-align:center;
       border-bottom:1px solid var(--noteBorder);
+      font-size:1.05rem;
     }
 
     .notice-body{
-      padding:12px 14px;
+      padding:14px 16px;
       text-align:center;
       color:#111827;
       font-weight:900;
       line-height:1.9;
-      font-size:.95rem;
-    }
-
-    .notice-actions{
-      display:flex;
-      gap:10px;
-      padding:12px 14px;
-      border-top:1px solid #eee;
-      background:#fafafa;
-    }
-
-    .notice-btn{
-      flex:1;
-      border:none;
-      border-radius:10px;
-      padding:10px 12px;
-      font-weight:900;
-      cursor:pointer;
-    }
-
-    .notice-btn.primary{
-      background:#0f766e;
-      color:#fff;
-    }
-
-    .notice-btn.ghost{
-      background:#e5e7eb;
-      color:#111827;
+      font-size:.98rem;
     }
 
     #personnelCode,#firstName,#lastName{
@@ -208,32 +179,34 @@
       margin:0!important;
     }
 
-    .cam-ico{
-      width:18px;
-      height:18px;
-      background:#fff;
-      -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
-      mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 4l1.5-2h3L15 4h3a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h3zm3 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
+    #splashScreen{
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      background:var(--bg);
+      display:flex;
+      align-items:center;
+      justify-content:center;
     }
 
-    #photoInput{ display:none!important; }
-
-    .photo-row{
-      margin:0!important;
-      padding:0!important;
-      min-height:0!important;
-      height:auto!important;
-    }
-
-    #photoPreview,.preview{
+    #splashScreen.is-hide{
       display:none!important;
-      width:140px!important;
-      height:auto!important;
-      border-radius:8px!important;
-      margin:0 auto!important;
     }
 
-    #photoPreview[src]{ display:block!important; }
+    .splash-card{
+      width:80%;
+      max-width:360px;
+      text-align:center;
+      background:#f4d2aa;
+      border-radius:20px;
+      padding-bottom:15px;
+    }
+
+    .splash-card img{
+      width:100%;
+      display:block;
+      border-radius:20px 20px 0 0;
+    }
 
     .stats{
       display:grid!important;
@@ -250,12 +223,19 @@
       font-weight:800!important;
     }
 
-    .stats>div:nth-child(1){background:#3399ff!important}
-    .stats>div:nth-child(2){background:#00cc44!important}
-    .stats>div:nth-child(3){background:#ff1a1a!important}
+    .stats>div:nth-child(1){ background:#3399ff!important; }
+    .stats>div:nth-child(2){ background:#00cc44!important; }
+    .stats>div:nth-child(3){ background:#ff1a1a!important; }
 
-    .stats span{ display:block; font-size:1.1rem; }
-    .stats small{ font-size:.65rem; opacity:.9; }
+    .stats span{
+      display:block;
+      font-size:1.1rem;
+    }
+
+    .stats small{
+      font-size:.65rem;
+      opacity:.9;
+    }
 
     .records{
       max-height:150px;
@@ -276,31 +256,23 @@
       text-align:center;
     }
 
-    #splashScreen{
-      position:fixed;
-      inset:0;
-      z-index:99999;
-      background:var(--bg);
-      display:flex;
-      align-items:center;
-      justify-content:center;
+    #photoInput{ display:none!important; }
+
+    #photoPreview,.preview{
+      display:none!important;
+      width:140px!important;
+      height:auto!important;
+      border-radius:8px!important;
+      margin:0 auto!important;
     }
 
-    #splashScreen.is-hide{ display:none!important; }
+    #photoPreview[src]{ display:block!important; }
 
-    .splash-card{
-      width:80%;
-      max-width:360px;
-      text-align:center;
-      background:#f4d2aa;
-      border-radius:20px;
-      padding-bottom:15px;
-    }
-
-    .splash-card img{
-      width:100%;
-      display:block;
-      border-radius:20px 20px 0 0;
+    .photo-row{
+      margin:0!important;
+      padding:0!important;
+      min-height:0!important;
+      height:auto!important;
     }
 
     .busy-overlay{
@@ -330,7 +302,9 @@
       margin:0 auto 10px;
     }
 
-    @keyframes spin{ to{transform:rotate(360deg)} }
+    @keyframes spin{
+      to{ transform:rotate(360deg); }
+    }
 
     #onlineBadge:empty,
     #profileStatus:empty,
@@ -375,10 +349,6 @@
       <div class="notice-body">
         جی پی اس و اینترنت خود را روشن کنید، تمام مناطق تحت پوشش اینترنت است
       </div>
-      <div class="notice-actions">
-        <button id="noticeOkBtn" class="notice-btn primary" type="button">متوجه شدم</button>
-        <button id="noticeCloseBtn" class="notice-btn ghost" type="button">بستن</button>
-      </div>
     </div>
   </div>
 
@@ -411,7 +381,6 @@
       <input id="photoInput" type="file" accept="image/*" capture="user" />
       <div class="camera-row">
         <label for="photoInput" class="camera-btn">
-          <span class="cam-ico"></span>
           <span>عکس سلفی خود را بگیرید</span>
         </label>
       </div>
@@ -441,7 +410,7 @@
   <script>
     (function () {
       var SPLASH_MS = 4000;
-      var NOTICE_MS = 4000;
+      var NOTICE_MS = 6000;
 
       function showMainApp() {
         var splash = document.getElementById('splashScreen');
@@ -470,18 +439,6 @@
           showModal();
           setTimeout(hideModal, NOTICE_MS);
         }, SPLASH_MS);
-
-        var ok = document.getElementById('noticeOkBtn');
-        var close = document.getElementById('noticeCloseBtn');
-        if (ok) ok.addEventListener('click', hideModal);
-        if (close) close.addEventListener('click', hideModal);
-
-        var modal = document.getElementById('initialNoticeModal');
-        if (modal) {
-          modal.addEventListener('click', function (e) {
-            if (e.target === modal) hideModal();
-          });
-        }
       });
     })();
   </script>

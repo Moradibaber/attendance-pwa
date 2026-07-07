@@ -1371,13 +1371,43 @@ function chooseBetterLocation(a, b) {
    Image
 ========================= */
 
-function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const reader = new FileReader();
-
-    reader.onerror = () => reject(reader.error || new Error("FileReader failed"));
-
-    reader.onload = (e) => {
-      const img = new
+async function compressImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error("FileReader failed"));
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement("canvas");
+                const OUT_W = 900;
+                const OUT_H = 1350;
+                canvas.width = OUT_W;
+                canvas.height = OUT_H;
+                const ctx = canvas.getContext("2d");
+                
+                ctx.fillStyle = "#FFFFFF";
+                ctx.fillRect(0, 0, OUT_W, OUT_H);
+                
+                // حفظ نسبت ابعاد تصویر
+                const ratio = Math.min(OUT_W / img.width, OUT_H / img.height);
+                const x = (OUT_W - img.width * ratio) / 2;
+                const y = (OUT_H - img.height * ratio) / 2;
+                ctx.drawImage(img, x, y, img.width * ratio, img.height * ratio);
+                
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        reject(new Error("Canvas toBlob failed"));
+                        return;
+                    }
+                    const reader2 = new FileReader();
+                    reader2.onload = () => resolve(reader2.result);
+                    reader2.onerror = () => reject(new Error("Blob reader failed"));
+                    reader2.readAsDataURL(blob);
+                }, "image/jpeg", 0.7);
+            };
+            img.onerror = () => reject(new Error("Image load failed"));
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}

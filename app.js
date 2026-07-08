@@ -17,8 +17,6 @@ const GPS_REQUIRED = true;
 
 const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
 
-const HEARTBEAT_INTERVAL_MS = 3 * 60 * 1000; // send a heartbeat every 3 minutes while online
-
 const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
 const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
 const POLICY_ONLINE_ONLY = "ONLINE_ONLY";
@@ -158,10 +156,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   try {
-    sendHeartbeat();
-  } catch (_) {}
-
-  try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
@@ -290,37 +284,22 @@ function setupAutoSync() {
     await markFirstConnectionForOfflineRecords();
     scheduleSyncPendingRecords(500);
     await fetchMessages();
-    sendHeartbeat();
-    registerBackgroundSync("sync-heartbeat");
   });
 
-  window.addEventListener("offline", () => {
-    updateOnlineBadge();
-    registerBackgroundSync("sync-heartbeat");
-  });
+  window.addEventListener("offline", updateOnlineBadge);
 
   window.addEventListener("focus", async () => {
     if (!navigator.onLine) return;
     await refreshPolicyIfPossible();
     scheduleSyncPendingRecords(500);
     await fetchMessages();
-    sendHeartbeat();
   });
 
   document.addEventListener("visibilitychange", async () => {
-    if (document.hidden) {
-      // Going to background - make sure a sync fires later even if
-      // connectivity is currently down or only returns while backgrounded.
-      registerBackgroundSync("sync-heartbeat");
-      registerBackgroundSync("sync-records");
-      return;
-    }
-
-    if (!navigator.onLine) return;
+    if (document.hidden || !navigator.onLine) return;
     await refreshPolicyIfPossible();
     scheduleSyncPendingRecords(500);
     await fetchMessages();
-    sendHeartbeat();
   });
 
   if ("serviceWorker" in navigator) {
@@ -343,93 +322,14 @@ function setupAutoSync() {
     if (navigator.onLine) scheduleSyncPendingRecords(0);
   }, 60000);
 
-  setInterval(() => {
-    if (navigator.onLine) sendHeartbeat();
-  }, HEARTBEAT_INTERVAL_MS);
-
   if (navigator.onLine) {
     refreshPolicyIfPossible().finally(() => scheduleSyncPendingRecords(1000));
-    sendHeartbeat();
   }
-
-  registerPeriodicHeartbeatSync();
 }
 
 function scheduleSyncPendingRecords(delay = 0) {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => syncPendingRecords(), delay);
-}
-
-/* =========================
-   Heartbeat (internet connectivity log)
-========================= */
-
-/**
- * Fires a lightweight ping to the backend so every moment the phone had
- * internet gets logged in the "Heartbeat" sheet, appended in front of the
- * personnel code (new column per ping, new row per day). Uses the same
- * CORS-safe no-cors + text/plain pattern as the attendance sync so it
- * works with the existing Apps Script Web App without any deployment change.
- */
-/* =========================
-   Background Sync registration
-   Chrome/Android only - iOS Safari doesn't implement this API at all, and
-   the calls below silently no-op there (feature-detected), so everything
-   still relies on the foreground triggers as the primary mechanism.
-========================= */
-
-async function registerBackgroundSync(tag) {
-  try {
-    if (!("serviceWorker" in navigator) || !("SyncManager" in window)) return;
-    const reg = await navigator.serviceWorker.ready;
-    await reg.sync.register(tag);
-  } catch (err) {
-    // Not supported on this browser/platform (e.g. iOS Safari) - fine, the
-    // foreground heartbeat/sync triggers already cover this case.
-  }
-}
-
-async function registerPeriodicHeartbeatSync() {
-  try {
-    if (!("serviceWorker" in navigator) || !("PeriodicSyncManager" in window)) return;
-    const reg = await navigator.serviceWorker.ready;
-
-    const status = await navigator.permissions.query({ name: "periodic-background-sync" });
-    if (status.state !== "granted") return;
-
-    await reg.periodicSync.register("heartbeat-periodic", {
-      minInterval: HEARTBEAT_INTERVAL_MS,
-    });
-  } catch (err) {
-    // Periodic Background Sync isn't supported/available here - fine, this
-    // is a bonus best-effort mechanism, not something relied upon.
-  }
-}
-
-async function sendHeartbeat() {
-  try {
-    if (!navigator.onLine) return;
-
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile || !profile.personnelCode) return;
-
-    const payload = {
-      type: "Heartbeat",
-      personnelCode: profile.personnelCode || "",
-      firstName: profile.firstName || "",
-      lastName: profile.lastName || "",
-      deviceTime: new Date().toISOString(),
-    };
-
-    await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    console.error("Heartbeat send failed:", err);
-  }
 }
 
 /* =========================
@@ -973,11 +873,7 @@ async function createRecord(type) {
   setStatus("تردد با GPS ذخیره شد.");
   await refreshUi();
 
-  if (navigator.onLine) {
-    scheduleSyncPendingRecords(500);
-  }
-
-  registerBackgroundSync("sync-records");
+  if (navigator.onLine) scheduleSyncPendingRecords(500);
 }
 
 function createClientRecordId(personnelCode, baseMs) {

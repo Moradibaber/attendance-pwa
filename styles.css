@@ -650,13 +650,13 @@ button{
   border-radius:12px !important;
 }
 
-@media (max-width:480px){
+@media (max-width:360px){
   .preview,
   .form-hero-image,
   .photo-row img{
-    width:140px !important;
-    max-width:65vw !important;
-    max-height:190px !important;
+    width:120px !important;
+    max-width:55vw !important;
+    max-height:150px !important;
   }
 
   .card{
@@ -669,6 +669,6 @@ button{
   .form-hero-image,
   .photo-row img{
 اگر منظورت از **weight** حجم    max-width:60vw !important;
-    max-height:170px !important;
+    max-height:140px !important;
   }
 }

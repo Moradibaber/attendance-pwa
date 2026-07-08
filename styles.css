@@ -672,3 +672,13 @@ button{
     max-height:140px !important;
   }
 }
+/* این کد را جایگزین قبلی کن */
+img, canvas, .form-hero-image, .photo-row img {
+  display: block !important;
+  width: 120px !important;
+  height: 120px !important;
+  object-fit: cover !important;
+  margin: 10px auto !important;
+  border: 1px solid #ccc !important;
+  border-radius: 8px !important;
+}

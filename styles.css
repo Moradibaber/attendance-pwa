@@ -627,3 +627,48 @@ button{
   color:#fff !important;
   font-weight:800 !important;
 }
+.photo-row{
+  width:100% !important;
+  display:flex !important;
+  justify-content:center !important;
+  align-items:center !important;
+  margin:4px auto !important;
+  overflow:hidden !important;
+}
+
+.preview,
+.form-hero-image,
+.photo-row img{
+  width:160px !important;
+  max-width:70vw !important;
+  height:auto !important;
+  max-height:220px !important;
+  object-fit:contain !important;
+  object-position:center !important;
+  display:block !important;
+  margin:0 auto !important;
+  border-radius:12px !important;
+}
+
+@media (max-width:480px){
+  .preview,
+  .form-hero-image,
+  .photo-row img{
+    width:140px !important;
+    max-width:65vw !important;
+    max-height:190px !important;
+  }
+
+  .card{
+    overflow:hidden !important;
+  }
+}
+
+@media (max-width:360px){
+  .preview,
+  .form-hero-image,
+  .photo-row img{
+اگر منظورت از **weight** حجم    max-width:60vw !important;
+    max-height:170px !important;
+  }
+}

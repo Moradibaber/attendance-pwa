@@ -682,3 +682,13 @@ img, canvas, .form-hero-image, .photo-row img {
   border: 1px solid #ccc !important;
   border-radius: 8px !important;
 }
+#photoPreview {
+  display: block !important;
+  width: 150px !important;
+  height: 150px !important;
+  object-fit: cover !important; /* برای اینکه عکس بدون کشیدگی پر شود */
+  margin: 15px auto !important;
+  border-radius: 12px !important;
+  border: 2px solid #e5e7eb !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}

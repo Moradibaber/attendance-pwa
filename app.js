@@ -1457,8 +1457,8 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
-        const OUT_W = 600;
-        const OUT_H = 800;
+        const OUT_W = 400;
+        const OUT_H = 600;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
@@ -1486,7 +1486,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.7
+          0.6
         );
       };
 

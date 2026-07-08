@@ -1,5 +1,12 @@
-/* FILE: /app.js */
-/* REPLACE FULL FILE */
+/* =========================
+   Attendance PWA - Clean Client Code
+   Fix: CORS preflight error on Apps Script by using:
+   - POST with Content-Type: text/plain (no preflight)
+   - mode: "no-cors" (so browser won't block; response is opaque)
+   - treat success as "queued/sent" and rely on server-side Debug sheet
+   + NEW: Heartbeat - pings the server every 30s while online so the
+     server can accumulate how long each user stays online (OnlineTime sheet)
+   ========================= */
 
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
@@ -25,15 +32,22 @@ const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
 const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
 const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
 
+// NEW: heartbeat config - must be <= the server's HEARTBEAT_GAP_THRESHOLD_MS (90s) with room to spare
+const HEARTBEAT_INTERVAL_MS = 30000;
+let heartbeatTimer = null;
+
 const APP_SESSION_START_WALL_MS = Date.now();
 const APP_SESSION_START_PERF_MS = performance.now();
 
 let db = null;
 let currentPhoto = "";
 let pendingLocation = null;
+
 let syncRunning = false;
 let syncTimer = null;
-let lastAdminMessage = null;
+
+let adminMessageShownOnEntry = false;
+let lastAdminMessage = "";
 
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
@@ -42,87 +56,16 @@ let photoCompressedAtMs = 0;
 const $ = (id) => document.getElementById(id);
 
 /* =========================
-   Busy Overlay (Loader)
-========================= */
-
-function setBusy(isBusy, message = "در حال پردازش...") {
-  const overlay = $("busyOverlay");
-  const text = $("busyText");
-  if (!overlay || !text) return;
-
-  text.textContent = message;
-  overlay.style.display = isBusy ? "flex" : "none";
-}
-
-/* =========================
-   Jalali (Persian) Date Converter
-========================= */
-
-function getJalaliDateParts(date = new Date()) {
-  const g_y = date.getFullYear();
-  const g_m = date.getMonth() + 1;
-  const g_d = date.getDate();
-
-  let g_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  let jy_days_in_month = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
-
-  let gy = g_y - 1600;
-  let gm = g_m - 1;
-  let gd = g_d - 1;
-
-  let g_day_no =
-    365 * gy +
-    Math.floor((gy + 3) / 4) -
-    Math.floor((gy + 99) / 100) +
-    Math.floor((gy + 399) / 400);
-
-  for (let i = 0; i < gm; ++i) g_day_no += g_days_in_month[i];
-
-  if (gm > 1 && ((gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0)) g_day_no++;
-
-  g_day_no += gd;
-
-  let j_day_no = g_day_no - 79;
-  let j_np = Math.floor(j_day_no / 12053);
-  j_day_no = j_day_no % 12053;
-
-  let jy = 979 + 33 * j_np + 4 * Math.floor(j_day_no / 1461);
-  j_day_no %= 1461;
-
-  if (j_day_no >= 366) {
-    jy += Math.floor((j_day_no - 1) / 365);
-    j_day_no = (j_day_no - 1) % 365;
-  }
-
-  let i = 0;
-  for (i = 0; i < 11 && j_day_no >= jy_days_in_month[i]; ++i) j_day_no -= jy_days_in_month[i];
-
-  let jm = i + 1;
-  let jd = j_day_no + 1;
-
-  return {
-    jy,
-    jm: String(jm).padStart(2, "0"),
-    jd: String(jd).padStart(2, "0"),
-  };
-}
-
-function getJalaliIsoDate(d = new Date()) {
-  const p = getJalaliDateParts(d);
-  return `${p.jy}/${p.jm}/${p.jd}`;
-}
-
-/* =========================
    Boot
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    setTimeout(() => {
-      try {
-        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
-      } catch (_) {}
-    }, 4200);
+    showGpsToast(
+      "★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند",
+      5000,
+      "error"
+    );
   } catch (_) {}
 
   try {
@@ -156,6 +99,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   try {
+    setupHeartbeat();
+  } catch (_) {}
+
+  try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
@@ -181,14 +128,18 @@ function showGpsToast(message, duration = 3000, type = "success") {
     top: "50%",
     left: "50%",
     transform: "translate(-50%, -50%) scale(0.8)",
-    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
+    backgroundColor: isSuccess
+      ? "rgba(22, 163, 74, 0.96)"
+      : "rgba(220, 38, 38, 0.95)",
     color: "#ffffff",
     padding: "25px 40px",
     borderRadius: "20px",
     fontSize: "22px",
     fontWeight: "bold",
     fontFamily: "Tahoma, sans-serif",
-    boxShadow: isSuccess ? "0 15px 50px rgba(22, 163, 74, 0.45)" : "0 15px 50px rgba(0, 0, 0, 0.5)",
+    boxShadow: isSuccess
+      ? "0 15px 50px rgba(22, 163, 74, 0.45)"
+      : "0 15px 50px rgba(0, 0, 0, 0.5)",
     zIndex: "10000",
     opacity: "0",
     transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
@@ -196,7 +147,7 @@ function showGpsToast(message, duration = 3000, type = "success") {
     textAlign: "center",
     width: "80%",
     maxWidth: "400px",
-    border: "3px solid #ffffff",
+    border: "3px solid #ffffff"
   });
 
   document.body.appendChild(toast);
@@ -254,21 +205,6 @@ function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
   $("recordBtn")?.addEventListener("click", startAttendanceCapture);
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
-
-  const cameraBtn = $("cameraBtn");
-  const photoInput = $("photoInput");
-
-  if (cameraBtn && photoInput) {
-    const openCamera = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      photoInput.value = "";
-      photoInput.click();
-    };
-
-    cameraBtn.addEventListener("click", openCamera);
-    cameraBtn.addEventListener("touchend", openCamera, { passive: false });
-  }
 }
 
 /* =========================
@@ -333,6 +269,60 @@ function scheduleSyncPendingRecords(delay = 0) {
 }
 
 /* =========================
+   NEW: Heartbeat (online time tracking)
+   -------------------------------------------------
+   Sends a small "Heartbeat" ping to the server every
+   HEARTBEAT_INTERVAL_MS while the user is online, so the
+   server (OnlineTime sheet) can accumulate total online
+   seconds per user per day. Uses the same CORS-safe
+   text/plain + no-cors pattern as syncPendingRecords.
+========================= */
+
+function setupHeartbeat() {
+  // Fire one immediately (if possible), then on an interval.
+  sendHeartbeatIfPossible();
+
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(sendHeartbeatIfPossible, HEARTBEAT_INTERVAL_MS);
+
+  // Also fire right away whenever we come back online or the tab becomes visible,
+  // so a session resumes promptly instead of waiting for the next tick.
+  window.addEventListener("online", sendHeartbeatIfPossible);
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && navigator.onLine) sendHeartbeatIfPossible();
+  });
+}
+
+async function sendHeartbeatIfPossible() {
+  if (!navigator.onLine) return;
+  if (!db) return;
+
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile?.personnelCode) return;
+
+    const payload = {
+      type: "Heartbeat",
+      personnelCode: profile.personnelCode,
+      firstName: profile.firstName || "",
+      lastName: profile.lastName || ""
+    };
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (_) {
+    // Silently ignore - heartbeat is best-effort, it will just retry on the next tick
+  }
+}
+
+/* =========================
    IndexedDB
 ========================= */
 
@@ -346,7 +336,7 @@ function openDb() {
       if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
         const store = openedDb.createObjectStore(STORE_RECORDS, {
           keyPath: "id",
-          autoIncrement: true,
+          autoIncrement: true
         });
         store.createIndex("status", "status");
         store.createIndex("clientRecordId", "clientRecordId", { unique: false });
@@ -374,8 +364,7 @@ function openDb() {
   });
 }
 
-async function dbPut(store, value) {
-  if (!db) db = await openDb();
+function dbPut(store, value) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, "readwrite");
     const st = tx.objectStore(store);
@@ -385,8 +374,7 @@ async function dbPut(store, value) {
   });
 }
 
-async function dbGet(store, key) {
-  if (!db) db = await openDb();
+function dbGet(store, key) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, "readonly");
     const st = tx.objectStore(store);
@@ -396,8 +384,7 @@ async function dbGet(store, key) {
   });
 }
 
-async function dbGetAll(store) {
-  if (!db) db = await openDb();
+function dbGetAll(store) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, "readonly");
     const st = tx.objectStore(store);
@@ -415,7 +402,7 @@ function getProfileFromInputs() {
   return {
     personnelCode: $("personnelCode")?.value.trim() || "",
     firstName: $("firstName")?.value.trim() || "",
-    lastName: $("lastName")?.value.trim() || "",
+    lastName: $("lastName")?.value.trim() || ""
   };
 }
 
@@ -429,15 +416,11 @@ async function loadProfile() {
 }
 
 async function saveProfileSilent() {
-  try {
-    const profile = getProfileFromInputs();
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) throw new Error("مشخصات پرسنلی کامل نیست.");
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    await refreshPolicyIfPossible();
-    await fetchMessages();
-  } catch (err) {
-    console.error("Silent profile save failed:", err);
+  const profile = getProfileFromInputs();
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    throw new Error("مشخصات پرسنلی کامل نیست.");
   }
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
 }
 
 async function getProfile() {
@@ -447,7 +430,7 @@ async function getProfile() {
   const profile = {
     personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
     firstName: inputProfile.firstName || saved?.firstName || "",
-    lastName: inputProfile.lastName || saved?.lastName || "",
+    lastName: inputProfile.lastName || saved?.lastName || ""
   };
 
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
@@ -487,11 +470,7 @@ async function saveProfile() {
     }
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
-    await loadProfile();
-    setTimeout(() => {
-      refreshPolicyIfPossible();
-      fetchMessages();
-    }, 500);
+    await refreshPolicyIfPossible();
 
     btn.style.backgroundColor = "#28a745";
     btn.textContent = "ذخیره شد";
@@ -502,6 +481,9 @@ async function saveProfile() {
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
     }, 2500);
+
+    // Profile just became available/changed - kick off a heartbeat right away.
+    sendHeartbeatIfPossible();
   } catch (_) {
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;
@@ -534,9 +516,17 @@ function normalizeAttendancePolicy(policy) {
 function evaluateAttendancePolicy(policy, isOnline) {
   const normalized = normalizeAttendancePolicy(policy);
 
-  if (normalized === POLICY_NOT_ALLOWED) return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
-  if (normalized === POLICY_ONLINE_ONLY && !isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
-  if (normalized === POLICY_OFFLINE_ONLY && isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
+  if (normalized === POLICY_NOT_ALLOWED) {
+    return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
+  }
+
+  if (normalized === POLICY_ONLINE_ONLY && !isOnline) {
+    return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
+  }
+
+  if (normalized === POLICY_OFFLINE_ONLY && isOnline) {
+    return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
+  }
 
   return { ok: true, message: "" };
 }
@@ -550,7 +540,7 @@ async function getAttendancePolicyInfo() {
       attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
       policyVersion: 0,
       policyFetchedAt: "",
-      policySource: "default",
+      policySource: "default"
     };
   }
   return policy;
@@ -563,7 +553,7 @@ async function saveAttendancePolicyInfo(data) {
     attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
     policyVersion: Number(data.policyVersion || 0),
     policyFetchedAt: data.policyFetchedAt || "",
-    policySource: data.policySource || "",
+    policySource: data.policySource || ""
   });
 }
 
@@ -585,7 +575,7 @@ async function ensurePolicyLoadedAtStartup() {
       attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
       policyVersion: 0,
       policyFetchedAt: "",
-      policySource: "default_offline",
+      policySource: "default_offline"
     });
   }
 }
@@ -593,27 +583,31 @@ async function ensurePolicyLoadedAtStartup() {
 async function refreshPolicyIfPossible() {
   if (!navigator.onLine) return null;
 
+  const profile = await getProfile().catch(() => null);
+  if (!profile?.personnelCode) return null;
+
   try {
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile || !profile.personnelCode) return null;
+    const url =
+      `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=` +
+      encodeURIComponent(profile.personnelCode);
 
-    const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
-    const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${personnelCode}&_nocache=${Date.now()}`;
+    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    if (!res.ok) return null;
 
-    const response = await fetch(url, { method: "GET", mode: "cors", redirect: "follow" });
-    if (!response.ok) return null;
+    const result = await res.json().catch(() => null);
+    if (!result || result.ok !== true) return null;
 
-    const text = await response.text();
-    const data = JSON.parse(text);
+    const policyInfo = {
+      personnelCode: profile.personnelCode,
+      attendancePolicy: normalizeAttendancePolicy(result.attendancePolicy),
+      policyVersion: Number(result.policyVersion || 0),
+      policyFetchedAt: new Date().toISOString(),
+      policySource: "server"
+    };
 
-    if (data && typeof data === "object") {
-      await saveAttendancePolicyInfo(data);
-      return data;
-    }
-
-    return null;
-  } catch (error) {
-    console.error("[Policy] refresh failed:", error);
+    await saveAttendancePolicyInfo(policyInfo);
+    return policyInfo;
+  } catch (_) {
     return null;
   }
 }
@@ -625,7 +619,7 @@ async function getCurrentAttendanceGate() {
 
   return {
     policyInfo,
-    gate: evaluateAttendancePolicy(policy, navigator.onLine),
+    gate: evaluateAttendancePolicy(policy, navigator.onLine)
   };
 }
 
@@ -683,14 +677,12 @@ async function handlePhotoSelected() {
   }
 
   try {
-    setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
     await saveProfileSilent();
 
     const { gate } = await getCurrentAttendanceGate();
     if (!gate.ok) {
-      setBusy(false);
       setStatus(gate.message);
       $("photoInput").value = "";
       currentPhoto = "";
@@ -708,26 +700,28 @@ async function handlePhotoSelected() {
     }
 
     if (!isGeolocationUsable()) {
-      setBusy(false);
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      setStatus(
+        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
+      );
       return;
     }
 
-    setBusy(true, "در حال دریافت GPS...");
     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
 
     if (!hasValidLocation(pendingLocation)) {
-      setBusy(false);
-
       if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        setStatus(
+          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
+        );
         return;
       }
+
       if (pendingLocation?.status === "unavailable") {
         setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
         return;
       }
+
       if (pendingLocation?.status === "timeout") {
         setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
         return;
@@ -737,12 +731,9 @@ async function handlePhotoSelected() {
       return;
     }
 
-    setBusy(true, "در حال ذخیره تردد...");
     await createRecord("تردد");
-    setBusy(false);
   } catch (err) {
     console.error(err);
-    setBusy(false);
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
@@ -801,13 +792,10 @@ async function createRecord(type) {
     gpsMs,
     offlineCreated,
     locationStatus: loc.status,
-    sessionClockDriftMs,
+    sessionClockDriftMs
   });
 
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
-  const jalaliDateStr = getJalaliIsoDate(now);
-  const hourStr = getTime(now);
 
   const record = {
     clientRecordId,
@@ -816,55 +804,46 @@ async function createRecord(type) {
     lastName: profile.lastName,
     type,
     recordType: type,
-    recordDate: jalaliDateStr,
-    recordHour: hourStr,
-    recordTime: hourStr,
-
+    recordDate: getPersianDate(now),
+    recordHour: getTime(now),
+    recordTime: getTime(now),
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
-
     deviceTime,
     deviceTimeAtClick,
     deviceTimeAtPhoto,
     deviceTimeAtPhotoCompressed,
     deviceTimeAtGps,
     gpsTimestamp,
-
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
-
     offlineCreated,
     createdOnline,
     connectionStatus: offlineCreated ? "offline" : "online",
     connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
-
     firstConnectionAfterOfflineRecord: "",
     lastConnectionBeforeUpload: "",
     uploadedAt: "",
     delayAfterFirstConnectionMs: "",
-
     clockRisk: risk.clockRisk,
     clockRiskReason: risk.clockRiskReason,
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
-
     attendancePolicy,
     policyVersion: Number(policyInfo.policyVersion || 0),
     policyFetchedAt: policyInfo.policyFetchedAt || "",
     policySource: policyInfo.policySource || "",
-
     photo: currentPhoto || "",
-
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
     syncTryCount: 0,
     syncedAt: "",
-    serverResponse: "",
+    serverResponse: ""
   };
 
   await dbPut(STORE_RECORDS, record);
@@ -883,6 +862,9 @@ function createClientRecordId(personnelCode, baseMs) {
 
 /* =========================
    Sync (CORS-SAFE)
+   - Uses text/plain + no-cors to avoid preflight
+   - Result is opaque; success means "request was sent"
+   - Debug on server side in Debug sheet
 ========================= */
 
 async function markFirstConnectionForOfflineRecords() {
@@ -912,8 +894,7 @@ async function syncPendingRecords() {
   syncRunning = true;
 
   try {
-    const refreshed = await refreshPolicyIfPossible();
-    const policyInfo = refreshed || (await getAttendancePolicyInfo());
+    const policyInfo = (await refreshPolicyIfPossible()) || (await getAttendancePolicyInfo());
     const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
 
     if (!syncGate.ok) {
@@ -970,8 +951,10 @@ async function syncPendingRecords() {
         await fetch(APPS_SCRIPT_URL, {
           method: "POST",
           mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload),
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          },
+          body: JSON.stringify(payload)
         });
 
         const sentIso = new Date().toISOString();
@@ -982,7 +965,10 @@ async function syncPendingRecords() {
         await dbPut(STORE_RECORDS, r);
       } catch (err) {
         r.status = "failed";
-        r.serverResponse = JSON.stringify({ ok: false, error: err?.message || "network_error" });
+        r.serverResponse = JSON.stringify({
+          ok: false,
+          error: err?.message || "network_error"
+        });
         await dbPut(STORE_RECORDS, r);
       }
     }
@@ -1039,7 +1025,7 @@ function buildServerPayload(record) {
     photo: record.photo || "",
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
-    syncTryCount: Number(record.syncTryCount || 0),
+    syncTryCount: Number(record.syncTryCount || 0)
   };
 }
 
@@ -1066,7 +1052,9 @@ function renderRecords(records) {
     return;
   }
 
-  const sorted = [...records].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const sorted = [...records].sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  );
 
   el.innerHTML = sorted
     .slice(0, 20)
@@ -1092,167 +1080,96 @@ function renderRecords(records) {
    Admin Messages
 ========================= */
 
+function showAdminMessage(m) {
+  if (!m || String(m).trim() === "" || m === "undefined" || m === "null") return;
+
+  const msg = String(m).trim();
+
+  const overlay = document.createElement("div");
+  overlay.style =
+    "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center; font-family:inherit;";
+
+  const modal = document.createElement("div");
+  modal.style =
+    "background:#FFFFFF; padding:20px; border-radius:15px; width:85%; max-width:400px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.2); direction:rtl;";
+
+  modal.innerHTML = `
+    <h3 style="margin-top:0; color:#333;">پیام مدیر</h3>
+    <p style="color:#555; line-height:1.6;">${escapeHtml(msg)}</p>
+    <button id="closeAdminMsg" style="background:#007bff; color:#fff; border:none; padding:10px 25px; border-radius:10px; cursor:pointer; width:100%; font-weight:bold;">تایید</button>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  document.getElementById("closeAdminMsg").onclick = function () {
+    document.body.removeChild(overlay);
+  };
+}
+
 async function fetchMessages() {
   if (!navigator.onLine) return;
 
   try {
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile || !profile.personnelCode) return;
+    const profile = await getProfile().catch(() => null);
+    if (!profile?.personnelCode) return;
 
-    const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
-    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&_=${Date.now()}`;
+    const url =
+      APPS_SCRIPT_URL +
+      "?action=getMessages&personnelCode=" +
+      encodeURIComponent(profile.personnelCode);
 
-    const response = await fetch(url, { method: "GET", mode: "cors", credentials: "omit" });
-    if (!response.ok) return;
+    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    if (!res.ok) return;
 
-    const rawText = await response.text();
-    if (!rawText || rawText.trim() === "" || rawText === "[]" || rawText === "false" || rawText === "null") return;
+    const result = await res.json().catch(() => null);
+    if (!result || result.ok !== true) return;
 
-    let finalMsg = "";
-    try {
-      const data = JSON.parse(rawText);
-      if (data && typeof data === "object") {
-        const msgSource = data.messages || data.message || data;
-        if (Array.isArray(msgSource)) finalMsg = msgSource[msgSource.length - 1];
-        else if (typeof msgSource === "string") finalMsg = msgSource;
-        else finalMsg = JSON.stringify(msgSource);
-      } else if (Array.isArray(data)) {
-        finalMsg = data[data.length - 1];
-      } else {
-        finalMsg = String(data);
-      }
-    } catch (e) {
-      finalMsg = rawText.replace(/["\[\]]/g, "").trim();
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    const cleaned = messages
+      .map((m) => String(m ?? "").trim())
+      .filter(
+        (m) =>
+          m &&
+          m !== "false" &&
+          m !== "null" &&
+          m !== "undefined" &&
+          m !== "0" &&
+          m !== "تردد"
+      );
+
+    if (!cleaned.length) return;
+
+    const msg = cleaned.join(" | ");
+    if (!adminMessageShownOnEntry && msg !== lastAdminMessage) {
+      lastAdminMessage = msg;
+      adminMessageShownOnEntry = true;
+      showAdminMessage(msg);
     }
-
-    if (typeof finalMsg === "string") finalMsg = finalMsg.trim();
-
-    if (finalMsg && finalMsg !== "false" && finalMsg !== "null" && finalMsg !== "undefined") {
-      if (finalMsg !== lastAdminMessage) {
-        lastAdminMessage = finalMsg;
-        showAdminMessage(finalMsg);
-      }
-    }
-  } catch (err) {
-    console.error("Fetch messages failed:", err);
+  } catch (e) {
+    console.error("Error fetching messages:", e);
   }
-}
-
-function showAdminMessage(message) {
-  const existingOverlay = document.getElementById("admin-message-overlay");
-  if (existingOverlay) existingOverlay.remove();
-
-  const overlay = document.createElement("div");
-  overlay.id = "admin-message-overlay";
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
-    z-index: 2147483647;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    box-sizing: border-box;
-  `;
-
-  const container = document.createElement("div");
-  container.style.cssText = `
-    background-color: #fff7ed;
-    border: 2px solid #ea580c;
-    border-radius: 16px;
-    padding: 24px;
-    width: 100%;
-    max-width: 450px;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3);
-    text-align: right;
-    direction: rtl;
-    box-sizing: border-box;
-    animation: zoomInAdmin 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  `;
-
-  const styleSheet = document.createElement("style");
-  styleSheet.innerText = `
-    @keyframes zoomInAdmin {
-      from { transform: scale(0.9); opacity: 0; }
-      to { transform: scale(1); opacity: 1; }
-    }
-  `;
-  document.head.appendChild(styleSheet);
-
-  const title = document.createElement("div");
-  title.style.cssText = `
-    font-size: 18px;
-    font-weight: bold;
-    color: #c2410c;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  `;
-  title.textContent = "🔔 پیام جدید از طرف مدیریت";
-
-  const body = document.createElement("div");
-  body.style.cssText = `
-    font-size: 15px;
-    color: #431407;
-    line-height: 1.6;
-    margin-bottom: 20px;
-    white-space: pre-wrap;
-    word-break: break-word;
-  `;
-  body.textContent = message;
-
-  const btn = document.createElement("button");
-  btn.style.cssText = `
-    width: 100%;
-    background-color: #ea580c;
-    color: #ffffff;
-    border: none;
-    padding: 12px;
-    border-radius: 10px;
-    font-size: 16px;
-    font-weight: bold;
-    cursor: pointer;
-    box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent;
-  `;
-  btn.textContent = "متوجه شدم و تایید می‌کنم";
-
-  const dismiss = (e) => {
-    e.preventDefault();
-    overlay.remove();
-  };
-  btn.addEventListener("click", dismiss, { passive: false });
-  btn.addEventListener("touchstart", dismiss, { passive: false });
-
-  container.appendChild(title);
-  container.appendChild(body);
-  container.appendChild(btn);
-  overlay.appendChild(container);
-
-  document.body.appendChild(overlay);
 }
 
 /* =========================
    Time / Date
 ========================= */
 
-function getIsoDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}/${m}/${day}`;
+function getPersianDate(d) {
+  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(d);
 }
 
 function getTime(d) {
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  return `${hh}:${mm}:${ss}`;
+  return new Intl.DateTimeFormat("fa-IR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(d);
 }
 
 /* =========================
@@ -1297,7 +1214,7 @@ function calculateClockRisk(data) {
 
   return {
     clockRisk: score >= 6 ? "high" : score >= 3 ? "medium" : "low",
-    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال",
+    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
   };
 }
 
@@ -1320,7 +1237,7 @@ function emptyLocation(status, error) {
     accuracy: "",
     timestamp: null,
     status,
-    error,
+    error
   };
 }
 
@@ -1363,7 +1280,7 @@ function getCurrentPositionSafe(options) {
           accuracy: pos.coords.accuracy,
           timestamp: pos.timestamp,
           status: "ok",
-          error: "",
+          error: ""
         });
       },
       (err) => {
@@ -1390,7 +1307,7 @@ function getLocationWithWatch(waitMs) {
           accuracy: pos.coords.accuracy,
           timestamp: pos.timestamp,
           status: "ok",
-          error: "",
+          error: ""
         };
 
         best = chooseBetterLocation(best, loc);
@@ -1400,7 +1317,7 @@ function getLocationWithWatch(waitMs) {
       {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: waitMs,
+        timeout: waitMs
       }
     );
 
@@ -1422,22 +1339,28 @@ async function getLocationIOSFriendly() {
   const firstLocation = await getCurrentPositionSafe({
     enableHighAccuracy: true,
     maximumAge: 0,
-    timeout: 25000,
+    timeout: 25000
   });
 
-  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) return firstLocation;
+  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) {
+    return firstLocation;
+  }
+
   if (firstLocation?.status === "denied") return firstLocation;
 
   const secondLocation = await getCurrentPositionSafe({
     enableHighAccuracy: false,
     maximumAge: 0,
-    timeout: 15000,
+    timeout: 15000
   });
 
   if (secondLocation?.status === "denied") return secondLocation;
 
   let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
-  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) return bestLocation;
+
+  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) {
+    return bestLocation;
+  }
 
   const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
   bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
@@ -1457,36 +1380,43 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
-        const OUT_W = 1080;
-        const OUT_H = 1350;
-
         const canvas = document.createElement("canvas");
-        canvas.width = OUT_W;
-        canvas.height = OUT_H;
+        const MAX = 400;
+
+        let w = img.width;
+        let h = img.height;
+
+        if (w > h) {
+          if (w > MAX) {
+            h = h * (MAX / w);
+            w = MAX;
+          }
+        } else {
+          if (h > MAX) {
+            w = w * (MAX / h);
+            h = MAX;
+          }
+        }
+
+        canvas.width = w;
+        canvas.height = h;
 
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, OUT_W, OUT_H);
-
-        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
-        const drawW = Math.round(img.width * scale);
-        const drawH = Math.round(img.height * scale);
-        const dx = Math.round((OUT_W - drawW) / 2);
-        const dy = Math.round((OUT_H - drawH) / 2);
-
-        ctx.drawImage(img, dx, dy, drawW, drawH);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
 
         canvas.toBlob(
           (blob) => {
-            if (!blob) return reject(new Error("خطا در ساخت تصویر فشرده"));
-
             const r = new FileReader();
+
             r.onloadend = () => resolve(r.result);
             r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
+
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.7
+          0.3
         );
       };
 
@@ -1497,91 +1427,4 @@ function compressImage(file) {
     reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
     reader.readAsDataURL(file);
   });
-}
-
-/* =========================
-   Jalali -> Gregorian (helpers)
-========================= */
-
-function jalaliToGregorian_(jy, jm, jd) {
-  const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
-  const jy2 = jy === 979 ? 0 : jy - 979;
-  let leapJ = -14;
-  let jp = salA[0];
-
-  for (let i = 1; i < 20; i += 1) {
-    const temp = salA[i];
-    const dy = temp - jp;
-    if (jy2 < temp) {
-      const q = Math.floor(jy2 / 33);
-      const r = jy2 % 33;
-      leapJ += q * 8 + Math.floor((r + 4) / 4);
-      if (dy - r > 0 && r === 30) leapJ += 1;
-      break;
-    }
-    leapJ += Math.floor(dy / 33) * 8 + Math.floor(((dy % 33) + 3) / 4);
-    jp = temp;
-  }
-
-  const q = Math.floor(jy2 / 33);
-  leapJ += q * 8 + Math.floor(((jy2 % 33) + 3) / 4);
-
-  const gDays = 365 * jy2 + leapJ + 79;
-  const gy2 = 1600 + 400 * Math.floor(gDays / 146097);
-  let gdm = gDays % 146097;
-
-  let leapG = true;
-  if (gdm >= 36525) {
-    gdm -= 1;
-    gdm %= 36524;
-    if (gdm >= 365) gdm += 1;
-    else leapG = false;
-  }
-
-  let gy = gy2 + 4 * Math.floor(gdm / 1461);
-  gdm %= 1461;
-
-  if (gdm >= 366) {
-    leapG = false;
-    gdm -= 1;
-    gy += Math.floor(gdm / 365);
-    gdm %= 365;
-  }
-
-  let i = 0;
-  const salG = [0, 31, leapG ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  for (i = 1; i <= 12; i += 1) {
-    if (gdm < salG[i]) break;
-    gdm -= salG[i];
-  }
-
-  return [gy, i, gdm + 1];
-}
-
-function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
-  try {
-    const cleanD = dateStr
-      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
-      .replace(/[^\d/]/g, "");
-    const cleanT = timeStr
-      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
-      .replace(/[^\d:]/g, "");
-
-    const dp = cleanD.split("/");
-    const tp = cleanT.split(":");
-    if (dp.length < 3 || tp.length < 2) return null;
-
-    const jy = parseInt(dp[0], 10);
-    const jm = parseInt(dp[1], 10);
-    const jd = parseInt(dp[2], 10);
-
-    const th = parseInt(tp[0], 10);
-    const tm = parseInt(tp[1], 10);
-    const ts = tp[2] ? parseInt(tp[2], 10) : 0;
-
-    const [gy, gm, gd] = jalaliToGregorian_(jy, jm, jd);
-    return new Date(gy, gm - 1, gd, th, tm, ts);
-  } catch (e) {
-    return null;
-  }
 }

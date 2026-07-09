@@ -1224,7 +1224,8 @@ function showAdminMessage(message) {
 
    const dismiss = async (e) => {
     e.preventDefault();
-    btn.disabled = false;
+    btn.disabled = true;
+     overlay.style.display = "none";
     btn.textContent = "✅";
     try {
       await sendMessageReadReceipt(message);

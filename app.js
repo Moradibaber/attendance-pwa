@@ -1465,70 +1465,7 @@ async function getLocationIOSFriendly() {
    Image
 ========================= */
 
-/***/
 function compressImage(file) {
-  const OUT_W = 400;
-  const OUT_H = 600;
-
-  if (window.createImageBitmap) {
-    return (async () => {
-      let bitmap;
-      try {
-        // resizeWidth/resizeHeight tell the browser to decode+downscale
-        // in one step, instead of decoding the full-resolution photo
-        // and THEN resizing it. This is the part that saves the time
-        // when the original photo file is large.
-        bitmap = await createImageBitmap(file, {
-          resizeWidth: OUT_W * 2,   // decode to ~2x target, keep some quality margin
-          resizeHeight: OUT_H * 2,
-          resizeQuality: "medium",
-        });
-      } catch (err) {
-        // Fallback: some browsers reject resize options or file types.
-        try {
-          bitmap = await createImageBitmap(file);
-        } catch (err2) {
-          return compressImageLegacy_(file, OUT_W, OUT_H);
-        }
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = OUT_W;
-      canvas.height = OUT_H;
-
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, OUT_W, OUT_H);
-
-      const scale = Math.min(OUT_W / bitmap.width, OUT_H / bitmap.height);
-      const drawW = Math.round(bitmap.width * scale);
-      const drawH = Math.round(bitmap.height * scale);
-      const dx = Math.round((OUT_W - drawW) / 2);
-      const dy = Math.round((OUT_H - drawH) / 2);
-
-      ctx.drawImage(bitmap, dx, dy, drawW, drawH);
-      bitmap.close();
-
-      return await new Promise((resolve, reject) => {
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) return reject(new Error("خطا در ساخت تصویر فشرده"));
-            const r = new FileReader();
-            r.onloadend = () => resolve(r.result);
-            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.6
-        );
-      });
-    })();
-  }
-
-  return compressImageLegacy_(file, OUT_W, OUT_H);
-}
-
-function compressImageLegacy_(file, OUT_W, OUT_H) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -1536,6 +1473,9 @@ function compressImageLegacy_(file, OUT_W, OUT_H) {
       const img = new Image();
 
       img.onload = () => {
+        const OUT_W = 400;
+        const OUT_H = 600;
+
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
         canvas.height = OUT_H;

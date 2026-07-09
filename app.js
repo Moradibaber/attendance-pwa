@@ -698,7 +698,7 @@ async function handlePhotoSelected() {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
+    currentPhoto = await compressAndCropImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");

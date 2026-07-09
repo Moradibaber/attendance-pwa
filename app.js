@@ -1,4 +1,4 @@
-/* FILE: /app.js */ 
+/* FILE: /app.js */
 /* REPLACE FULL FILE */
 
 const DB_NAME = "attendance-pwa-db";
@@ -1449,66 +1449,7 @@ async function getLocationIOSFriendly() {
    Image
 ========================= */
 
-/***/
 function compressImage(file) {
-  const OUT_W = 400;
-  const OUT_H = 600;
-
-  // Fast path: createImageBitmap decodes directly from the File/Blob,
-  // no base64 round-trip needed for the original full-size photo.
-  if (window.createImageBitmap) {
-    return (async () => {
-      let bitmap;
-      try {
-        bitmap = await createImageBitmap(file);
-      } catch (err) {
-        // Some browsers can fail on certain EXIF/orientation cases —
-        // fall back to the old FileReader+Image path below.
-        return compressImageLegacy_(file, OUT_W, OUT_H);
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = OUT_W;
-      canvas.height = OUT_H;
-
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, OUT_W, OUT_H);
-
-      const scale = Math.min(OUT_W / bitmap.width, OUT_H / bitmap.height);
-      const drawW = Math.round(bitmap.width * scale);
-      const drawH = Math.round(bitmap.height * scale);
-      const dx = Math.round((OUT_W - drawW) / 2);
-      const dy = Math.round((OUT_H - drawH) / 2);
-
-      ctx.drawImage(bitmap, dx, dy, drawW, drawH);
-      bitmap.close();
-
-      // Single base64 encode, only on the already-small compressed image.
-      return await new Promise((resolve, reject) => {
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) return reject(new Error("خطا در ساخت تصویر فشرده"));
-            const r = new FileReader();
-            r.onloadend = () => resolve(r.result);
-            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.6
-        );
-      });
-    })();
-  }
-
-  // No createImageBitmap support at all → go straight to legacy path.
-  return compressImageLegacy_(file, OUT_W, OUT_H);
-}
-
-/***/
-// Original FileReader+Image implementation, kept only as a fallback
-// for browsers without createImageBitmap support.
-function compressImageLegacy_(file, OUT_W, OUT_H) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -1516,6 +1457,9 @@ function compressImageLegacy_(file, OUT_W, OUT_H) {
       const img = new Image();
 
       img.onload = () => {
+        const OUT_W = 400;
+        const OUT_H = 600;
+
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
         canvas.height = OUT_H;
@@ -1554,6 +1498,7 @@ function compressImageLegacy_(file, OUT_W, OUT_H) {
     reader.readAsDataURL(file);
   });
 }
+
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

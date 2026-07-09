@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v56"; 
+const CACHE_NAME = "attendance-pwa-v54"; 
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 const DB_NAME = "attendance-pwa-db";
@@ -42,6 +42,51 @@ self.addEventListener('fetch', (event) => {
         return new Response("Offline Content Not Available", { status: 503 });
       });
     })
+  );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (_) {
+    payload = {};
+  }
+
+  const notif = payload.notification || {};
+  const data = payload.data || {};
+  const personnelCode = data.personnelCode || "";
+  const title = notif.title || "بروزرسانی سیستم";
+  const body = notif.body || "";
+
+  event.waitUntil(
+    (async () => {
+      // Log the online event to the sheet FIRST — this is the whole point:
+      // the fact this code is running at all proves the device is online right now.
+      if (personnelCode) {
+        try {
+          await fetch(APPS_SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              type: "PushReceived",
+              personnelCode: personnelCode,
+              deviceTime: new Date().toISOString()
+            })
+          });
+        } catch (err) {
+          console.error("PushReceived log failed:", err);
+        }
+      }
+
+      // Browsers require a visible notification when a push is shown.
+      await self.registration.showNotification(title, {
+        body: body,
+        icon: "icon-192.png",
+        silent: true,
+        tag: "attendance-update"
+      });
+    })()
   );
 });
 

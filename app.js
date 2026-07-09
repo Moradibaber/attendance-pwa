@@ -1470,17 +1470,26 @@ function compressImage(file) {
   const OUT_W = 400;
   const OUT_H = 600;
 
-  // Fast path: createImageBitmap decodes directly from the File/Blob,
-  // no base64 round-trip needed for the original full-size photo.
   if (window.createImageBitmap) {
     return (async () => {
       let bitmap;
       try {
-        bitmap = await createImageBitmap(file);
+        // resizeWidth/resizeHeight tell the browser to decode+downscale
+        // in one step, instead of decoding the full-resolution photo
+        // and THEN resizing it. This is the part that saves the time
+        // when the original photo file is large.
+        bitmap = await createImageBitmap(file, {
+          resizeWidth: OUT_W * 2,   // decode to ~2x target, keep some quality margin
+          resizeHeight: OUT_H * 2,
+          resizeQuality: "medium",
+        });
       } catch (err) {
-        // Some browsers can fail on certain EXIF/orientation cases —
-        // fall back to the old FileReader+Image path below.
-        return compressImageLegacy_(file, OUT_W, OUT_H);
+        // Fallback: some browsers reject resize options or file types.
+        try {
+          bitmap = await createImageBitmap(file);
+        } catch (err2) {
+          return compressImageLegacy_(file, OUT_W, OUT_H);
+        }
       }
 
       const canvas = document.createElement("canvas");
@@ -1500,7 +1509,6 @@ function compressImage(file) {
       ctx.drawImage(bitmap, dx, dy, drawW, drawH);
       bitmap.close();
 
-      // Single base64 encode, only on the already-small compressed image.
       return await new Promise((resolve, reject) => {
         canvas.toBlob(
           (blob) => {
@@ -1517,13 +1525,9 @@ function compressImage(file) {
     })();
   }
 
-  // No createImageBitmap support at all → go straight to legacy path.
   return compressImageLegacy_(file, OUT_W, OUT_H);
 }
 
-/***/
-// Original FileReader+Image implementation, kept only as a fallback
-// for browsers without createImageBitmap support.
 function compressImageLegacy_(file, OUT_W, OUT_H) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

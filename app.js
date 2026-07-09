@@ -1220,12 +1220,12 @@ function showAdminMessage(message) {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
   `;
-  btn.textContent = "متوجه شدم و تایید می‌کنم";
+  btn.textContent = "متوجه شدم";
 
   const dismiss = async (e) => {
     e.preventDefault();
     btn.disabled = true;
-    btn.textContent = "در حال ارسال تاییدیه...";
+    btn.textContent = "در حال ارسال...";
     try {
       await sendMessageReadReceipt(message);
     } catch (_) {}

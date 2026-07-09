@@ -682,13 +682,19 @@ async function handlePhotoSelected() {
     return;
   }
 
+  const t0 = performance.now(); /***/
+
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
+    const tSaveStart = performance.now(); /***/
     await saveProfileSilent();
+    console.log("saveProfileSilent:", (performance.now() - tSaveStart).toFixed(0), "ms"); /***/
 
+    const tGateStart = performance.now(); /***/
     const { gate } = await getCurrentAttendanceGate();
+    console.log("getCurrentAttendanceGate:", (performance.now() - tGateStart).toFixed(0), "ms"); /***/
     if (!gate.ok) {
       setBusy(false);
       setStatus(gate.message);
@@ -697,9 +703,12 @@ async function handlePhotoSelected() {
       return;
     }
 
+    const tCompressStart = performance.now(); /***/
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
+    const compressMs = (performance.now() - tCompressStart).toFixed(0); /***/
+    console.log("compressImage:", compressMs, "ms"); /***/
 
     const preview = $("photoPreview");
     if (preview) {
@@ -713,9 +722,12 @@ async function handlePhotoSelected() {
       return;
     }
 
+    const tGpsStart = performance.now(); /***/
     setBusy(true, "در حال دریافت GPS...");
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    setStatus(`عکس آماده شد در ${compressMs} ms. در حال دریافت GPS...`); /***/
     pendingLocation = await getLocationIOSFriendly();
+    const gpsMs = (performance.now() - tGpsStart).toFixed(0); /***/
+    console.log("getLocationIOSFriendly:", gpsMs, "ms"); /***/
 
     if (!hasValidLocation(pendingLocation)) {
       setBusy(false);
@@ -737,8 +749,12 @@ async function handlePhotoSelected() {
       return;
     }
 
+    const tSaveRecordStart = performance.now(); /***/
     setBusy(true, "در حال ذخیره تردد...");
+    setStatus(`GPS در ${gpsMs} ms دریافت شد. در حال ذخیره...`); /***/
     await createRecord("تردد");
+    console.log("createRecord:", (performance.now() - tSaveRecordStart).toFixed(0), "ms"); /***/
+    console.log("TOTAL:", (performance.now() - t0).toFixed(0), "ms"); /***/
     setBusy(false);
   } catch (err) {
     console.error(err);

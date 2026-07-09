@@ -1222,8 +1222,13 @@ function showAdminMessage(message) {
   `;
   btn.textContent = "متوجه شدم و تایید می‌کنم";
 
-  const dismiss = (e) => {
+  const dismiss = async (e) => {
     e.preventDefault();
+    btn.disabled = true;
+    btn.textContent = "در حال ارسال تاییدیه...";
+    try {
+      await sendMessageReadReceipt(message);
+    } catch (_) {}
     overlay.remove();
   };
   btn.addEventListener("click", dismiss, { passive: false });
@@ -1235,6 +1240,30 @@ function showAdminMessage(message) {
   overlay.appendChild(container);
 
   document.body.appendChild(overlay);
+}
+
+async function sendMessageReadReceipt(message) {
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    const payload = {
+      type: "MessageReadReceipt",
+      personnelCode: profile.personnelCode,
+      firstName: profile.firstName || "",
+      lastName: profile.lastName || "",
+      message: message,
+      deviceTime: new Date().toISOString()
+    };
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    console.error("Failed to send message read receipt:", err);
+  }
 }
 
 /* =========================

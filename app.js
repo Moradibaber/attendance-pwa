@@ -1738,3 +1738,9 @@ async function initPushNotificationSystem() {
 window.addEventListener('load', () => {
     initPushNotificationSystem();
 });
+// داخل تابع موفقیت لاگین:
+localStorage.setItem('user_personnel_code', data.personnelCode); // ذخیره برای مراجعات بعدی
+localStorage.setItem('user_full_name', data.fullName);
+
+// بلافاصله سیستم پوش را فعال کن
+initPushNotificationSystem();

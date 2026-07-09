@@ -7,9 +7,7 @@ const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 const STORE_PROFILE = "profile";
 const STORE_CONFIG = "config";
-const PUSH_VAPID_PUBLIC_KEY = "BC95XMbPNFMm9zrkLBX_tzNDvxXTbJ8Tb6kgrPdJsMEmjrTWPYGHjjVVVdUE6Ymw6PaXkFwQrvfRUxY6YKvLlLU";
-const PUSH_REGISTER_ENDPOINT = APPS_SCRIPT_URL; // uses const APPS_SCRIPT_URL already defined in sw.js? define here too if not global
-const PUSH_SCOPE = "/";
+
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
 
@@ -684,19 +682,13 @@ async function handlePhotoSelected() {
     return;
   }
 
-  const t0 = performance.now(); /***/
-
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
-    const tSaveStart = performance.now(); /***/
     await saveProfileSilent();
-    console.log("saveProfileSilent:", (performance.now() - tSaveStart).toFixed(0), "ms"); /***/
 
-    const tGateStart = performance.now(); /***/
     const { gate } = await getCurrentAttendanceGate();
-    console.log("getCurrentAttendanceGate:", (performance.now() - tGateStart).toFixed(0), "ms"); /***/
     if (!gate.ok) {
       setBusy(false);
       setStatus(gate.message);
@@ -705,12 +697,9 @@ async function handlePhotoSelected() {
       return;
     }
 
-    const tCompressStart = performance.now(); /***/
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
-    const compressMs = (performance.now() - tCompressStart).toFixed(0); /***/
-    console.log("compressImage:", compressMs, "ms"); /***/
 
     const preview = $("photoPreview");
     if (preview) {
@@ -724,12 +713,9 @@ async function handlePhotoSelected() {
       return;
     }
 
-    const tGpsStart = performance.now(); /***/
     setBusy(true, "در حال دریافت GPS...");
-    setStatus(`عکس آماده شد در ${compressMs} ms. در حال دریافت GPS...`); /***/
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
-    const gpsMs = (performance.now() - tGpsStart).toFixed(0); /***/
-    console.log("getLocationIOSFriendly:", gpsMs, "ms"); /***/
 
     if (!hasValidLocation(pendingLocation)) {
       setBusy(false);
@@ -751,12 +737,8 @@ async function handlePhotoSelected() {
       return;
     }
 
-    const tSaveRecordStart = performance.now(); /***/
     setBusy(true, "در حال ذخیره تردد...");
-    setStatus(`GPS در ${gpsMs} ms دریافت شد. در حال ذخیره...`); /***/
     await createRecord("تردد");
-    console.log("createRecord:", (performance.now() - tSaveRecordStart).toFixed(0), "ms"); /***/
-    console.log("TOTAL:", (performance.now() - t0).toFixed(0), "ms"); /***/
     setBusy(false);
   } catch (err) {
     console.error(err);
@@ -1516,6 +1498,7 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
+
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */
@@ -1602,145 +1585,3 @@ function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
     return null;
   }
 }
-function urlBase64ToUint8Array(base64String) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
-}
-
-async function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) throw new Error("serviceWorker not supported");
-  return await navigator.serviceWorker.register("/sw.js", { scope: PUSH_SCOPE });
-}
-
-async function ensureNotificationPermission() {
-  if (!("Notification" in window)) return { state: "unsupported" };
-
-  const current = Notification.permission; // 'default' | 'granted' | 'denied'
-  if (current === "granted") return { state: "granted" };
-  if (current === "denied") return { state: "denied" };
-
-  const warningText =
-    "کاربر گرامی، اجازه نوتیفیکیشن را فعال کنید. در غیر این صورت ثبت ترددهای شما ممکن است به صورت ناقص انجام شود و مسئولیت آن بر عهده شما خواهد بود. همچنین ادمین سیستم از غیرفعال بودن این دسترسی مطلع می‌شود.";
-  alert(warningText);
-
-  const req = await Notification.requestPermission();
-  return { state: req }; // 'granted' | 'denied' | 'default'
-}
-
-async function subscribePush(reg) {
-  if (!("PushManager" in window)) throw new Error("Push not supported");
-
-  const existing = await reg.pushManager.getSubscription();
-  if (existing) return existing;
-
-  const sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(PUSH_VAPID_PUBLIC_KEY),
-  });
-  return sub;
-}
-
-function extractSubKeys(subscription) {
-  const json = subscription.toJSON();
-  return {
-    endpoint: json.endpoint,
-    p256dh: json.keys && json.keys.p256dh ? json.keys.p256dh : "",
-    auth: json.keys && json.keys.auth ? json.keys.auth : "",
-  };
-}
-
-async function postJson(url, payload) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  // Apps Script often returns text/plain
-  const text = await res.text().catch(() => "");
-  return { ok: res.ok, status: res.status, text };
-}
-
-async function registerPushForEmployee(personnelCode, fullName = "") {
-  // You must already have personnelCode from your login/profile flow
-  const reg = await registerServiceWorker();
-
-  const perm = await ensureNotificationPermission();
-
-  // Always inform backend of permission state (even if denied)
-  await postJson(PUSH_REGISTER_ENDPOINT, {
-    action: "updatePermission",
-    personnelCode,
-    fullName,
-    permission: perm.state,
-    userAgent: navigator.userAgent,
-  });
-
-  if (perm.state !== "granted") {
-    throw new Error("Notification permission not granted");
-  }
-
-  const sub = await subscribePush(reg);
-  const keys = extractSubKeys(sub);
-
-  await postJson(PUSH_REGISTER_ENDPOINT, {
-    action: "registerSubscription",
-    personnelCode,
-    fullName,
-    endpoint: keys.endpoint,
-    p256dh: keys.p256dh,
-    auth: keys.auth,
-    userAgent: navigator.userAgent,
-  });
-
-  return true;
-}
-
-/* Example usage:
-   call this after successful login/profile load, once per user/device
-
-   registerPushForEmployee(profile.personnelCode, profile.fullName)
-     .catch(console.error);
-*/
-// app.js
-
-/**
- * این تابع باید بلافاصله بعد از لود شدن صفحه یا بعد از موفقیت‌آمیز بودن لاگین صدا زده شود
- */
-async function initPushNotificationSystem() {
-    // ۱. استخراج اطلاعات کاربر (فرض بر این است که در localStorage ذخیره کرده‌اید)
-    // اگر از متد دیگری استفاده می‌کنید، این بخش را طبق آن تغییر دهید
-    const personnelCode = localStorage.getItem('user_personnel_code');
-    const fullName = localStorage.getItem('user_full_name');
-
-    // ۲. چک کردن اینکه آیا کاربر لاگین هست
-    if (!personnelCode) {
-        console.log("User not logged in. Push registration skipped.");
-        return;
-    }
-
-    console.log(`Initializing Push for: ${fullName} (${personnelCode})`);
-
-    try {
-        // ۳. فراخوانی تابعی که در مرحله قبل نوشتیم
-        // این تابع اجازه می‌گیرد، سابسکریپشن می‌سازد و به GAS می‌فرستد
-        await registerPushForEmployee(personnelCode, fullName);
-        
-    } catch (error) {
-        console.error("Failed to initialize push system:", error);
-    }
-}
-
-// اگر کاربر از قبل لاگین است، هنگام باز شدن صفحه اجرا شود
-window.addEventListener('load', () => {
-    initPushNotificationSystem();
-});
-// داخل تابع موفقیت لاگین:
-localStorage.setItem('user_personnel_code', data.personnelCode); // ذخیره برای مراجعات بعدی
-localStorage.setItem('user_full_name', data.fullName);
-
-// بلافاصله سیستم پوش را فعال کن
-initPushNotificationSystem();

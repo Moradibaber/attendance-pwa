@@ -1225,11 +1225,13 @@ function showAdminMessage(message) {
   const dismiss = async (e) => {
     e.preventDefault();
     btn.disabled = true;
+    overlay.remove();
+    sendMessageReadReceipt(message).catch((_) => {});
     // btn.textContent = "در حال ارسال تاییده";
     try {
       await sendMessageReadReceipt(message);
     } catch (_) {}
-    overlay.remove();
+    
   };
   btn.addEventListener("click", dismiss, { passive: false });
   btn.addEventListener("touchstart", dismiss, { passive: false });

@@ -259,7 +259,7 @@ self.addEventListener('push', function (event) {
   const personnelCode = data.personnelCode || 'unknown';
 
   // ارسال رسید به سمت Backend بدون معطل کردن کاربر
-  const receiptPromise = fetch('YOUR_APPS_SCRIPT_URL', {
+  const receiptPromise = fetch('https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec', {
     method: 'POST',
     mode: 'no-cors',
     headers: { 'Content-Type': 'application/json' },

@@ -1222,57 +1222,26 @@ function showAdminMessage(message) {
   `;
   btn.textContent = "متوجه شدم";
 
-//    const dismiss = async (e) => {
-//     e.preventDefault();
-//     btn.disabled = false;
-//     btn.textContent = "✅";
-//     try {
-//       await sendMessageReadReceipt(message);
-//     } catch (_) {}
-//     overlay.remove();
-//   };
-//   btn.addEventListener("click", dismiss, { passive: false });
-//   btn.addEventListener("touchstart", dismiss, { passive: false });
-
-//   container.appendChild(title);
-//   container.appendChild(body);
-//   container.appendChild(btn);
-//   overlay.appendChild(container);
-
-//   document.body.appendChild(overlay);
-// }
-let messageConfirmed = false;
-
-const messageKey = "confirmed_message_" + btoa(unescape(encodeURIComponent(message))).slice(0, 80);
-
-if (localStorage.getItem(messageKey) === "1") {
-  overlay.style.display = "none";
-} else {
-  const dismiss = (e) => {
+   const dismiss = async (e) => {
     e.preventDefault();
-    e.stopPropagation();
-
-    if (messageConfirmed) return;
-    messageConfirmed = true;
-
-    localStorage.setItem(messageKey, "1");
-
-    btn.disabled = true;
+    btn.disabled = false;
     btn.textContent = "✅";
-
-    overlay.style.display = "none";
-
-    sendMessageReadReceipt(message).catch(() => {});
+    try {
+      await sendMessageReadReceipt(message);
+    } catch (_) {}
+    overlay.remove();
   };
-
-  btn.addEventListener("click", dismiss, { passive: false, once: true });
-  btn.addEventListener("touchstart", dismiss, { passive: false, once: true });
+  btn.addEventListener("click", dismiss, { passive: false });
+  btn.addEventListener("touchstart", dismiss, { passive: false });
 
   container.appendChild(title);
   container.appendChild(body);
   container.appendChild(btn);
   overlay.appendChild(container);
-}
+
+  document.body.appendChild(overlay);
+ }
+
 async function sendMessageReadReceipt(message) {
   try {
     const profile = await dbGet(STORE_PROFILE, "main");

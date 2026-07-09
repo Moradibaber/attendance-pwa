@@ -1705,3 +1705,36 @@ async function registerPushForEmployee(personnelCode, fullName = "") {
    registerPushForEmployee(profile.personnelCode, profile.fullName)
      .catch(console.error);
 */
+// app.js
+
+/**
+ * این تابع باید بلافاصله بعد از لود شدن صفحه یا بعد از موفقیت‌آمیز بودن لاگین صدا زده شود
+ */
+async function initPushNotificationSystem() {
+    // ۱. استخراج اطلاعات کاربر (فرض بر این است که در localStorage ذخیره کرده‌اید)
+    // اگر از متد دیگری استفاده می‌کنید، این بخش را طبق آن تغییر دهید
+    const personnelCode = localStorage.getItem('user_personnel_code');
+    const fullName = localStorage.getItem('user_full_name');
+
+    // ۲. چک کردن اینکه آیا کاربر لاگین هست
+    if (!personnelCode) {
+        console.log("User not logged in. Push registration skipped.");
+        return;
+    }
+
+    console.log(`Initializing Push for: ${fullName} (${personnelCode})`);
+
+    try {
+        // ۳. فراخوانی تابعی که در مرحله قبل نوشتیم
+        // این تابع اجازه می‌گیرد، سابسکریپشن می‌سازد و به GAS می‌فرستد
+        await registerPushForEmployee(personnelCode, fullName);
+        
+    } catch (error) {
+        console.error("Failed to initialize push system:", error);
+    }
+}
+
+// اگر کاربر از قبل لاگین است، هنگام باز شدن صفحه اجرا شود
+window.addEventListener('load', () => {
+    initPushNotificationSystem();
+});

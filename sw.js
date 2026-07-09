@@ -242,3 +242,55 @@ async function notifyClients(type) {
     });
   }
 }
+// sw.js - Service Worker for Background Reachability Probes
+
+self.addEventListener('push', function (event) {
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = { probeId: event.data.text() };
+    }
+  }
+
+  // استخراج ProbeID برای بازگرداندن رسید
+  const probeId = data.probeId || 'unknown';
+  const personnelCode = data.personnelCode || 'unknown';
+
+  // ارسال رسید به سمت Backend بدون معطل کردن کاربر
+  const receiptPromise = fetch('YOUR_APPS_SCRIPT_URL', {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'recordReceipt',
+      probeId: probeId,
+      personnelCode: personnelCode,
+      clientTime: new Date().toISOString(),
+      permissionState: Notification.permission,
+      networkState: navigator.onLine ? 'online' : 'offline'
+    })
+  });
+
+  // اگر دیتا شامل پیام متنی بود، نمایش بده (اختیاری برای مچ‌گیری نامحسوس)
+  if (data.title) {
+    const options = {
+      body: data.body || '',
+      icon: '/icon.png',
+      badge: '/badge.png',
+      tag: 'probe-' + probeId
+    };
+    event.waitUntil(Promise.all([receiptPromise, self.registration.showNotification(data.title, options)]));
+  } else {
+    event.waitUntil(receiptPromise);
+  }
+});
+
+// وقتی کاربر روی نوتیفیکیشن کلیک می‌کند
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  event.waitUntil(
+    clients.openWindow('/')
+  );
+});

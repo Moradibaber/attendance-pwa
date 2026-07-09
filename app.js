@@ -698,7 +698,7 @@ async function handlePhotoSelected() {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-   currentPhoto = await compressImage(file);
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -1220,13 +1220,12 @@ function showAdminMessage(message) {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
   `;
-  btn.textContent = "متوجه شدم";
+  btn.textContent = "تایید";
 
-   const dismiss = async (e) => {
+  const dismiss = async (e) => {
     e.preventDefault();
     btn.disabled = true;
-     overlay.style.display = "none";
-    btn.textContent = "✅";
+    btn.textContent = "در حال ارسال تاییدیه...";
     try {
       await sendMessageReadReceipt(message);
     } catch (_) {}
@@ -1241,7 +1240,7 @@ function showAdminMessage(message) {
   overlay.appendChild(container);
 
   document.body.appendChild(overlay);
- }
+}
 
 async function sendMessageReadReceipt(message) {
   try {

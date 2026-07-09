@@ -160,11 +160,83 @@ document.addEventListener("DOMContentLoaded", async () => {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
   } catch (_) {}
+
+  try {
+    registerForPushNotifications();
+  } catch (_) {}
 });
 
 /* =========================
    UI Helpers
 ========================= */
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",
+  authDomain: "moradi-832db.firebaseapp.com",
+  projectId: "moradi-832db",
+  storageBucket: "moradi-832db.firebasestorage.app",
+  messagingSenderId: "898814696792",
+  appId: "1:898814696792:web:3e5c6d59d301dfa67c192d"
+};
+const FCM_VAPID_KEY = "BDzshylAUVJJZTApj3cK8xBD3YMl2IAlZ8PG_KHcP3saIUGa39huTUPe9M33TEsBxqFp26ndXChbm_0NSoiHEHM";
+
+let firebaseMessagingInstance_ = null;
+
+function getFirebaseMessaging_() {
+  if (firebaseMessagingInstance_) return firebaseMessagingInstance_;
+  if (typeof firebase === "undefined") {
+    console.warn("Firebase SDK not loaded — check index.html script tags");
+    return null;
+  }
+
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    firebaseMessagingInstance_ = firebase.messaging();
+    return firebaseMessagingInstance_;
+  } catch (err) {
+    console.error("Firebase init failed:", err);
+    return null;
+  }
+}
+
+async function registerForPushNotifications() {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!("Notification" in window)) return;
+
+    const messaging = getFirebaseMessaging_();
+    if (!messaging) return;
+
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+
+    const swRegistration = await navigator.serviceWorker.ready;
+
+    const token = await messaging.getToken({
+      vapidKey: FCM_VAPID_KEY,
+      serviceWorkerRegistration: swRegistration
+    });
+
+    if (!token) return;
+
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "RegisterPushToken",
+        personnelCode: profile.personnelCode,
+        token: token
+      })
+    });
+  } catch (err) {
+    console.error("Push registration failed:", err);
+  }
+}
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");

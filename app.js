@@ -633,10 +633,123 @@ async function getCurrentAttendanceGate() {
    Attendance Capture
 ========================= */
 
+// async function startAttendanceCapture() {
+//   const personnelCode = $("personnelCode")?.value.trim() || "";
+//   const firstName = $("firstName")?.value.trim() || "";
+//   const lastName = $("lastName")?.value.trim() || "";
+
+//   if (!personnelCode || !firstName || !lastName) {
+//     setStatus("مشخصات پرسنلی کامل نیست.");
+//     return;
+//   }
+
+//   await saveProfileSilent();
+
+//   const { gate } = await getCurrentAttendanceGate();
+//   if (!gate.ok) {
+//     setStatus(gate.message);
+//     return;
+//   }
+
+//   captureStartedAtMs = Date.now();
+//   photoSelectedAtMs = 0;
+//   photoCompressedAtMs = 0;
+//   currentPhoto = "";
+//   pendingLocation = null;
+
+//   const preview = $("photoPreview");
+//   if (preview) {
+//     preview.removeAttribute("src");
+//     preview.style.display = "none";
+//   }
+
+//   const photoInput = $("photoInput");
+//   if (!photoInput) {
+//     setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
+//     return;
+//   }
+
+//   photoInput.value = "";
+//   setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+//   photoInput.click();
+// }
+
+// async function handlePhotoSelected() {
+//   const file = $("photoInput")?.files?.[0];
+
+//   if (!file) {
+//     setStatus("عکسی انتخاب نشد.");
+//     return;
+//   }
+
+//   try {
+//     setBusy(true, "در حال آماده‌سازی عکس...");
+//     photoSelectedAtMs = Date.now();
+
+//     await saveProfileSilent();
+
+//     const { gate } = await getCurrentAttendanceGate();
+//     if (!gate.ok) {
+//       setBusy(false);
+//       setStatus(gate.message);
+//       $("photoInput").value = "";
+//       currentPhoto = "";
+//       return;
+//     }
+
+//     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+//     currentPhoto = await compressImage(file);
+//     photoCompressedAtMs = Date.now();
+
+//     const preview = $("photoPreview");
+//     if (preview) {
+//       preview.src = currentPhoto;
+//       preview.style.display = "block";
+//     }
+
+//     if (!isGeolocationUsable()) {
+//       setBusy(false);
+//       setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+//       return;
+//     }
+
+//     setBusy(true, "در حال دریافت GPS...");
+//     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+//     pendingLocation = await getLocationIOSFriendly();
+
+//     if (!hasValidLocation(pendingLocation)) {
+//       setBusy(false);
+
+//       if (pendingLocation?.status === "denied") {
+//         setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+//         return;
+//       }
+//       if (pendingLocation?.status === "unavailable") {
+//         setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+//         return;
+//       }
+//       if (pendingLocation?.status === "timeout") {
+//         setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+//         return;
+//       }
+
+//       setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+//       return;
+//     }
+
+//     setBusy(true, "در حال ذخیره تردد...");
+//     await createRecord("تردد");
+//     setBusy(false);
+//   } catch (err) {
+//     console.error(err);
+//     setBusy(false);
+//     setStatus("خطا در پردازش عکس یا ثبت تردد");
+//   }
+// }
 async function startAttendanceCapture() {
-  const personnelCode = $("personnelCode")?.value.trim() || "";
-  const firstName = $("firstName")?.value.trim() || "";
-  const lastName = $("lastName")?.value.trim() || "";
+  const personnelCode = $("personnelCode")?.value?.trim();
+  const firstName = $("firstName")?.value?.trim();
+  const lastName = $("lastName")?.value?.trim();
 
   if (!personnelCode || !firstName || !lastName) {
     setStatus("مشخصات پرسنلی کامل نیست.");
@@ -651,11 +764,42 @@ async function startAttendanceCapture() {
     return;
   }
 
+  if (!isGeolocationUsable()) {
+    setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+    return;
+  }
+
+  setBusy(true, "در حال دریافت GPS...");
+  setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+
+  pendingLocation = await getLocationIOSFriendly();
+
+  if (!hasValidLocation(pendingLocation)) {
+    setBusy(false);
+
+    if (pendingLocation?.status === "denied") {
+      setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+      return;
+    }
+
+    if (pendingLocation?.status === "unavailable") {
+      setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+      return;
+    }
+
+    if (pendingLocation?.status === "timeout") {
+      setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+      return;
+    }
+
+    setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+    return;
+  }
+
   captureStartedAtMs = Date.now();
   photoSelectedAtMs = 0;
   photoCompressedAtMs = 0;
   currentPhoto = "";
-  pendingLocation = null;
 
   const preview = $("photoPreview");
   if (preview) {
@@ -665,11 +809,13 @@ async function startAttendanceCapture() {
 
   const photoInput = $("photoInput");
   if (!photoInput) {
+    setBusy(false);
     setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
     return;
   }
 
   photoInput.value = "";
+  setBusy(false);
   setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
   photoInput.click();
 }
@@ -686,18 +832,6 @@ async function handlePhotoSelected() {
     setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
-    await saveProfileSilent();
-
-    const { gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setBusy(false);
-      setStatus(gate.message);
-      $("photoInput").value = "";
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
@@ -705,36 +839,6 @@ async function handlePhotoSelected() {
     if (preview) {
       preview.src = currentPhoto;
       preview.style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setBusy(false);
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
-      return;
-    }
-
-    setBusy(true, "در حال دریافت GPS...");
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(pendingLocation)) {
-      setBusy(false);
-
-      if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
-        return;
-      }
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-        return;
-      }
-
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-      return;
     }
 
     setBusy(true, "در حال ذخیره تردد...");

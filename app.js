@@ -1225,7 +1225,7 @@ function showAdminMessage(message) {
   const dismiss = async (e) => {
     e.preventDefault();
     btn.disabled = true;
-    btn.textContent = "";
+    // btn.textContent = "در حال ارسال تاییده";
     try {
       await sendMessageReadReceipt(message);
     } catch (_) {}

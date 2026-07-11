@@ -155,9 +155,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupAutoSync();
   } catch (_) {}
 
-  try {
+   try {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
+      const registration = await navigator.serviceWorker.register("sw.js").catch(() => null);
+      if (registration) await registerPeriodicSync(registration);
     }
   } catch (_) {}
 
@@ -165,6 +166,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     registerForPushNotifications();
   } catch (_) {}
 });
+async function registerPeriodicSync(registration) {
+  try {
+    if (!registration.periodicSync) return;
+
+    const status = await navigator.permissions.query({
+      name: "periodic-background-sync",
+    });
+
+    if (status.state !== "granted") return;
+
+    await registration.periodicSync.register("check-online-status", {
+      minInterval: 15 * 60 * 1000, // ۱۵ دقیقه
+    });
+  } catch (err) {
+    console.warn("Periodic Sync registration failed:", err);
+  }
+}
 
 /* =========================
    UI Helpers

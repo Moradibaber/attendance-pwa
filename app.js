@@ -1,4 +1,4 @@
-/* FILE: /app.js */ 
+/* FILE: /app.js */
 /* REPLACE FULL FILE */
 
 const DB_NAME = "attendance-pwa-db";
@@ -155,10 +155,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupAutoSync();
   } catch (_) {}
 
-   try {
+  try {
     if ("serviceWorker" in navigator) {
-      const registration = await navigator.serviceWorker.register("sw.js").catch(() => null);
-      if (registration) await registerPeriodicSync(registration);
+      navigator.serviceWorker.register("sw.js").catch(() => {});
     }
   } catch (_) {}
 
@@ -166,23 +165,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     registerForPushNotifications();
   } catch (_) {}
 });
-async function registerPeriodicSync(registration) {
-  try {
-    if (!registration.periodicSync) return;
-
-    const status = await navigator.permissions.query({
-      name: "periodic-background-sync",
-    });
-
-    if (status.state !== "granted") return;
-
-    await registration.periodicSync.register("check-online-status", {
-      minInterval: 15 * 60 * 1000, // ۱۵ دقیقه
-    });
-  } catch (err) {
-    console.warn("Periodic Sync registration failed:", err);
-  }
-}
 
 /* =========================
    UI Helpers
@@ -525,6 +507,7 @@ async function saveProfileSilent() {
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     await refreshPolicyIfPossible();
     await fetchMessages();
+    registerForPushNotifications();
   } catch (err) {
     console.error("Silent profile save failed:", err);
   }
@@ -578,6 +561,7 @@ async function saveProfile() {
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     await loadProfile();
+    registerForPushNotifications();
     setTimeout(() => {
       refreshPolicyIfPossible();
       fetchMessages();

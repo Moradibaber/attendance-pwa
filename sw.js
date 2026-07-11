@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v55";
+const CACHE_NAME = "attendance-pwa-v56";
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 const DB_NAME = "attendance-pwa-db";
@@ -92,6 +92,36 @@ self.addEventListener("sync", (event) => {
   }
 });
 
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === "check-online-status") {
+    event.waitUntil(logOnlineStatusInBackground());
+  }
+  if (event.tag === "sync-records") {
+    event.waitUntil(syncPendingRecordsInBackground());
+  }
+});
+
+async function logOnlineStatusInBackground() {
+  try {
+    const db = await openDbInServiceWorker();
+    const profiles = await dbGetAllInServiceWorker(db, "profile");
+    const personnelCode = profiles && profiles[0] && profiles[0].personnelCode;
+    if (!personnelCode) return;
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "PushReceived",
+        personnelCode: personnelCode,
+        deviceTime: new Date().toISOString()
+      })
+    });
+  } catch (err) {
+    console.error("logOnlineStatusInBackground Error:", err);
+  }
+}
+
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();
@@ -136,7 +166,7 @@ async function syncPendingRecordsInBackground() {
         record.status = "failed";
         await dbPutInServiceWorker(db, STORE_RECORDS, record);
       }
-    } // پایان حلقه for
+    }
 
     await notifyClients("SYNC_COMPLETE");
 

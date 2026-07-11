@@ -1,17 +1,17 @@
-const CACHE_NAME = "attendance-pwa-v57";
+const CACHE_NAME = "attendance-pwa-v54"; 
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
-
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(FILES);
     })
   );
+
   self.skipWaiting();
 });
 
@@ -30,8 +30,9 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // خارج کردن کامل درخواست‌های ساعت جهانی از حیطه مدیریت سرویس‌ورکر
   if (event.request.url.includes('worldtimeapi.org')) {
-    return;
+    return; 
   }
 
   event.respondWith(
@@ -60,6 +61,8 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     (async () => {
+      // Log the online event to the sheet FIRST — this is the whole point:
+      // the fact this code is running at all proves the device is online right now.
       if (personnelCode) {
         try {
           await fetch(APPS_SCRIPT_URL, {
@@ -76,6 +79,7 @@ self.addEventListener("push", (event) => {
         }
       }
 
+      // Browsers require a visible notification when a push is shown.
       await self.registration.showNotification(title, {
         body: body,
         icon: "icon-192.png",
@@ -86,42 +90,6 @@ self.addEventListener("push", (event) => {
   );
 });
 
-self.addEventListener("sync", (event) => {
-  if (event.tag === "sync-records") {
-    event.waitUntil(syncPendingRecordsInBackground());
-  }
-});
-
-self.addEventListener("periodicsync", (event) => {
-  if (event.tag === "check-online-status") {
-    event.waitUntil(logOnlineStatusInBackground());
-  }
-  if (event.tag === "sync-records") {
-    event.waitUntil(syncPendingRecordsInBackground());
-  }
-});
-
-async function logOnlineStatusInBackground() {
-  try {
-    const db = await openDbInServiceWorker();
-    const profiles = await dbGetAllInServiceWorker(db, "profile");
-    const personnelCode = profiles && profiles[0] && profiles[0].personnelCode;
-    if (!personnelCode) return;
-
-    await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        type: "PushReceived",
-        personnelCode: personnelCode,
-        deviceTime: new Date().toISOString()
-      })
-    });
-  } catch (err) {
-    console.error("logOnlineStatusInBackground Error:", err);
-  }
-}
-
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();
@@ -131,51 +99,56 @@ async function syncPendingRecordsInBackground() {
     if (!list.length) {
       await notifyClients("SYNC_COMPLETE");
       return;
+    } 
+
+  for (const record of list) {
+
+  try {
+
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(record)
+    });
+
+    const text = await response.text();
+
+    console.log("Sending to:", APPS_SCRIPT_URL);
+    console.log("HTTP Status:", response.status);
+    console.log("Response:", text);
+
+    const result = JSON.parse(text);
+
+    if (result.ok) {
+      record.status = "sent";
+    } else {
+      record.status = "failed";
     }
 
-    for (const record of list) {
-      try {
-        const response = await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(record)
-        });
-
-        const text = await response.text();
-
-        console.log("Sending to:", APPS_SCRIPT_URL);
-        console.log("HTTP Status:", response.status);
-        console.log("Response:", text);
-
-        const result = JSON.parse(text);
-
-        if (result.ok) {
-          record.status = "sent";
-        } else {
-          record.status = "failed";
-        }
-
-        await dbPutInServiceWorker(db, STORE_RECORDS, record);
-
-      } catch (err) {
-        console.error("SW Sync Error:", err);
-        console.error("URL:", APPS_SCRIPT_URL);
-
-        record.status = "failed";
-        await dbPutInServiceWorker(db, STORE_RECORDS, record);
-      }
-    }
-
-    await notifyClients("SYNC_COMPLETE");
+    await dbPutInServiceWorker(db, STORE_RECORDS, record);
 
   } catch (err) {
-    console.error("syncPendingRecordsInBackground Error:", err);
-    await notifyClients("SYNC_FAILED");
-  }
-}
 
+    console.error("SW Sync Error:", err);
+    console.error("URL:", APPS_SCRIPT_URL);
+
+    record.status = "failed";
+    await dbPutInServiceWorker(db, STORE_RECORDS, record);
+
+  }
+
+}   // پایان حلقه for
+
+await notifyClients("SYNC_COMPLETE");
+
+} catch (err) {
+
+  console.error("syncPendingRecordsInBackground Error:", err);
+
+  await notifyClients("SYNC_FAILED");
+}
 function openDbInServiceWorker() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -233,6 +206,9 @@ async function notifyClients(type) {
   });
 
   for (const client of clientsList) {
-    client.postMessage({ type });
+    client.postMessage({
+      type
+    });
   }
+}
 }

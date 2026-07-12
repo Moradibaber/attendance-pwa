@@ -182,7 +182,7 @@ const FCM_VAPID_KEY = "BDzshylAUVJJZTApj3cK8xBD3YMl2IAlZ8PG_KHcP3saIUGa39huTUPe9
 
 let firebaseMessagingInstance_ = null;
 
-function getFirebaseMessaging_() {
+async function getFirebaseMessaging_() {
   if (firebaseMessagingInstance_) return firebaseMessagingInstance_;
   if (typeof firebase === "undefined") {
     console.warn("Firebase SDK not loaded — check index.html script tags");
@@ -190,6 +190,14 @@ function getFirebaseMessaging_() {
   }
 
   try {
+    if (firebase.messaging && typeof firebase.messaging.isSupported === "function") {
+      const supported = await firebase.messaging.isSupported();
+      if (!supported) {
+        console.warn("Firebase Messaging reports this browser as unsupported.");
+        return null;
+      }
+    }
+
     if (!firebase.apps.length) {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
@@ -202,15 +210,40 @@ function getFirebaseMessaging_() {
 }
 
 async function registerForPushNotifications() {
-  try {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    if (!("Notification" in window)) return;
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile || !profile.personnelCode) return;
 
-    const messaging = getFirebaseMessaging_();
-    if (!messaging) return;
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      await reportPushStatus_(profile.personnelCode, "unsupported_no_push_api");
+      return;
+    }
+
+    // Always report status FIRST, independent of whether Firebase itself
+    // works - this is what makes a failure visible in PushTokens instead
+    // of a totally silent no-op (which is what was happening on some
+    // iPhones: Firebase's own compatibility check rejected the browser,
+    // the function returned early, and nothing ever got reported).
+    await reportPushStatus_(profile.personnelCode, Notification.permission);
+
+    if (Notification.permission === "denied") {
+      showPushDeniedBanner();
+      return;
+    }
+
+    const messaging = await getFirebaseMessaging_();
+    if (!messaging) {
+      await reportPushStatus_(profile.personnelCode, "unsupported_firebase_init_failed");
+      return;
+    }
 
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") return;
+    await reportPushStatus_(profile.personnelCode, permission);
+
+    if (permission !== "granted") {
+      if (permission === "denied") showPushDeniedBanner();
+      return;
+    }
 
     const swRegistration = await navigator.serviceWorker.ready;
 
@@ -219,10 +252,10 @@ async function registerForPushNotifications() {
       serviceWorkerRegistration: swRegistration
     });
 
-    if (!token) return;
-
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile || !profile.personnelCode) return;
+    if (!token) {
+      await reportPushStatus_(profile.personnelCode, "granted_but_no_token");
+      return;
+    }
 
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
@@ -235,7 +268,67 @@ async function registerForPushNotifications() {
     });
   } catch (err) {
     console.error("Push registration failed:", err);
+    try {
+      await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));
+    } catch (_) {}
   }
+}
+
+async function reportPushStatus_(personnelCode, permissionStatus) {
+  try {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone =
+      window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "ReportPushStatus",
+        personnelCode: personnelCode,
+        permissionStatus: permissionStatus,
+        platform: isIOS ? "iOS" : (/Android/.test(navigator.userAgent) ? "Android" : "Other"),
+        isStandalone: !!isStandalone
+      })
+    });
+  } catch (err) {
+    console.error("reportPushStatus_ failed:", err);
+  }
+}
+
+function showPushDeniedBanner() {
+  if (document.getElementById("push-denied-banner")) return;
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  const banner = document.createElement("div");
+  banner.id = "push-denied-banner";
+  banner.style.cssText =
+    "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;" +
+    "background:#7c2d12;color:#fff;padding:14px 16px;border-radius:14px;" +
+    "font-size:14px;line-height:1.7;box-shadow:0 6px 20px rgba(0,0,0,.35);" +
+    "direction:rtl;text-align:right;";
+
+  const steps = isIOS
+    ? "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← فعال کردن Allow Notifications. اگر در لیست نبود، آیکون اپ را از صفحه اصلی حذف کنید، سپس از Safari دوباره Add to Home Screen بزنید."
+    : "تنظیمات گوشی ← اعلان‌ها (Notifications) ← این مرورگر/اپلیکیشن ← فعال کردن اعلان‌ها.";
+
+  banner.innerHTML =
+    '<div style="font-weight:700;margin-bottom:6px;">⚠️ اعلان‌ها غیرفعال است</div>' +
+    "<div>بدون فعال بودن اعلان‌ها، سیستم نمی‌تواند اتصال شما به اینترنت را در پس‌زمینه ثبت کند. " +
+    steps +
+    "</div>" +
+    '<button id="push-denied-dismiss" style="margin-top:10px;background:#fff;color:#7c2d12;border:none;' +
+    'border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;">متوجه شدم</button>';
+
+  document.body.appendChild(banner);
+
+  document.getElementById("push-denied-dismiss")?.addEventListener("click", () => {
+    banner.remove();
+    // Not permanently dismissed - it'll show again next time the app opens
+    // as long as permission is still denied, so it can't be forgotten.
+  });
 }
 
 function showGpsToast(message, duration = 3000, type = "success") {
@@ -507,6 +600,7 @@ async function saveProfileSilent() {
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     await refreshPolicyIfPossible();
     await fetchMessages();
+    registerForPushNotifications();
   } catch (err) {
     console.error("Silent profile save failed:", err);
   }
@@ -560,6 +654,7 @@ async function saveProfile() {
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     await loadProfile();
+    registerForPushNotifications();
     setTimeout(() => {
       refreshPolicyIfPossible();
       fetchMessages();

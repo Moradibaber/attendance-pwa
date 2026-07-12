@@ -214,16 +214,19 @@ async function registerForPushNotifications() {
   if (!profile || !profile.personnelCode) return;
 
   try {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-      await reportPushStatus_(profile.personnelCode, "unsupported_no_push_api");
+    const missingApis = [];
+    if (!("serviceWorker" in navigator)) missingApis.push("ServiceWorker");
+    if (!("PushManager" in window)) missingApis.push("PushManager");
+    if (!("Notification" in window)) missingApis.push("Notification");
+
+    if (missingApis.length) {
+      await reportPushStatus_(profile.personnelCode, "unsupported_no_push_api:missing=" + missingApis.join(","));
       return;
     }
 
     // Always report status FIRST, independent of whether Firebase itself
     // works - this is what makes a failure visible in PushTokens instead
-    // of a totally silent no-op (which is what was happening on some
-    // iPhones: Firebase's own compatibility check rejected the browser,
-    // the function returned early, and nothing ever got reported).
+    // of a totally silent no-op.
     await reportPushStatus_(profile.personnelCode, Notification.permission);
 
     if (Notification.permission === "denied") {
@@ -274,12 +277,25 @@ async function registerForPushNotifications() {
   }
 }
 
+// Parses "OS 16_4" style version strings out of the iOS user agent, so we
+// get the real iOS version automatically in every report instead of having
+// to ask someone to go check Settings on each phone by hand.
+function getIosVersionLabel_() {
+  const m = navigator.userAgent.match(/OS (\d+)_(\d+)(?:_(\d+))?/);
+  if (!m) return "";
+  return "iOS " + m[1] + "." + m[2] + (m[3] ? "." + m[3] : "");
+}
+
 async function reportPushStatus_(personnelCode, permissionStatus) {
   try {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const isStandalone =
       window.navigator.standalone === true ||
       (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
+    const platform = isIOS
+      ? (getIosVersionLabel_() || "iOS")
+      : (/Android/.test(navigator.userAgent) ? "Android" : "Other");
 
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
@@ -288,7 +304,7 @@ async function reportPushStatus_(personnelCode, permissionStatus) {
         type: "ReportPushStatus",
         personnelCode: personnelCode,
         permissionStatus: permissionStatus,
-        platform: isIOS ? "iOS" : (/Android/.test(navigator.userAgent) ? "Android" : "Other"),
+        platform: platform,
         isStandalone: !!isStandalone
       })
     });

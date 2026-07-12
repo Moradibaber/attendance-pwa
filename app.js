@@ -1,2429 +1,1688 @@
-const RECORDS_SHEET_NAME = "Records";
-const MESSAGES_SHEET_NAME = "Messages";
-const MESSAGE_RECEIPTS_SHEET_NAME = "MessageReceipts";
-const PUSH_TOKENS_SHEET_NAME = "PushTokens";
-const ONLINE_LOG_SHEET_NAME = "OnlineLog";
-const PUSH_MESSAGES_SHEET_NAME = "PushMessages";
-const PUSH_MONITOR_LIST_SHEET_NAME = "PushMonitorList";
-const RECORD_INDEX_SHEET_NAME = "RecordIndex";
-const MATCHING_SHEET_NAME = "Matching";
-const USERS_SHEET_NAME = "Users";
-const PHOTO_FOLDER_PROPERTY_KEY = "ATTENDANCE_PHOTO_FOLDER_ID";
-const REPORT_SHEET_NAME = "MonthlyReport";
+/* FILE: /app.js */
+/* REPLACE FULL FILE */
+
+const DB_NAME = "attendance-pwa-db";
+const DB_VERSION = 3;
+
+const STORE_RECORDS = "records";
+const STORE_PROFILE = "profile";
+const STORE_CONFIG = "config";
+
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
+
+const GPS_RETRY_MS = 30000;
+const GOOD_ACCURACY_METERS = 1000;
+const GPS_REQUIRED = true;
+
+const CLOCK_DRIFT_SESSION_LIMIT_MS = 10 * 1000;
+
+const DEFAULT_ATTENDANCE_POLICY = "ONLINE_OR_OFFLINE";
+const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
 const POLICY_ONLINE_ONLY = "ONLINE_ONLY";
 const POLICY_OFFLINE_ONLY = "OFFLINE_ONLY";
 const POLICY_ONLINE_PREFERRED = "ONLINE_PREFERRED";
 const POLICY_ONLINE_OR_OFFLINE = "ONLINE_OR_OFFLINE";
 const POLICY_OFFLINE_ALLOWED_IMMEDIATE = "OFFLINE_ALLOWED_IMMEDIATE";
-const DEFAULT_ATTENDANCE_POLICY = POLICY_ONLINE_OR_OFFLINE;
-const POLICY_NOT_ALLOWED = "NOT_ALLOWED";
 
-const USERS_HEADERS = [
-  "PersonnelCode",
-  "FirstName",
-  "LastName",
-  "AttendancePolicy",
-  "PolicyVersion",
-  "UpdatedAt",
-  "MinLatitude",
-  "MaxLatitude",
-  "MinLongitude",
-  "MaxLongitude"
-];
+const APP_SESSION_START_WALL_MS = Date.now();
+const APP_SESSION_START_PERF_MS = performance.now();
 
-const RECORD_HEADERS = [
-  "Timestamp",
-  "PersonnelCode",
-  "FirstName",
-  "LastName",
-  "RecordDate",
-  "RecordHour",
-  "Latitude",
-  "Longitude",
-  "Accuracy",
-  "DeviceTime",
-  "OfflineCreated",
-  "ClockRisk",
-  "Photo",
-  "GeoFenceStatus"
-];
+let db = null;
+let currentPhoto = "";
+let pendingLocation = null;
+let syncRunning = false;
+let syncTimer = null;
+let lastAdminMessage = null;
 
-const RECORD_INDEX_HEADERS = [
-  "Signature",
-  "PersonnelCode",
-  "ServerTimestamp",
-  "OfflineCreated",
-  "RecordDate",
-  "RecordHour",
-  "RecordTime",
-  "CreatedAt",
-  "DeviceTime",
-  "DeviceTimeAtClick",
-  "DeviceTimeAtGps",
-  "GpsTimestamp",
-  "Latitude",
-  "Longitude",
-  "Accuracy",
-  "SessionClockDriftMs",
-  "NetworkClockDriftMs",
-  "GpsTrueTimeDiffMs",
-  "AttendancePolicy",
-  "PolicyVersion",
-  "PolicyFetchedAt",
-  "PhotoUrl",
-  "SheetRow"
-];
+let captureStartedAtMs = 0;
+let photoSelectedAtMs = 0;
+let photoCompressedAtMs = 0;
 
-const MATCHING_HEADERS = [
-  "RecordRow",
-  "ServerTimestamp",
-  "PersonnelCode",
-  "OfflineCreated",
-  "CreatedAt",
-  "FirstInternetAt",
-  "FirstOfflineAt",
-  "InternetAfterOfflineAt",
-  "SequenceMatch",
-  "ReconnectAfterOffline",
-  "ClockRisk",
-  "ClockRiskReason",
-  "Photo"
-];
-
-const CLOCK_DRIFT_SESSION_LIMIT_MS = 60 * 1000;
-const GPS_TRUE_DIFF_LIMIT_MS = 2 * 60 * 1000;
-const NETWORK_DRIFT_LIMIT_MS = 2 * 60 * 1000;
-const OFFLINE_UPLOAD_GRACE_MS = 15 * 60 * 1000;
+const $ = (id) => document.getElementById(id);
 
 /* =========================
-   doGet
+   Busy Overlay (Loader)
 ========================= */
 
-function doGet(e) {
-  if (e && e.parameter) {
-    if (e.parameter.action === "getUserPolicy") {
-      return handleGetUserPolicy_(e);
-    }
-    if (e.parameter.action === "getMessages") {
-      return jsonResponse({
-        ok: true,
-        messages: getMessagesForPersonnel_(e.parameter.personnelCode)
-      });
-    }
-  }
+function setBusy(isBusy, message = "در حال پردازش...") {
+  const overlay = $("busyOverlay");
+  const text = $("busyText");
+  if (!overlay || !text) return;
 
-  return HtmlService.createTemplateFromFile("AdminPanel")
-    .evaluate()
-    .setTitle("پنل مدیریت تردد")
-    .addMetaTag("viewport", "width=device-width, initial-scale=1");
+  text.textContent = message;
+  overlay.style.display = isBusy ? "flex" : "none";
 }
 
 /* =========================
-   doPost
-========================= */
-/* =============================================
-   Google Apps Script - Server Side (CORS-SAFE)
-   Target: Receive data from PWA (text/plain)
-   ============================================= */
-
-/* =============================================
-   اصلاح تابع doPost برای پردازش JSON خام
-   ============================================= */
-
-/* =============================================
-   Google Apps Script - Final Production Version
-   ============================================= */
-function doPost(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var data = parseBody(e);
-
-  if (!data) {
-    return jsonOut({
-      ok: false,
-      error: "Invalid JSON payload"
-    });
-  }
-
-  try {
-    logDebug(ss, data);
-
-    if (String(data.type || "").trim() === "ConnectionStatus") {
-      return handleStatusSummary(ss, data);
-    }
-
-    if (String(data.type || "").trim() === "MessageReadReceipt") {
-      return handleMessageReadReceipt(ss, data);
-    }
-
-    if (String(data.type || "").trim() === "RegisterPushToken") {
-      return handleRegisterPushToken(ss, data);
-    }
-
-    if (String(data.type || "").trim() === "ReportPushStatus") {
-      return handleReportPushStatus(ss, data);
-    }
-
-    if (String(data.type || "").trim() === "PushReceived") {
-      return handlePushReceived(ss, data);
-    }
-
-    return handleAttendance(ss, data);
-  } catch (err) {
-    logError(ss, data, err);
-    return jsonOut({
-      ok: false,
-      error: String(err && err.message ? err.message : err)
-    });
-  }
-}
-
-function handleAttendance(ss, data) {
-  var sh = ss.getSheetByName("Records");
-  if (!sh) {
-    sh = ss.insertSheet("Records");
-  }
-
-  ensureRecordHeaders(sh);
-
-  var normalized = normalizeAttendancePayload(data);
-  var now = new Date();
-
-  var validation = validateAttendancePolicy_(normalized, now);
-  if (!validation.ok) {
-    return jsonOut({
-      ok: false,
-      error: validation.error,
-      attendancePolicy: validation.attendancePolicy,
-      policyVersion: validation.policyVersion
-    });
-  }
-
-  normalized.attendancePolicy = validation.attendancePolicy;
-  normalized.policyVersion = validation.policyVersion;
-
-  var fence = getUserGeoFence_(normalized.personnelCode);
-  var insideFence = isInsideGeoFence_(normalized.latitude, normalized.longitude, fence);
-  var geoFenceStatus = insideFence ? "ok" : "outside";
-
-  var recordIndexSheet = getRecordIndexSheet();
-  var matchingSheet = getMatchingSheet();
-
-  var photoAsset = resolvePhotoAsset_(normalized.photo, normalized.personnelCode, now);
-  var signature = buildRecordSignature_(normalized, photoAsset.signatureSource);
-
-  if (isDuplicateRecord_(recordIndexSheet, signature)) {
-    return jsonOut({
-      ok: true,
-      duplicate: true,
-      message: "رکورد تکراری بود و دوباره ثبت نشد."
-    });
-  }
-
-  var history = getPersonnelHistory_(recordIndexSheet, normalized.personnelCode);
-  var clockRiskResult = calculateClockRisk(normalized, history);
-
-  sh.appendRow([
-    now,
-    normalized.personnelCode,
-    normalized.firstName,
-    normalized.lastName,
-    normalized.recordDate,
-    normalized.recordHour,
-    normalized.latitude,
-    normalized.longitude,
-    normalized.accuracy,
-    normalized.deviceTime,
-    !!normalized.offlineCreated,
-    clockRiskResult.clockRisk,
-    "",
-    geoFenceStatus
-  ]);
-
-  var rowIndex = sh.getLastRow();
-
-  sh.getRange(rowIndex, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-  sh.getRange(rowIndex, 5).setNumberFormat("@");
-  sh.getRange(rowIndex, 6).setNumberFormat("@");
-  sh.getRange(rowIndex, 10).setNumberFormat("@");
-  sh.getRange(rowIndex, 11).setNumberFormat("@");
-  sh.getRange(rowIndex, 12).setNumberFormat("@");
-  sh.getRange(rowIndex, 14).setNumberFormat("@");
-
-  if (photoAsset.formula) {
-    sh.getRange(rowIndex, 13).setFormula(photoAsset.formula);
-  } else {
-    sh.getRange(rowIndex, 13).setValue("بدون عکس");
-  }
-
-  appendRecordIndexRow_(recordIndexSheet, {
-    signature: signature,
-    normalized: normalized,
-    now: now,
-    gpsTrueTimeDiffMs: normalized.gpsTrueTimeDiffMs,
-    photoUrl: photoAsset.url,
-    row: rowIndex
-  });
-
-  appendMatchingRow_(matchingSheet, {
-    recordRow: rowIndex,
-    now: now,
-    normalized: normalized,
-    clockRiskResult: clockRiskResult,
-    photoUrl: photoAsset.url
-  });
-
-  return jsonOut({
-    ok: true,
-    sheet: "Records",
-    row: rowIndex,
-    attendancePolicy: normalized.attendancePolicy,
-    policyVersion: normalized.policyVersion,
-    geoFenceStatus: geoFenceStatus,
-    offlineCreated: !!normalized.offlineCreated,
-    photoUrl: photoAsset.url || ""
-  });
-}
-
-function handleStatusSummary(ss, data) {
-  var sh = ss.getSheetByName("UserStatus");
-  if (!sh) {
-    sh = ss.insertSheet("UserStatus");
-  }
-
-  ensureStatusHeaders(sh);
-
-  if (sh.getLastRow() > 1) {
-    sh.getRange(2, 4, sh.getLastRow() - 1, 3).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-  }
-
-  var personnelCode = s(data.personnelCode).trim();
-  if (!personnelCode) {
-    return jsonOut({
-      ok: false,
-      error: "PersonnelCode missing"
-    });
-  }
-
-  var firstName = s(data.firstName).trim();
-  var lastName = s(data.lastName).trim();
-  var fullName = (firstName + " " + lastName).replace(/\s+/g, " ").trim();
-
-  var status = s(
-    data.connectionStatusFa ||
-    data.status ||
-    (data.online === true ? "آنلاین" : data.online === false ? "آفلاین" : "")
-  ).trim();
-
-  if (!status) {
-    status = "آفلاین";
-  }
-
-  var now = new Date();
-  var lastRow = sh.getLastRow();
-  var rowIndex = findRowByPersonnelCode(sh, personnelCode, lastRow);
-
-  if (rowIndex === -1) {
-    var newRow = [
-      personnelCode,
-      fullName,
-      status,
-      status === "آنلاین" ? now : "",
-      status === "آفلاین" ? now : "",
-      now
-    ];
-
-    sh.appendRow(newRow);
-    rowIndex = sh.getLastRow();
-    sh.getRange(rowIndex, 4, 1, 3).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-  } else {
-    if (fullName) {
-      sh.getRange(rowIndex, 2).setValue(fullName);
-    }
-
-    sh.getRange(rowIndex, 3).setValue(status);
-
-    if (status === "آنلاین") {
-      sh.getRange(rowIndex, 4).setValue(now);
-    }
-
-    if (status === "آفلاین") {
-      sh.getRange(rowIndex, 5).setValue(now);
-    }
-
-    sh.getRange(rowIndex, 6).setValue(now);
-    sh.getRange(rowIndex, 4, 1, 3).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-  }
-
-  return jsonOut({
-    ok: true,
-    sheet: "UserStatus",
-    row: rowIndex,
-    personnelCode: personnelCode,
-    status: status
-  });
-}
-
-function handleMessageReadReceipt(ss, data) {
-  var sh = ss.getSheetByName(MESSAGE_RECEIPTS_SHEET_NAME);
-  if (!sh) {
-    sh = ss.insertSheet(MESSAGE_RECEIPTS_SHEET_NAME);
-  }
-
-  ensureMessageReceiptHeaders(sh);
-
-  var personnelCode = s(data.personnelCode).trim();
-  if (!personnelCode) {
-    return jsonOut({ ok: false, error: "PersonnelCode missing" });
-  }
-
-  var firstName = s(data.firstName).trim();
-  var lastName = s(data.lastName).trim();
-  var fullName = (firstName + " " + lastName).replace(/\s+/g, " ").trim();
-  var message = s(data.message).trim();
-  var deviceTime = s(data.deviceTime).trim();
-  var now = new Date();
-
-  sh.appendRow([
-    now,
-    personnelCode,
-    fullName,
-    message,
-    deviceTime,
-    "خوانده شد و تایید شد"
-  ]);
-
-  var rowIndex = sh.getLastRow();
-  sh.getRange(rowIndex, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-  sh.getRange(rowIndex, 5).setNumberFormat("@");
-
-  return jsonOut({
-    ok: true,
-    sheet: MESSAGE_RECEIPTS_SHEET_NAME,
-    row: rowIndex,
-    personnelCode: personnelCode,
-    readAt: now
-  });
-}
-
-function ensureMessageReceiptHeaders(sh) {
-  var headers = [[
-    "ServerReadAt",
-    "PersonnelCode",
-    "FullName",
-    "Message",
-    "DeviceTime",
-    "Status"
-  ]];
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, headers[0].length).setValues(headers);
-    sh.getRange(1, 1, 1, headers[0].length).setFontWeight("bold");
-    sh.setFrozenRows(1);
-  }
-}
-
-/* =========================
-   Web Push (FCM) - background online detection
+   Jalali (Persian) Date Converter
 ========================= */
 
-function getFcmAccessToken_() {
-  var props = PropertiesService.getScriptProperties();
-  var clientEmail = props.getProperty("FCM_CLIENT_EMAIL");
-  var privateKey = props.getProperty("FCM_PRIVATE_KEY");
+function getJalaliDateParts(date = new Date()) {
+  const g_y = date.getFullYear();
+  const g_m = date.getMonth() + 1;
+  const g_d = date.getDate();
 
-  if (!clientEmail || !privateKey) {
-    throw new Error("FCM_CLIENT_EMAIL / FCM_PRIVATE_KEY not set in Script Properties");
+  let g_days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let jy_days_in_month = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+
+  let gy = g_y - 1600;
+  let gm = g_m - 1;
+  let gd = g_d - 1;
+
+  let g_day_no =
+    365 * gy +
+    Math.floor((gy + 3) / 4) -
+    Math.floor((gy + 99) / 100) +
+    Math.floor((gy + 399) / 400);
+
+  for (let i = 0; i < gm; ++i) g_day_no += g_days_in_month[i];
+
+  if (gm > 1 && ((gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0)) g_day_no++;
+
+  g_day_no += gd;
+
+  let j_day_no = g_day_no - 79;
+  let j_np = Math.floor(j_day_no / 12053);
+  j_day_no = j_day_no % 12053;
+
+  let jy = 979 + 33 * j_np + 4 * Math.floor(j_day_no / 1461);
+  j_day_no %= 1461;
+
+  if (j_day_no >= 366) {
+    jy += Math.floor((j_day_no - 1) / 365);
+    j_day_no = (j_day_no - 1) % 365;
   }
 
-  privateKey = privateKey.replace(/\\n/g, "\n");
+  let i = 0;
+  for (i = 0; i < 11 && j_day_no >= jy_days_in_month[i]; ++i) j_day_no -= jy_days_in_month[i];
 
-  var header = { alg: "RS256", typ: "JWT" };
-  var now = Math.floor(Date.now() / 1000);
-  var claimSet = {
-    iss: clientEmail,
-    scope: "https://www.googleapis.com/auth/firebase.messaging",
-    aud: "https://oauth2.googleapis.com/token",
-    exp: now + 3600,
-    iat: now
+  let jm = i + 1;
+  let jd = j_day_no + 1;
+
+  return {
+    jy,
+    jm: String(jm).padStart(2, "0"),
+    jd: String(jd).padStart(2, "0"),
   };
-
-  var base64Header = Utilities.base64EncodeWebSafe(JSON.stringify(header)).replace(/=+$/, "");
-  var base64Claim = Utilities.base64EncodeWebSafe(JSON.stringify(claimSet)).replace(/=+$/, "");
-  var signatureInput = base64Header + "." + base64Claim;
-
-  var signatureBytes = Utilities.computeRsaSha256Signature(signatureInput, privateKey);
-  var signature = Utilities.base64EncodeWebSafe(signatureBytes).replace(/=+$/, "");
-
-  var jwt = signatureInput + "." + signature;
-
-  var response = UrlFetchApp.fetch("https://oauth2.googleapis.com/token", {
-    method: "post",
-    contentType: "application/x-www-form-urlencoded",
-    payload: {
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt
-    },
-    muteHttpExceptions: true
-  });
-
-  var result = JSON.parse(response.getContentText());
-  if (!result.access_token) {
-    throw new Error("FCM auth failed: " + response.getContentText());
-  }
-
-  return result.access_token;
 }
 
-function sendPushToPersonnel_(personnelCode, title, body) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(PUSH_TOKENS_SHEET_NAME);
-  if (!sh) return { ok: false, error: "PushTokens sheet not found" };
-
-  var data = sh.getDataRange().getValues();
-  if (data.length < 2) return { ok: false, error: "No tokens registered" };
-
-  var headers = data[0];
-  var pIdx = headers.indexOf("PersonnelCode");
-  var tIdx = headers.indexOf("FCMToken");
-  if (pIdx === -1 || tIdx === -1) return { ok: false, error: "PushTokens headers missing" };
-
-  var tokens = [];
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][pIdx]).trim() === String(personnelCode).trim()) {
-      var t = String(data[i][tIdx] || "").trim();
-      if (t) tokens.push(t);
-    }
-  }
-
-  if (!tokens.length) return { ok: false, error: "No token found for personnelCode " + personnelCode };
-
-  var accessToken = getFcmAccessToken_();
-  var projectId = PropertiesService.getScriptProperties().getProperty("FCM_PROJECT_ID");
-  var results = [];
-
-  tokens.forEach(function (token) {
-    var message = {
-      message: {
-        token: token,
-        notification: {
-          title: title || "بروزرسانی سیستم",
-          body: body || "لطفا اپلیکیشن حضور و غیاب را بررسی کنید"
-        },
-        data: {
-          type: "silent_ping",
-          personnelCode: String(personnelCode)
-        },
-        webpush: {
-          headers: { Urgency: "high" }
-        }
-      }
-    };
-
-    var resp = UrlFetchApp.fetch(
-      "https://fcm.googleapis.com/v1/projects/" + projectId + "/messages:send",
-      {
-        method: "post",
-        contentType: "application/json",
-        headers: { Authorization: "Bearer " + accessToken },
-        payload: JSON.stringify(message),
-        muteHttpExceptions: true
-      }
-    );
-
-    results.push(resp.getResponseCode() + ": " + resp.getContentText());
-  });
-
-  return { ok: true, results: results };
+function getJalaliIsoDate(d = new Date()) {
+  const p = getJalaliDateParts(d);
+  return `${p.jy}/${p.jm}/${p.jd}`;
 }
 
-// Run this manually from the Apps Script editor to send a push,
-// or wire it to the PushMessages sheet's onEdit checkbox (see onEdit below).
-function sendTestPushTo200020() {
-  sendPushToPersonnel_("200020", "بروزرسانی سیستم", "لطفا اپلیکیشن را باز کنید");
-}
+/* =========================
+   Boot
+========================= */
 
-// Sends a fresh push to everyone marked Active=TRUE in the PushMonitorList
-// sheet. Wire this to a time-driven trigger (e.g. every 15 minutes) so that
-// every time it successfully lands on a device, a new timestamp is appended
-// to that person's row in OnlineLog — giving you a running log of every time
-// they were actually online that day, not just a single one-off check.
-//
-// PushMonitorList sheet columns: PersonnelCode | Active | Title | Body
-// Run this ONCE manually (select it in the toolbar dropdown next to the Run
-// button, then click Run) to create the 15-minute ping trigger via code —
-// this avoids the Triggers page dropdown entirely.
-// Safe to run again later: it removes any old ping trigger first so you
-// never end up with duplicates.
-function installPingTrigger() {
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === "pingAllMonitoredPersonnel") {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-
-  ScriptApp.newTrigger("pingAllMonitoredPersonnel")
-    .timeBased()
-    .everyMinutes(15)
-    .create();
-
-  Logger.log("Ping trigger installed: runs every 15 minutes.");
-}
-
-function pingAllMonitoredPersonnel() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(PUSH_MONITOR_LIST_SHEET_NAME);
-  if (!sh) sh = ss.insertSheet(PUSH_MONITOR_LIST_SHEET_NAME);
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 4).setValues([["PersonnelCode", "Active", "Title", "Body"]]);
-    sh.getRange(1, 1, 1, 4).setFontWeight("bold");
-    sh.setFrozenRows(1);
-    return;
-  }
-
-  var data = sh.getDataRange().getValues();
-  var headers = data[0];
-  var pIdx = headers.indexOf("PersonnelCode");
-  var aIdx = headers.indexOf("Active");
-  var tIdx = headers.indexOf("Title");
-  var bIdx = headers.indexOf("Body");
-
-  if (pIdx === -1 || aIdx === -1) return;
-
-  for (var i = 1; i < data.length; i++) {
-    var personnelCode = String(data[i][pIdx] || "").trim();
-    var active = data[i][aIdx] === true || String(data[i][aIdx]).toUpperCase() === "TRUE";
-    if (!personnelCode || !active) continue;
-
-    var title = tIdx !== -1 ? String(data[i][tIdx] || "") : "";
-    var body = bIdx !== -1 ? String(data[i][bIdx] || "") : "";
-
-    try {
-      var pingResult = sendPushToPersonnel_(personnelCode, title, body);
-
-      if (!pingResult.ok) {
-        logError(ss, { type: "pingAllMonitoredPersonnel", personnelCode: personnelCode }, new Error(pingResult.error || "unknown push failure"));
-      } else if (pingResult.results) {
-        pingResult.results.forEach(function (r) {
-          if (!/^2\d\d:/.test(r)) {
-            logError(ss, { type: "pingAllMonitoredPersonnel", personnelCode: personnelCode }, new Error("FCM send failed: " + r));
-          }
-        });
-      }
-    } catch (err) {
-      logError(ss, { type: "pingAllMonitoredPersonnel", personnelCode: personnelCode }, err);
-    }
-  }
-}
-
-function handleRegisterPushToken(ss, data) {
-  var sh = ss.getSheetByName(PUSH_TOKENS_SHEET_NAME);
-  if (!sh) sh = ss.insertSheet(PUSH_TOKENS_SHEET_NAME);
-
-  ensurePushTokensHeaders_(sh);
-
-  var personnelCode = s(data.personnelCode).trim();
-  var token = s(data.token).trim();
-  if (!personnelCode || !token) {
-    return jsonOut({ ok: false, error: "personnelCode/token missing" });
-  }
-
-  var values = sh.getDataRange().getValues();
-  var pIdx = 0, tIdx = 1;
-  var foundRow = -1;
-
-  for (var i = 1; i < values.length; i++) {
-    if (String(values[i][pIdx]).trim() === personnelCode) {
-      foundRow = i + 1;
-      break;
-    }
-  }
-
-  if (foundRow > 0) {
-    var oldToken = String(values[foundRow - 1][tIdx] || "").trim();
-    if (oldToken && oldToken !== token) {
-      logError(
-        ss,
-        { type: "RegisterPushToken", personnelCode: personnelCode },
-        new Error("Token changed for " + personnelCode + " (old ends: ..." + oldToken.slice(-8) + ", new ends: ..." + token.slice(-8) + ")")
-      );
-    }
-    sh.getRange(foundRow, 2).setValue(token);
-    sh.getRange(foundRow, 3).setValue(new Date());
-    sh.getRange(foundRow, 4).setValue("granted");
-    sh.getRange(foundRow, 7).setValue(new Date());
-  } else {
-    sh.appendRow([personnelCode, token, new Date(), "granted", "", "", new Date()]);
-  }
-
-  ensureMonitoredByPushList_(ss, personnelCode);
-
-  return jsonOut({ ok: true });
-}
-
-// Records permission status (granted/denied/default) + platform info even
-// when there's no token at all - this is what makes "who denied" visible
-// in the sheet instead of just an unexplained missing token.
-function handleReportPushStatus(ss, data) {
-  var sh = ss.getSheetByName(PUSH_TOKENS_SHEET_NAME);
-  if (!sh) sh = ss.insertSheet(PUSH_TOKENS_SHEET_NAME);
-
-  ensurePushTokensHeaders_(sh);
-
-  var personnelCode = s(data.personnelCode).trim();
-  if (!personnelCode) {
-    return jsonOut({ ok: false, error: "personnelCode missing" });
-  }
-
-  var permissionStatus = s(data.permissionStatus).trim() || "unknown";
-  var platform = s(data.platform).trim() || "";
-  var isStandalone = !!data.isStandalone;
-
-  var values = sh.getDataRange().getValues();
-  var pIdx = 0;
-  var foundRow = -1;
-
-  for (var i = 1; i < values.length; i++) {
-    if (String(values[i][pIdx]).trim() === personnelCode) {
-      foundRow = i + 1;
-      break;
-    }
-  }
-
-  if (foundRow > 0) {
-    sh.getRange(foundRow, 4).setValue(permissionStatus);
-    sh.getRange(foundRow, 5).setValue(platform);
-    sh.getRange(foundRow, 6).setValue(isStandalone);
-    sh.getRange(foundRow, 7).setValue(new Date());
-  } else {
-    sh.appendRow([personnelCode, "", "", permissionStatus, platform, isStandalone, new Date()]);
-  }
-
-  return jsonOut({ ok: true });
-}
-
-function ensurePushTokensHeaders_(sh) {
-  var headers = ["PersonnelCode", "FCMToken", "RegisteredAt", "PermissionStatus", "Platform", "IsStandalone", "LastCheckedAt"];
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
-    sh.setFrozenRows(1);
-    return;
-  }
-
-  var existingLastCol = Math.max(sh.getLastColumn(), 1);
-  var existingHeaders = sh.getRange(1, 1, 1, existingLastCol).getValues()[0];
-
-  for (var i = 0; i < headers.length; i++) {
-    var col = i + 1;
-    var current = col <= existingHeaders.length ? existingHeaders[col - 1] : "";
-    if (!current) {
-      sh.getRange(1, col).setValue(headers[i]);
-      sh.getRange(1, col).setFontWeight("bold");
-    }
-  }
-}
-
-// Makes sure every personnel code that ever successfully registers a push
-// token is automatically added to PushMonitorList with Active=TRUE, so the
-// admin doesn't have to manually add each employee by hand. If the row
-// already exists, it's left untouched (so an admin who deliberately set
-// Active=FALSE to pause monitoring for someone won't get overridden).
-function ensureMonitoredByPushList_(ss, personnelCode) {
-  var sh = ss.getSheetByName(PUSH_MONITOR_LIST_SHEET_NAME);
-  if (!sh) sh = ss.insertSheet(PUSH_MONITOR_LIST_SHEET_NAME);
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 4).setValues([["PersonnelCode", "Active", "Title", "Body"]]);
-    sh.getRange(1, 1, 1, 4).setFontWeight("bold");
-    sh.setFrozenRows(1);
-  }
-
-  var data = sh.getDataRange().getValues();
-  var pIdx = 0;
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][pIdx]).trim() === personnelCode) return; // already listed, leave as-is
-  }
-
-  sh.appendRow([personnelCode, true, "بروزرسانی سیستم", "لطفا اپلیکیشن حضور و غیاب را بررسی کنید"]);
-}
-
-function handlePushReceived(ss, data) {
-  var personnelCode = s(data.personnelCode).trim();
-  if (!personnelCode) return jsonOut({ ok: false, error: "personnelCode missing" });
-
-  var now = new Date();
-  logOnlineEvent_(personnelCode, now);
-
-  return jsonOut({ ok: true, loggedAt: now });
-}
-
-// Appends a timestamp to today's row for this personnelCode.
-// One row per person per day; every online event that day gets appended
-// to the same "Times" cell, comma-separated, with a running count.
-function logOnlineEvent_(personnelCode, now) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(ONLINE_LOG_SHEET_NAME);
-  if (!sh) sh = ss.insertSheet(ONLINE_LOG_SHEET_NAME);
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 4).setValues([["PersonnelCode", "Date", "Times", "Count"]]);
-    sh.getRange(1, 1, 1, 4).setFontWeight("bold");
-    sh.setFrozenRows(1);
-  }
-
-  var tz = Session.getScriptTimeZone();
-  var dateStr = Utilities.formatDate(now, tz, "yyyy-MM-dd");
-  var timeStr = Utilities.formatDate(now, tz, "HH:mm:ss");
-
-  var data = sh.getDataRange().getValues();
-  var pIdx = 0, dIdx = 1, tIdx = 2, cIdx = 3;
-  var foundRow = -1;
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][pIdx]).trim() === personnelCode && String(data[i][dIdx]).trim() === dateStr) {
-      foundRow = i + 1;
-      break;
-    }
-  }
-
-  if (foundRow > 0) {
-    var existingTimes = String(sh.getRange(foundRow, tIdx + 1).getValue() || "").trim();
-    var newTimes = existingTimes ? existingTimes + " , " + timeStr : timeStr;
-    var existingCount = Number(sh.getRange(foundRow, cIdx + 1).getValue()) || 0;
-
-    sh.getRange(foundRow, tIdx + 1).setValue(newTimes);
-    sh.getRange(foundRow, cIdx + 1).setValue(existingCount + 1);
-  } else {
-    sh.appendRow([personnelCode, dateStr, timeStr, 1]);
-  }
-}
-
-function findRowByPersonnelCode(sh, personnelCode, lastRow) {
-  if (lastRow < 2) {
-    return -1;
-  }
-
-  var values = sh.getRange(2, 1, lastRow - 1, 1).getValues();
-
-  for (var i = 0; i < values.length; i++) {
-    if (s(values[i][0]).trim() === personnelCode) {
-      return i + 2;
-    }
-  }
-
-  return -1;
-}
-
-function uploadBase64Image(base64Str, personnelCode) {
+document.addEventListener("DOMContentLoaded", async () => {
   try {
-    var folderName = "PWA_Photos";
-    var folders = DriveApp.getFoldersByName(folderName);
-    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+    setTimeout(() => {
+      try {
+        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
+      } catch (_) {}
+    }, 4200);
+  } catch (_) {}
 
-    var mimeType = "image/jpeg";
-    var extension = "jpg";
-    var matches = base64Str.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-
-    if (matches && matches[1]) {
-      mimeType = matches[1];
-
-      if (mimeType === "image/png") extension = "png";
-      else if (mimeType === "image/webp") extension = "webp";
-      else if (mimeType === "image/gif") extension = "gif";
-      else extension = "jpg";
-    }
-
-    var base64Data = base64Str.split(",")[1] || base64Str;
-    var fileName = "IMG_" + (personnelCode || "UNKNOWN") + "_" + Date.now() + "." + extension;
-    var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType, fileName);
-    var file = folder.createFile(blob);
-
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-    return "https://drive.google.com/uc?export=view&id=" + file.getId();
-  } catch (err) {
-    return "";
-  }
-}
-
-function logDebug(ss, data) {
-  var sh = ss.getSheetByName("Debug");
-  if (!sh) {
-    sh = ss.insertSheet("Debug");
-  }
-
-  if (sh.getLastRow() === 0) {
-    sh.appendRow([
-      "Timestamp",
-      "Type",
-      "PersonnelCode",
-      "Payload"
-    ]);
-  }
-
-  sh.appendRow([
-    new Date(),
-    s(data.type),
-    s(data.personnelCode),
-    JSON.stringify(data)
-  ]);
-}
-
-function logError(ss, data, err) {
-  var sh = ss.getSheetByName("Errors");
-  if (!sh) {
-    sh = ss.insertSheet("Errors");
-  }
-
-  if (sh.getLastRow() === 0) {
-    sh.appendRow([
-      "Timestamp",
-      "PersonnelCode",
-      "Type",
-      "Error",
-      "Payload"
-    ]);
-  }
-
-  sh.appendRow([
-    new Date(),
-    s(data && data.personnelCode),
-    s(data && data.type),
-    s(err && err.message ? err.message : err),
-    JSON.stringify(data || {})
-  ]);
-}
-
-function ensureRecordHeaders(sh) {
-  var headers = [[
-    "Timestamp",
-    "PersonnelCode",
-    "FirstName",
-    "LastName",
-    "RecordDate",
-    "RecordHour",
-    "Latitude",
-    "Longitude",
-    "Accuracy",
-    "DeviceTime",
-    "OfflineCreated",
-    "ClockRisk",
-    "Photo",
-    "GeoFenceStatus"
-  ]];
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, headers[0].length).setValues(headers);
-    sh.getRange(1, 1, 1, headers[0].length).setFontWeight("bold");
-    sh.setFrozenRows(1);
-  }
-}
-
-function ensureStatusHeaders(sh) {
-  var headers = [[
-    "PersonnelCode",
-    "FullName",
-    "Status",
-    "LastOnline",
-    "LastOffline",
-    "LastUpdate"
-  ]];
-
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, headers[0].length).setValues(headers);
-    sh.getRange(1, 1, 1, headers[0].length).setFontWeight("bold");
-    sh.setFrozenRows(1);
-  }
-}
-
-function parseBody(e) {
   try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return null;
+    db = await openDb();
+  } catch (e) {
+    console.error("DB init error", e);
+  }
+
+  try {
+    bindEvents();
+  } catch (_) {}
+
+  try {
+    await loadProfile();
+  } catch (_) {}
+
+  try {
+    await ensurePolicyLoadedAtStartup();
+  } catch (_) {}
+
+  try {
+    await refreshUi();
+  } catch (_) {}
+
+  try {
+    await fetchMessages();
+  } catch (_) {}
+
+  try {
+    setupAutoSync();
+  } catch (_) {}
+
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
     }
-    return JSON.parse(e.postData.contents);
+  } catch (_) {}
+
+  try {
+    registerForPushNotifications();
+  } catch (_) {}
+});
+
+/* =========================
+   UI Helpers
+========================= */
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",
+  authDomain: "moradi-832db.firebaseapp.com",
+  projectId: "moradi-832db",
+  storageBucket: "moradi-832db.firebasestorage.app",
+  messagingSenderId: "898814696792",
+  appId: "1:898814696792:web:3e5c6d59d301dfa67c192d"
+};
+const FCM_VAPID_KEY = "BDzshylAUVJJZTApj3cK8xBD3YMl2IAlZ8PG_KHcP3saIUGa39huTUPe9M33TEsBxqFp26ndXChbm_0NSoiHEHM";
+
+let firebaseMessagingInstance_ = null;
+
+function getFirebaseMessaging_() {
+  if (firebaseMessagingInstance_) return firebaseMessagingInstance_;
+  if (typeof firebase === "undefined") {
+    console.warn("Firebase SDK not loaded — check index.html script tags");
+    return null;
+  }
+
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    firebaseMessagingInstance_ = firebase.messaging();
+    return firebaseMessagingInstance_;
   } catch (err) {
+    console.error("Firebase init failed:", err);
     return null;
   }
 }
 
-function jsonOut(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+async function registerForPushNotifications() {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!("Notification" in window)) return;
+
+    const messaging = getFirebaseMessaging_();
+    if (!messaging) return;
+
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+
+    const swRegistration = await navigator.serviceWorker.ready;
+
+    const token = await messaging.getToken({
+      vapidKey: FCM_VAPID_KEY,
+      serviceWorkerRegistration: swRegistration
+    });
+
+    if (!token) return;
+
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "RegisterPushToken",
+        personnelCode: profile.personnelCode,
+        token: token
+      })
+    });
+  } catch (err) {
+    console.error("Push registration failed:", err);
+  }
 }
 
-function s(v) {
-  return v === undefined || v === null ? "" : String(v);
+function showGpsToast(message, duration = 3000, type = "success") {
+  const oldToast = document.getElementById("gps-toast");
+  if (oldToast) oldToast.remove();
+
+  const toast = document.createElement("div");
+  toast.id = "gps-toast";
+  toast.textContent = message;
+
+  const isSuccess = type === "success";
+
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%) scale(0.8)",
+    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
+    color: "#ffffff",
+    padding: "25px 40px",
+    borderRadius: "20px",
+    fontSize: "22px",
+    fontWeight: "bold",
+    fontFamily: "Tahoma, sans-serif",
+    boxShadow: isSuccess ? "0 15px 50px rgba(22, 163, 74, 0.45)" : "0 15px 50px rgba(0, 0, 0, 0.5)",
+    zIndex: "10000",
+    opacity: "0",
+    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+    direction: "rtl",
+    textAlign: "center",
+    width: "80%",
+    maxWidth: "400px",
+    border: "3px solid #ffffff",
+  });
+
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%, -50%) scale(1)";
+  }, 100);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
+    setTimeout(() => toast.remove(), 400);
+  }, duration);
 }
 
-function n(v) {
-  if (v === undefined || v === null || v === "") {
-    return "";
+function setStatus(m) {
+  const el = $("captureStatus");
+  if (el) el.textContent = m;
+}
+
+function setSyncStatus(m) {
+  const el = $("syncStatus");
+  if (el) el.textContent = m;
+}
+
+function updateOnlineBadge() {
+  const el = $("onlineBadge");
+  if (!el) return;
+
+  if (navigator.onLine) {
+    el.textContent = "آنلاین";
+    el.className = "status online";
+  } else {
+    el.textContent = "آفلاین";
+    el.className = "status offline";
+  }
+}
+
+function escapeHtml(v) {
+  if (!v) return "";
+  return String(v)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+/* =========================
+   Events
+========================= */
+
+function bindEvents() {
+  $("saveProfileBtn")?.addEventListener("click", saveProfile);
+  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
+  $("photoInput")?.addEventListener("change", handlePhotoSelected);
+
+  const cameraBtn = $("cameraBtn");
+  const photoInput = $("photoInput");
+
+  if (cameraBtn && photoInput) {
+    const openCamera = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      photoInput.value = "";
+      photoInput.click();
+    };
+
+    cameraBtn.addEventListener("click", openCamera);
+    cameraBtn.addEventListener("touchend", openCamera, { passive: false });
+  }
+}
+
+/* =========================
+   Auto Sync
+========================= */
+
+function setupAutoSync() {
+  updateOnlineBadge();
+
+  window.addEventListener("online", async () => {
+    updateOnlineBadge();
+    await refreshPolicyIfPossible();
+    await markFirstConnectionForOfflineRecords();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
+
+  window.addEventListener("offline", updateOnlineBadge);
+
+  window.addEventListener("focus", async () => {
+    if (!navigator.onLine) return;
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
+
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden || !navigator.onLine) return;
+    await refreshPolicyIfPossible();
+    scheduleSyncPendingRecords(500);
+    await fetchMessages();
+  });
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", async (event) => {
+      if (!event.data) return;
+
+      if (event.data.type === "SYNC_COMPLETE") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار انجام شد");
+      }
+
+      if (event.data.type === "SYNC_FAILED") {
+        await refreshUi();
+        setSyncStatus("ارسال خودکار کامل نشد");
+      }
+    });
   }
 
-  var num = Number(v);
-  return isNaN(num) ? "" : num;
+  setInterval(() => {
+    if (navigator.onLine) scheduleSyncPendingRecords(0);
+  }, 60000);
+
+  if (navigator.onLine) {
+    refreshPolicyIfPossible().finally(() => scheduleSyncPendingRecords(1000));
+  }
+}
+
+function scheduleSyncPendingRecords(delay = 0) {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncPendingRecords(), delay);
 }
 
 /* =========================
-   JSON response
+   IndexedDB
 ========================= */
 
-function jsonResponse(data) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
 
-/* =========================
-   Message API
-========================= */
+    req.onupgradeneeded = (e) => {
+      const openedDb = e.target.result;
 
-function getMessagesForPersonnel_(personnelCode) {
-  var pcode = String(personnelCode || "").trim();
-  if (!pcode) return [];
+      if (!openedDb.objectStoreNames.contains(STORE_RECORDS)) {
+        const store = openedDb.createObjectStore(STORE_RECORDS, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+        store.createIndex("status", "status");
+        store.createIndex("clientRecordId", "clientRecordId", { unique: false });
+      } else {
+        const tx = e.target.transaction;
+        const store = tx.objectStore(STORE_RECORDS);
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(MESSAGES_SHEET_NAME);
-
-  if (!sheet) return [];
-
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return [];
-
-  var headers = data[0];
-  var pIdx = headers.indexOf("PersonnelCode");
-  var msgIdx = headers.indexOf("Message");
-  var activeIdx = headers.indexOf("IsActive");
-  var silentIdx = headers.indexOf("Silent");
-  var deliveredIdx = headers.indexOf("DeliveredAt");
-
-  if (pIdx === -1 || msgIdx === -1 || activeIdx === -1) return [];
-
-  var visibleMessages = [];
-  var now = new Date();
-
-  for (var i = 1; i < data.length; i++) {
-    var rowCode = String(data[i][pIdx]).trim();
-    if (rowCode !== pcode) continue;
-
-    var active =
-      data[i][activeIdx] === true ||
-      String(data[i][activeIdx]).toLowerCase() === "true" ||
-      String(data[i][activeIdx]) === "1";
-    if (!active) continue;
-
-    var msg = String(data[i][msgIdx] || "").trim();
-    if (!msg) continue;
-
-    var isSilent = silentIdx !== -1 && (
-      data[i][silentIdx] === true ||
-      String(data[i][silentIdx]).toLowerCase() === "true" ||
-      String(data[i][silentIdx]) === "1"
-    );
-
-    if (isSilent) {
-      var alreadyDelivered = deliveredIdx !== -1 && s(data[i][deliveredIdx]).trim() !== "";
-
-      if (!alreadyDelivered) {
-        logSilentMessageReceipt_(pcode, msg, now);
-
-        if (deliveredIdx !== -1) {
-          sheet.getRange(i + 1, deliveredIdx + 1).setValue(now);
-          sheet.getRange(i + 1, deliveredIdx + 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+        if (!store.indexNames.contains("status")) store.createIndex("status", "status");
+        if (!store.indexNames.contains("clientRecordId")) {
+          store.createIndex("clientRecordId", "clientRecordId", { unique: false });
         }
       }
 
-      continue;
-    }
+      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
+        openedDb.createObjectStore(STORE_PROFILE, { keyPath: "id" });
+      }
 
-    visibleMessages.push(msg);
-  }
+      if (!openedDb.objectStoreNames.contains(STORE_CONFIG)) {
+        openedDb.createObjectStore(STORE_CONFIG, { keyPath: "id" });
+      }
+    };
 
-  return visibleMessages;
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
-function logSilentMessageReceipt_(personnelCode, message, now) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(MESSAGE_RECEIPTS_SHEET_NAME);
-  if (!sh) {
-    sh = ss.insertSheet(MESSAGE_RECEIPTS_SHEET_NAME);
-  }
+async function dbPut(store, value) {
+  if (!db) db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    const st = tx.objectStore(store);
+    const req = st.put(value);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 
-  ensureMessageReceiptHeaders(sh);
+async function dbGet(store, key) {
+  if (!db) db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const st = tx.objectStore(store);
+    const req = st.get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 
-  sh.appendRow([
-    now,
-    personnelCode,
-    "",
-    message,
-    "",
-    "آنلاین تشخیص داده شد (پیام مخفی)"
-  ]);
-
-  var rowIndex = sh.getLastRow();
-  sh.getRange(rowIndex, 1).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-  sh.getRange(rowIndex, 5).setNumberFormat("@");
+async function dbGetAll(store) {
+  if (!db) db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const st = tx.objectStore(store);
+    const req = st.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
 }
 
 /* =========================
-   GeoFence
+   Profile
 ========================= */
 
-function getUserGeoFence_(personnelCode) {
-  var sheet = getUsersSheet();
-  var data = sheet.getDataRange().getValues();
-
-  if (data.length < 2) return null;
-
-  var headers = data[0];
-  var pIdx = headers.indexOf("PersonnelCode");
-  var minLatIdx = headers.indexOf("MinLatitude");
-  var maxLatIdx = headers.indexOf("MaxLatitude");
-  var minLngIdx = headers.indexOf("MinLongitude");
-  var maxLngIdx = headers.indexOf("MaxLongitude");
-
-  if (pIdx === -1) return null;
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][pIdx]).trim() === String(personnelCode).trim()) {
-      return {
-        minLat: Number(data[i][minLatIdx] || 0),
-        maxLat: Number(data[i][maxLatIdx] || 0),
-        minLng: Number(data[i][minLngIdx] || 0),
-        maxLng: Number(data[i][maxLngIdx] || 0)
-      };
-    }
-  }
-
-  return null;
+function getProfileFromInputs() {
+  return {
+    personnelCode: $("personnelCode")?.value.trim() || "",
+    firstName: $("firstName")?.value.trim() || "",
+    lastName: $("lastName")?.value.trim() || "",
+  };
 }
 
-function isInsideGeoFence_(latitude, longitude, fence) {
-  if (!fence) return true;
-  if (latitude === "" || longitude === "" || latitude === null || longitude === null) return false;
+async function loadProfile() {
+  const p = await dbGet(STORE_PROFILE, "main");
+  if (!p) return;
 
-  return (
-    Number(latitude) >= fence.minLat &&
-    Number(latitude) <= fence.maxLat &&
-    Number(longitude) >= fence.minLng &&
-    Number(longitude) <= fence.maxLng
-  );
+  if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
+  if ($("firstName")) $("firstName").value = p.firstName || "";
+  if ($("lastName")) $("lastName").value = p.lastName || "";
+}
+
+async function saveProfileSilent() {
+  try {
+    const profile = getProfileFromInputs();
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) throw new Error("مشخصات پرسنلی کامل نیست.");
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await refreshPolicyIfPossible();
+    await fetchMessages();
+  } catch (err) {
+    console.error("Silent profile save failed:", err);
+  }
+}
+
+async function getProfile() {
+  const saved = await dbGet(STORE_PROFILE, "main");
+  const inputProfile = getProfileFromInputs();
+
+  const profile = {
+    personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
+    firstName: inputProfile.firstName || saved?.firstName || "",
+    lastName: inputProfile.lastName || saved?.lastName || "",
+  };
+
+  if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+    throw new Error("مشخصات پرسنلی کامل نیست.");
+  }
+
+  await dbPut(STORE_PROFILE, { id: "main", ...profile });
+  return profile;
+}
+
+async function saveProfile() {
+  if (!db) db = await openDb();
+
+  const btn = $("saveProfileBtn");
+  if (!btn) return;
+
+  const originalText = "ذخیره مشخصات";
+  const originalBg = "#ff9800";
+
+  btn.disabled = true;
+  btn.style.backgroundColor = "#6c757d";
+  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
+
+  try {
+    const profile = getProfileFromInputs();
+
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      btn.classList.add("shake");
+      setTimeout(() => btn.classList.remove("shake"), 500);
+
+      setStatus("اطلاعات پرسنلی کامل نیست.");
+
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await loadProfile();
+    setTimeout(() => {
+      refreshPolicyIfPossible();
+      fetchMessages();
+    }, 500);
+
+    btn.style.backgroundColor = "#28a745";
+    btn.textContent = "ذخیره شد";
+    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
+
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+    }, 2500);
+  } catch (_) {
+    btn.disabled = false;
+    btn.style.backgroundColor = originalBg;
+    btn.textContent = originalText;
+    setStatus("خطا در ذخیره مشخصات");
+  }
 }
 
 /* =========================
    Policy
 ========================= */
 
-function handleGetUserPolicy_(e) {
-  try {
-    var personnelCode = stringifyOrBlank(
-      e && e.parameter ? e.parameter.personnelCode : ""
-    );
-
-    if (!personnelCode) {
-      return jsonResponse({
-        ok: false,
-        error: "PersonnelCode الزامی است."
-      });
-    }
-
-    var userPolicy = getUserPolicy_(personnelCode);
-
-    return jsonResponse({
-      ok: true,
-      personnelCode: personnelCode,
-      attendancePolicy: userPolicy.attendancePolicy,
-      policyVersion: userPolicy.policyVersion,
-      updatedAt: userPolicy.updatedAt
-    });
-  } catch (err) {
-    return jsonResponse({
-      ok: false,
-      error: String(err)
-    });
-  }
-}
-
-function getUserPolicy_(personnelCode) {
-  var pcode = String(personnelCode || "").trim();
-  if (!pcode) {
-    return {
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      updatedAt: ""
-    };
-  }
-
-  var sheet = getUsersSheet();
-  var data = sheet.getDataRange().getValues();
-
-  if (data.length < 2) {
-    return {
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      updatedAt: ""
-    };
-  }
-
-  var headers = data[0];
-  var personnelIdx = headers.indexOf("PersonnelCode");
-  var policyIdx = headers.indexOf("AttendancePolicy");
-  var versionIdx = headers.indexOf("PolicyVersion");
-  var updatedIdx = headers.indexOf("UpdatedAt");
-
-  if (personnelIdx === -1 || policyIdx === -1) {
-    return {
-      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-      policyVersion: 0,
-      updatedAt: ""
-    };
-  }
-
-  for (var i = 1; i < data.length; i++) {
-    var rowCode = String(data[i][personnelIdx]).trim();
-    if (rowCode === pcode) {
-      return {
-        attendancePolicy: normalizeAttendancePolicy_(data[i][policyIdx]),
-        policyVersion: versionIdx === -1 ? 0 : Number(data[i][versionIdx] || 0),
-        updatedAt: updatedIdx === -1 ? "" : data[i][updatedIdx]
-      };
-    }
-  }
-
-  return {
-    attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
-    policyVersion: 0,
-    updatedAt: ""
-  };
-}
-
-function validateAttendancePolicy_(normalized, now) {
-  var userPolicy = getUserPolicy_(normalized.personnelCode);
-  var attendancePolicy = normalizeAttendancePolicy_(userPolicy.attendancePolicy);
-  var policyVersion = Number(userPolicy.policyVersion || 0);
-  var isOfflineRecord = normalized.offlineCreated === true;
-
-  if (attendancePolicy === POLICY_NOT_ALLOWED) {
-    return { ok: false, error: "برای این کاربر هیچ نوع ثبت ترددی مجاز نیست.", attendancePolicy: attendancePolicy, policyVersion: policyVersion, checkedAt: now || new Date() };
-  }
-  if (attendancePolicy === POLICY_ONLINE_ONLY && isOfflineRecord) {
-    return { ok: false, error: "برای این کاربر فقط ثبت آنلاین مجاز است.", attendancePolicy: attendancePolicy, policyVersion: policyVersion, checkedAt: now || new Date() };
-  }
-  if (attendancePolicy === POLICY_OFFLINE_ONLY && !isOfflineRecord) {
-    return { ok: false, error: "برای این کاربر فقط ثبت آفلاین مجاز است.", attendancePolicy: attendancePolicy, policyVersion: policyVersion, checkedAt: now || new Date() };
-  }
-
-  return { ok: true, attendancePolicy: attendancePolicy, policyVersion: policyVersion, checkedAt: now || new Date() };
-}
-
-/* =========================
-   Normalization
-========================= */
-
-function normalizeAttendancePayload(payload) {
-  var personnelCode = stringifyOrBlank(payload.personnelCode);
-  var firstName = stringifyOrBlank(payload.firstName);
-  var lastName = stringifyOrBlank(payload.lastName);
-
-  var recordDate = stringifyOrBlank(payload.recordDate);
-  var recordHour = stringifyOrBlank(payload.recordHour);
-  var recordTime = stringifyOrBlank(payload.recordTime);
-
-  var latitude = normalizeDecimalOrBlank(payload.latitude);
-  var longitude = normalizeDecimalOrBlank(payload.longitude);
-  var accuracy = normalizeDecimalOrBlank(payload.accuracy);
-
-  var deviceTime = stringifyOrBlank(payload.deviceTime);
-  var deviceTimeAtClick = stringifyOrBlank(payload.deviceTimeAtClick);
-  var deviceTimeAtGps = stringifyOrBlank(payload.deviceTimeAtGps);
-
-  var gpsTimestamp = stringifyOrBlank(payload.gpsTimestamp || payload.geoTimestamp);
-
-  var gpsWaitMs = normalizeIntegerOrBlank(payload.gpsWaitMs);
-  var photoDelayMs = normalizeIntegerOrBlank(payload.photoDelayMs);
-
-  var offlineCreated = parseBoolean(payload.offlineCreated);
-  var createdAt = stringifyOrBlank(payload.createdAt);
-  var photo = stringifyOrBlank(payload.photo);
-
-  var locationStatus = stringifyOrBlank(payload.locationStatus);
-  var locationError = stringifyOrBlank(payload.locationError);
-
-  var sessionClockDriftMs = normalizeIntegerOrBlank(payload.sessionClockDriftMs);
-  var networkClockDriftMs = normalizeIntegerOrBlank(payload.networkClockDriftMs);
-
-  var attendancePolicy = normalizeAttendancePolicy_(payload.attendancePolicy);
-  var policyVersion = normalizeIntegerOrBlank(payload.policyVersion);
-  var policyFetchedAt = stringifyOrBlank(payload.policyFetchedAt);
-  var policySource = stringifyOrBlank(payload.policySource);
-
-  var gpsTrueTimeDiffMs = calculateGpsTrueTimeDiffMs(gpsTimestamp, deviceTimeAtGps);
-
-  return {
-    personnelCode: personnelCode,
-    firstName: firstName,
-    lastName: lastName,
-    recordDate: recordDate,
-    recordHour: recordHour,
-    recordTime: recordTime,
-    latitude: latitude,
-    longitude: longitude,
-    accuracy: accuracy,
-    deviceTime: deviceTime,
-    deviceTimeAtClick: deviceTimeAtClick,
-    deviceTimeAtGps: deviceTimeAtGps,
-    gpsTimestamp: gpsTimestamp,
-    gpsWaitMs: gpsWaitMs,
-    photoDelayMs: photoDelayMs,
-    offlineCreated: offlineCreated,
-    createdAt: createdAt,
-    photo: photo,
-    locationStatus: locationStatus,
-    locationError: locationError,
-    sessionClockDriftMs: sessionClockDriftMs,
-    networkClockDriftMs: networkClockDriftMs,
-    gpsTrueTimeDiffMs: gpsTrueTimeDiffMs,
-    attendancePolicy: attendancePolicy,
-    policyVersion: policyVersion === "" ? 0 : Number(policyVersion),
-    policyFetchedAt: policyFetchedAt,
-    policySource: policySource
-  };
-}
-
-/* =========================
-   Risk
-========================= */
-
-function calculateClockRisk(data, history) {
-  var score = 0;
-  var reasons = [];
-
-  var offlineCreated = data.offlineCreated === true;
-  var locationStatus = stringifyOrBlank(data.locationStatus).toLowerCase();
-  var locationError = stringifyOrBlank(data.locationError);
-
-  var sessionClockDriftMs = Math.abs(Number(data.sessionClockDriftMs) || 0);
-  var networkClockDriftMs = Math.abs(Number(data.networkClockDriftMs) || 0);
-  var gpsTrueTimeDiffMs = Math.abs(Number(data.gpsTrueTimeDiffMs) || 0);
-
-  if (sessionClockDriftMs > CLOCK_DRIFT_SESSION_LIMIT_MS) {
-    score += 6;
-    reasons.push("تغییر ساعت در حین باز بودن برنامه");
-  }
-
-  if (networkClockDriftMs > NETWORK_DRIFT_LIMIT_MS) {
-    score += 4;
-    reasons.push("اختلاف قابل توجه با ساعت شبکه");
-  }
-
-  if (locationStatus && locationStatus !== "ok") {
-    score += 4;
-    reasons.push("وضعیت GPS نامعتبر");
-  }
-
-  if (locationError) {
-    score += 2;
-    reasons.push("خطای موقعیت");
-  }
-
-  if (gpsTrueTimeDiffMs > GPS_TRUE_DIFF_LIMIT_MS) {
-    score += 6;
-    reasons.push("اختلاف زمان GPS با زمان ثبت‌شده");
-  }
-
-  if (offlineCreated) {
-    reasons.push("ثبت آفلاین");
-
-    if (history && history.hasPriorOnline) {
-      reasons.push("قبل از این ثبت، اتصال آنلاین وجود داشته");
-    }
-
-    var offlineDelayMs = estimateOfflineUploadDelayMs(data);
-
-    if (offlineDelayMs !== null && offlineDelayMs > OFFLINE_UPLOAD_GRACE_MS) {
-      score += 1;
-      reasons.push("ارسال با تأخیر بعد از ثبت آفلاین");
-    }
-  }
-
-  if (!offlineCreated && history && history.hasPriorOffline) {
-    reasons.push("اتصال آنلاین بعد از ثبت آفلاین");
-  }
-
-  if (score >= 6) {
-    return {
-      clockRisk: "high",
-      clockRiskReason: reasons.length ? reasons.join(" | ") : "ریسک بالا"
-    };
-  }
-
-  if (score >= 3) {
-    return {
-      clockRisk: "medium",
-      clockRiskReason: reasons.length ? reasons.join(" | ") : "ریسک متوسط"
-    };
-  }
-
-  return {
-    clockRisk: "low",
-    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال"
-  };
-}
-
-function estimateOfflineUploadDelayMs(data) {
-  var source = "";
-
-  if (data.createdAt) {
-    source = data.createdAt;
-  } else if (data.recordDate && (data.recordTime || data.recordHour)) {
-    source = data.recordDate + " " + (data.recordTime || data.recordHour);
-  } else if (data.deviceTime) {
-    source = data.deviceTime;
-  }
-
-  var ms = parseDateToMs(source);
-  if (ms === null) return null;
-
-  return Math.abs(Date.now() - ms);
-}
-
-function calculateGpsTrueTimeDiffMs(gpsTimestamp, deviceTimeAtGps) {
-  if (!gpsTimestamp || !deviceTimeAtGps) return "";
-  var gpsMs = parseDateToMs(gpsTimestamp);
-  var deviceMs = parseDateToMs(deviceTimeAtGps);
-  if (gpsMs === null || deviceMs === null) return "";
-  return Math.round(gpsMs - deviceMs);
-}
-
-/* =========================
-   Sheets
-========================= */
-
-function getRecordsSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(RECORDS_SHEET_NAME);
-  if (!sheet) sheet = ss.insertSheet(RECORDS_SHEET_NAME);
-  ensureHeaders(sheet, RECORD_HEADERS);
-  return sheet;
-}
-
-function getUsersSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(USERS_SHEET_NAME);
-  if (!sheet) sheet = ss.insertSheet(USERS_SHEET_NAME);
-  ensureHeaders(sheet, USERS_HEADERS);
-  return sheet;
-}
-
-function getRecordIndexSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(RECORD_INDEX_SHEET_NAME);
-  if (!sheet) sheet = ss.insertSheet(RECORD_INDEX_SHEET_NAME);
-  ensureHeaders(sheet, RECORD_INDEX_HEADERS);
-  hideSheetSafely_(sheet);
-  return sheet;
-}
-
-function getMatchingSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(MATCHING_SHEET_NAME);
-  if (!sheet) sheet = ss.insertSheet(MATCHING_SHEET_NAME);
-  ensureHeaders(sheet, MATCHING_HEADERS);
-  return sheet;
-}
-
-function ensureHeaders(sheet, headers) {
-  var lastCol = sheet.getLastColumn();
-  var lastRow = sheet.getLastRow();
-
-  if (lastRow < 1) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    styleHeader_(sheet, headers.length);
-    return;
-  }
-
-  var currentHeaders = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
-  var mismatch = false;
-
-  if (lastCol !== headers.length) mismatch = true;
-
-  for (var i = 0; i < headers.length; i++) {
-    if (String(currentHeaders[i] || "") !== String(headers[i])) {
-      mismatch = true;
-      break;
-    }
-  }
-
-  if (!mismatch) {
-    styleHeader_(sheet, headers.length);
-    return;
-  }
-
-  if (lastCol > 0) {
-    sheet.getRange(1, 1, 1, lastCol).clearFormat();
-  }
-
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  styleHeader_(sheet, headers.length);
-
-  if (lastCol > headers.length) {
-    sheet.deleteColumns(headers.length + 1, lastCol - headers.length);
-  }
-}
-
-function styleHeader_(sheet, headerLength) {
-  sheet.getRange(1, 1, 1, headerLength).setFontWeight("bold").setBackground("#f3f3f3");
-  sheet.setFrozenRows(1);
-}
-
-function appendRecordIndexRow_(sheet, info) {
-  ensureHeaders(sheet, RECORD_INDEX_HEADERS);
-
-  sheet.appendRow([
-    info.signature || "",
-    info.normalized.personnelCode || "",
-    info.now || new Date(),
-    !!info.normalized.offlineCreated,
-    info.normalized.recordDate || "",
-    info.normalized.recordHour || "",
-    info.normalized.recordTime || "",
-    info.normalized.createdAt || "",
-    info.normalized.deviceTime || "",
-    info.normalized.deviceTimeAtClick || "",
-    info.normalized.deviceTimeAtGps || "",
-    info.normalized.gpsTimestamp || "",
-    info.normalized.latitude || "",
-    info.normalized.longitude || "",
-    info.normalized.accuracy || "",
-    info.normalized.sessionClockDriftMs || "",
-    info.normalized.networkClockDriftMs || "",
-    info.gpsTrueTimeDiffMs || "",
-    info.normalized.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-    Number(info.normalized.policyVersion || 0),
-    info.normalized.policyFetchedAt || "",
-    info.photoUrl || "",
-    info.row || ""
-  ]);
-}
-
-function appendMatchingRow_(sheet, info) {
-  ensureHeaders(sheet, MATCHING_HEADERS);
-
-  sheet.appendRow([
-    info.recordRow || "",
-    info.now || new Date(),
-    info.normalized.personnelCode || "",
-    !!info.normalized.offlineCreated,
-    info.normalized.createdAt || "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    info.clockRiskResult.clockRisk || "",
-    info.clockRiskResult.clockRiskReason || "",
-    info.photoUrl || ""
-  ]);
-
-  var row = sheet.getLastRow();
-  var fmt = "yyyy-mm-dd hh:mm:ss";
-
-  sheet.getRange(row, 6).setFormula(
-    '=IFERROR(TEXT(MINIFS(RecordIndex!$C:$C,RecordIndex!$B:$B,$C' +
-      row +
-      ',RecordIndex!$D:$D,FALSE),"' +
-      fmt +
-      '"),"")'
-  );
-
-  sheet.getRange(row, 7).setFormula(
-    '=IFERROR(TEXT(MINIFS(RecordIndex!$C:$C,RecordIndex!$B:$B,$C' +
-      row +
-      ',RecordIndex!$D:$D,TRUE),"' +
-      fmt +
-      '"),"")'
-  );
-
-  sheet.getRange(row, 8).setFormula(
-    '=IFERROR(TEXT(MINIFS(RecordIndex!$C:$C,RecordIndex!$B:$B,$C' +
-      row +
-      ',RecordIndex!$D:$D,FALSE,RecordIndex!$C:$C,">"&$G' +
-      row +
-      '),"' +
-      fmt +
-      '"),"")'
-  );
-
-  sheet.getRange(row, 9).setFormula(
-    '=AND($F' +
-      row +
-      '<>"",$G' +
-      row +
-      '<>"",$H' +
-      row +
-      '<>"",VALUE($F' +
-      row +
-      ')<VALUE($G' +
-      row +
-      '),VALUE($G' +
-      row +
-      ')<VALUE($H' +
-      row +
-      '))'
-  );
-
-  sheet.getRange(row, 10).setFormula(
-    '=AND($D' + row + '=TRUE,$G' + row + '<>"",$H' + row + '<>"")'
-  );
-
-  sheet.getRange(row, 11).setFormula(
-    '=IF($D' + row + '=TRUE, IFERROR(VALUE($H' + row + ')-VALUE($G' + row + '), ""), "")'
-  );
-
-  if (info.photoUrl) {
-    sheet.getRange(row, 13).setFormula(
-      '=HYPERLINK("' + escapeFormulaString_(info.photoUrl) + '","مشاهده عکس")'
-    );
-  }
-}
-
-function getPersonnelHistory_(sheet, personnelCode) {
-  var result = {
-    hasPriorOnline: false,
-    hasPriorOffline: false,
-    firstOnlineAt: "",
-    firstOfflineAt: "",
-    lastOnlineAt: "",
-    lastOfflineAt: ""
-  };
-
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return result;
-
-  var headers = data[0];
-  var pIdx = headers.indexOf("PersonnelCode");
-  var tsIdx = headers.indexOf("ServerTimestamp");
-  var offIdx = headers.indexOf("OfflineCreated");
-
-  if (pIdx === -1 || tsIdx === -1 || offIdx === -1) return result;
-
-  var target = String(personnelCode);
-  var firstOnline = null;
-  var firstOffline = null;
-  var lastOnline = null;
-  var lastOffline = null;
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][pIdx]) !== target) continue;
-
-    var ts = normalizeDateValue_(data[i][tsIdx]);
-    if (!ts) continue;
-
-    var isOffline = parseBoolean(data[i][offIdx]);
-
-    if (isOffline) {
-      result.hasPriorOffline = true;
-      if (!firstOffline || ts.getTime() < firstOffline.getTime()) firstOffline = ts;
-      if (!lastOffline || ts.getTime() > lastOffline.getTime()) lastOffline = ts;
-    } else {
-      result.hasPriorOnline = true;
-      if (!firstOnline || ts.getTime() < firstOnline.getTime()) firstOnline = ts;
-      if (!lastOnline || ts.getTime() > lastOnline.getTime()) lastOnline = ts;
-    }
-  }
-
-  result.firstOnlineAt = firstOnline || "";
-  result.firstOfflineAt = firstOffline || "";
-  result.lastOnlineAt = lastOnline || "";
-  result.lastOfflineAt = lastOffline || "";
-
-  return result;
-}
-
-function isDuplicateRecord_(sheet, signature) {
-  if (!signature) return false;
-  ensureHeaders(sheet, RECORD_INDEX_HEADERS);
-
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return false;
-
-  var values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  var target = String(signature).trim();
-
-  for (var i = 0; i < values.length; i++) {
-    if (String(values[i][0]).trim() === target) return true;
-  }
-
-  return false;
-}
-
-function buildRecordSignature_(normalized, photoSignatureSource) {
-  var parts = [
-    normalized.personnelCode,
-    normalized.recordDate,
-    normalized.recordHour,
-    normalized.recordTime,
-    normalized.createdAt,
-    normalized.deviceTime,
-    normalized.deviceTimeAtClick,
-    normalized.gpsTimestamp,
-    normalized.latitude,
-    normalized.longitude,
-    normalized.offlineCreated ? "offline" : "online",
-    normalized.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-    normalized.policyVersion || 0,
-    photoSignatureSource || ""
-  ];
-
-  var raw = parts.map(function (item) {
-    return stringifyOrBlank(item);
-  }).join("|");
-
-  return Utilities.base64EncodeWebSafe(
-    Utilities.computeDigest(
-      Utilities.DigestAlgorithm.SHA_256,
-      raw
-    )
-  );
-}
-
-function resolvePhotoAsset_(photo, personnelCode, now) {
-  var cleanPhoto = stringifyOrBlank(photo);
-
-  if (!cleanPhoto) {
-    return { url: "", formula: "", signatureSource: "" };
-  }
-
-  if (/^https?:\/\//i.test(cleanPhoto)) {
-    return {
-      url: cleanPhoto,
-      formula: '=HYPERLINK("' + escapeFormulaString_(cleanPhoto) + '","مشاهده عکس")',
-      signatureSource: cleanPhoto
-    };
-  }
-
-  if (cleanPhoto.indexOf("data:image/") === 0) {
-    var uploaded = uploadBase64PhotoToDrive_(cleanPhoto, personnelCode, now);
-    return {
-      url: uploaded.url,
-      formula: '=HYPERLINK("' + escapeFormulaString_(uploaded.url) + '","مشاهده عکس")',
-      signatureSource: uploaded.fileId
-    };
-  }
-
-  return { url: cleanPhoto, formula: "", signatureSource: cleanPhoto };
-}
-
-function uploadBase64PhotoToDrive_(dataUrl, personnelCode, now) {
-  var matches = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!matches) throw new Error("فرمت عکس معتبر نیست.");
-
-  var mimeType = matches[1];
-  var base64Data = matches[2];
-  var extension = getImageExtensionFromMime_(mimeType);
-
-  var bytes = Utilities.base64Decode(base64Data);
-  var safePersonnelCode = stringifyOrBlank(personnelCode) || "unknown";
-
-  var timestamp = Utilities.formatDate(
-    now || new Date(),
-    Session.getScriptTimeZone(),
-    "yyyyMMdd_HHmmss_SSS"
-  );
-  var fileName = "attendance_" + safePersonnelCode + "_" + timestamp + extension;
-  var blob = Utilities.newBlob(bytes, mimeType, fileName);
-  var folder = getOrCreatePhotoFolder_();
-  var file = folder.createFile(blob);
-
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-  return {
-    fileId: file.getId(),
-    url: "https://drive.google.com/uc?export=view&id=" + file.getId()
-  };
-}
-
-function getOrCreatePhotoFolder_() {
-  var properties = PropertiesService.getScriptProperties();
-  var folderId = properties.getProperty(PHOTO_FOLDER_PROPERTY_KEY);
-
-  if (folderId) {
-    try {
-      return DriveApp.getFolderById(folderId);
-    } catch (err) {
-      properties.deleteProperty(PHOTO_FOLDER_PROPERTY_KEY);
-    }
-  }
-
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var folderName = "Attendance Photos - " + ss.getName();
-  var folders = DriveApp.getFoldersByName(folderName);
-
-  if (folders.hasNext()) {
-    var existingFolder = folders.next();
-    properties.setProperty(PHOTO_FOLDER_PROPERTY_KEY, existingFolder.getId());
-    return existingFolder;
-  }
-
-  var newFolder = DriveApp.createFolder(folderName);
-  properties.setProperty(PHOTO_FOLDER_PROPERTY_KEY, newFolder.getId());
-  return newFolder;
-}
-
-function getImageExtensionFromMime_(mimeType) {
-  var text = String(mimeType || "").toLowerCase();
-
-  if (text === "image/jpeg" || text === "image/jpg") return ".jpg";
-  if (text === "image/png") return ".png";
-  if (text === "image/webp") return ".webp";
-  if (text === "image/gif") return ".gif";
-  return ".jpg";
-}
-
-function normalizeAttendancePolicy_(value) {
-  var text = String(value || "").trim().toUpperCase();
+function normalizeAttendancePolicy(policy) {
+  const p = String(policy || "").trim().toUpperCase();
 
   if (
-    text === POLICY_NOT_ALLOWED ||
-    text === POLICY_ONLINE_ONLY ||
-    text === POLICY_OFFLINE_ONLY ||
-    text === POLICY_ONLINE_PREFERRED ||
-    text === POLICY_ONLINE_OR_OFFLINE ||
-    text === POLICY_OFFLINE_ALLOWED_IMMEDIATE
+    p === POLICY_NOT_ALLOWED ||
+    p === POLICY_ONLINE_ONLY ||
+    p === POLICY_OFFLINE_ONLY ||
+    p === POLICY_ONLINE_PREFERRED ||
+    p === POLICY_ONLINE_OR_OFFLINE ||
+    p === POLICY_OFFLINE_ALLOWED_IMMEDIATE
   ) {
-    return text;
+    return p;
   }
 
   return DEFAULT_ATTENDANCE_POLICY;
 }
 
-/* =========================
-   Parsers
-========================= */
+function evaluateAttendancePolicy(policy, isOnline) {
+  const normalized = normalizeAttendancePolicy(policy);
 
-function parsePayload(e) {
-  if (!e || !e.postData || !e.postData.contents) {
-    throw new Error("درخواست خالی است یا postData یافت نشد.");
-  }
+  if (normalized === POLICY_NOT_ALLOWED) return { ok: false, message: "ثبت تردد برای شما مجاز نیست." };
+  if (normalized === POLICY_ONLINE_ONLY && !isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آنلاین مجاز است." };
+  if (normalized === POLICY_OFFLINE_ONLY && isOnline) return { ok: false, message: "برای این کاربر فقط ثبت آفلاین مجاز است." };
 
-  var contents = e.postData.contents;
-
-  if (typeof contents === "string") {
-    try {
-      return JSON.parse(contents);
-    } catch (err) {
-      try {
-        var cleanStr = contents.substring(contents.indexOf("{"), contents.lastIndexOf("}") + 1);
-        return JSON.parse(cleanStr);
-      } catch (e2) {
-        throw new Error("خطا در پارس کردن JSON ورودی: " + err.message);
-      }
-    }
-  }
-
-  return contents;
+  return { ok: true, message: "" };
 }
 
-function parseDateToMs(value) {
-  if (value === null || value === undefined || value === "") return null;
-
-  if (Object.prototype.toString.call(value) === "[object Date]") {
-    var directTime = value.getTime();
-    return isNaN(directTime) ? null : directTime;
-  }
-
-  if (typeof value === "number") {
-    return isFinite(value) ? value : null;
-  }
-
-  var text = String(value).trim();
-  if (!text) return null;
-
-  if (/^\d+$/.test(text)) {
-    var numericValue = Number(text);
-    return isFinite(numericValue) ? numericValue : null;
-  }
-
-  var dateMs = new Date(text).getTime();
-  if (!isNaN(dateMs)) return dateMs;
-
-  return null;
-}
-
-function normalizeDateValue_(value) {
-  var ms = parseDateToMs(value);
-  if (ms === null) return null;
-
-  var date = new Date(ms);
-  if (isNaN(date.getTime())) return null;
-
-  return date;
-}
-
-function normalizeDecimalOrBlank(value) {
-  if (value === null || value === undefined || value === "") return "";
-  var numberValue = Number(value);
-  if (!isFinite(numberValue)) return "";
-  return numberValue;
-}
-
-function normalizeIntegerOrBlank(value) {
-  if (value === null || value === undefined || value === "") return "";
-  var numberValue = Number(value);
-  if (!isFinite(numberValue)) return "";
-  return Math.round(numberValue);
-}
-
-function parseBoolean(value) {
-  if (value === true) return true;
-  if (value === false) return false;
-  if (value === null || value === undefined) return false;
-
-  var text = String(value).trim().toLowerCase();
-  return (
-    text === "true" ||
-    text === "1" ||
-    text === "yes" ||
-    text === "y" ||
-    text === "بله" ||
-    text === "آفلاین" ||
-    text === "offline"
-  );
-}
-
-function stringifyOrBlank(value) {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
-}
-
-function escapeFormulaString_(value) {
-  return String(value || "").replace(/"/g, '""');
-}
-
-function hideSheetSafely_(sheet) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (ss.getSheets().length > 1) sheet.hideSheet();
-  } catch (err) {
-    Logger.log(err);
-  }
-}
-
-/* =========================
-   UI
-========================= */
-
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu("پنل تردد")
-    .addItem("ساخت/بروزرسانی شیت‌ها", "setupAttendanceSheets")
-    .addItem("نمایش شیت Users", "showUsersSheet")
-    .addItem("نمایش شیت RecordIndex", "showRecordIndexSheet")
-    .addItem("نمایش شیت Matching", "showMatchingSheet")
-    .addSeparator()
-    .addItem("ساخت گزارش ماهیانه", "buildMonthlyReport")
-    .addToUi();
-}
-
-function setupAttendanceSheets() {
-  getRecordsSheet();
-  getUsersSheet();
-  getRecordIndexSheet();
-  getMatchingSheet();
-
-  return {
-    ok: true,
-    message: "شیت‌ها آماده شدند."
-  };
-}
-
-function showUsersSheet() {
-  var sheet = getUsersSheet();
-  sheet.showSheet();
-  SpreadsheetApp.getActiveSpreadsheet().setActiveSheet(sheet);
-}
-
-function showRecordIndexSheet() {
-  var sheet = getRecordIndexSheet();
-  sheet.showSheet();
-  SpreadsheetApp.getActiveSpreadsheet().setActiveSheet(sheet);
-}
-
-function showMatchingSheet() {
-  var sheet = getMatchingSheet();
-  sheet.showSheet();
-  SpreadsheetApp.getActiveSpreadsheet().setActiveSheet(sheet);
-}
-
-/* =========================
-   Reports
-========================= */
-
-function getPersonnelRecords(personnelCode) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(RECORDS_SHEET_NAME);
-
-  if (!sheet) {
-    return { error: "شیت Records یافت نشد." };
-  }
-
-  var personalMessage = getActiveMessageForPersonnel(personnelCode);
-  var data = sheet.getDataRange().getValues();
-
-  if (data.length < 2) {
+async function getAttendancePolicyInfo() {
+  const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
+  if (!policy) {
     return {
-      headers: [],
-      rows: [],
-      message: personalMessage
+      id: "attendancePolicy",
+      personnelCode: "",
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default",
     };
   }
-
-  var headers = data[0];
-  var pIdx = headers.indexOf("PersonnelCode");
-  var dateIdx = headers.indexOf("RecordDate");
-  var hourIdx = headers.indexOf("RecordHour");
-  var riskIdx = headers.indexOf("ClockRisk");
-
-  if (pIdx === -1 || dateIdx === -1 || hourIdx === -1) {
-    return {
-      error: "ستون‌های ضروری در شیت Records یافت نشد.",
-      message: personalMessage
-    };
-  }
-
-  var filtered = data
-    .slice(1)
-    .filter(function (row) {
-      return String(row[pIdx]) === String(personnelCode);
-    })
-    .sort(function (a, b) {
-      var bKey = String(b[dateIdx]) + String(b[hourIdx]);
-      var aKey = String(a[dateIdx]) + String(a[hourIdx]);
-      return bKey.localeCompare(aKey);
-    })
-    .slice(0, 10);
-
-  return {
-    headers: ["کد پرسنلی", "تاریخ", "ساعت", "ریسک زمان"],
-    rows: filtered.map(function (row) {
-      return [
-        row[pIdx],
-        row[dateIdx],
-        row[hourIdx],
-        row[riskIdx] || "low"
-      ];
-    }),
-    message: personalMessage
-  };
+  return policy;
 }
 
-function getActiveMessageForPersonnel(personnelCode) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(MESSAGES_SHEET_NAME);
-
-  if (!sheet) return null;
-
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return null;
-
-  var headers = data[0];
-  var pIdx = headers.indexOf("PersonnelCode");
-  var msgIdx = headers.indexOf("Message");
-  var activeIdx = headers.indexOf("IsActive");
-
-  if (pIdx === -1 || msgIdx === -1 || activeIdx === -1) return null;
-
-  for (var i = 1; i < data.length; i++) {
-    var rowPersonnelCode = String(data[i][pIdx]);
-    var isActive =
-      data[i][activeIdx] === true ||
-      String(data[i][activeIdx]).toLowerCase() === "true";
-
-    if (rowPersonnelCode === String(personnelCode) && isActive) {
-      return data[i][msgIdx];
-    }
-  }
-
-  return null;
+async function saveAttendancePolicyInfo(data) {
+  await dbPut(STORE_CONFIG, {
+    id: "attendancePolicy",
+    personnelCode: data.personnelCode || "",
+    attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
+    policyVersion: Number(data.policyVersion || 0),
+    policyFetchedAt: data.policyFetchedAt || "",
+    policySource: data.policySource || "",
+  });
 }
 
-function handleSheetEdit(e) {
-  const sheet = e.range.getSheet();
+async function ensurePolicyLoadedAtStartup() {
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile?.personnelCode) return;
 
-  if (sheet.getName() === "PushMessages") {
-    handlePushMessagesEdit_(e, sheet);
+  const cached = await getAttendancePolicyInfo();
+  if (cached?.personnelCode === profile.personnelCode) {
+    if (navigator.onLine) await refreshPolicyIfPossible();
     return;
   }
 
-  if (sheet.getName() !== "Users") return;
-  const row = e.range.getRow();
-  const col = e.range.getColumn();
-  if (row === 1) return;
-
-  const POLICY_COL = 4;
-  const VERSION_COL = 5;
-  const UPDATED_COL = 6;
-
-  if (col !== POLICY_COL) return;
-
-  const versionCell = sheet.getRange(row, VERSION_COL);
-  const updatedCell = sheet.getRange(row, UPDATED_COL);
-  let version = Number(versionCell.getValue());
-  if (!version || isNaN(version)) version = 0;
-  versionCell.setValue(version + 1);
-  updatedCell.setValue(new Date());
+  if (navigator.onLine) {
+    await refreshPolicyIfPossible();
+  } else {
+    await saveAttendancePolicyInfo({
+      personnelCode: profile.personnelCode,
+      attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
+      policyVersion: 0,
+      policyFetchedAt: "",
+      policySource: "default_offline",
+    });
+  }
 }
 
-// PushMessages sheet columns: PersonnelCode | Title | Body | SendNow | LastSentAt | LastResult
-function handlePushMessagesEdit_(e, sheet) {
-  const row = e.range.getRow();
-  const col = e.range.getColumn();
-  if (row === 1) return;
+async function refreshPolicyIfPossible() {
+  if (!navigator.onLine) return null;
 
-  const SENDNOW_COL = 4;
-  if (col !== SENDNOW_COL) return;
-  if (e.value !== "TRUE") return;
-
-  const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(20000); // serialize so rapid multi-row checkbox clicks can't race each other
-  } catch (err) {
-    return; // couldn't get the lock in time - safer to skip than risk writing to the wrong row
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return null;
+
+    const personnelCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    const url = `${APPS_SCRIPT_URL}?action=getUserPolicy&personnelCode=${personnelCode}&_nocache=${Date.now()}`;
+
+    const response = await fetch(url, { method: "GET", mode: "cors", redirect: "follow" });
+    if (!response.ok) return null;
+
+    const text = await response.text();
+    const data = JSON.parse(text);
+
+    if (data && typeof data === "object") {
+      await saveAttendancePolicyInfo(data);
+      return data;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[Policy] refresh failed:", error);
+    return null;
+  }
+}
+
+async function getCurrentAttendanceGate() {
+  if (navigator.onLine) await refreshPolicyIfPossible();
+  const policyInfo = await getAttendancePolicyInfo();
+  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
+  return {
+    policyInfo,
+    gate: evaluateAttendancePolicy(policy, navigator.onLine),
+  };
+}
+
+/* =========================
+   Attendance Capture
+========================= */
+
+async function startAttendanceCapture() {
+  const personnelCode = $("personnelCode")?.value.trim() || "";
+  const firstName = $("firstName")?.value.trim() || "";
+  const lastName = $("lastName")?.value.trim() || "";
+
+  if (!personnelCode || !firstName || !lastName) {
+    setStatus("مشخصات پرسنلی کامل نیست.");
+    return;
+  }
+
+  await saveProfileSilent();
+
+  const { gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
+    return;
+  }
+
+  captureStartedAtMs = Date.now();
+  photoSelectedAtMs = 0;
+  photoCompressedAtMs = 0;
+  currentPhoto = "";
+  pendingLocation = null;
+
+  const preview = $("photoPreview");
+  if (preview) {
+    preview.removeAttribute("src");
+    preview.style.display = "none";
+  }
+
+  const photoInput = $("photoInput");
+  if (!photoInput) {
+    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
+    return;
+  }
+
+  photoInput.value = "";
+  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+  photoInput.click();
+}
+
+async function handlePhotoSelected() {
+  const file = $("photoInput")?.files?.[0];
+
+  if (!file) {
+    setStatus("عکسی انتخاب نشد.");
+    return;
   }
 
   try {
-    const personnelCode = String(sheet.getRange(row, 1).getValue() || "").trim();
-    const title = String(sheet.getRange(row, 2).getValue() || "").trim();
-    const body = String(sheet.getRange(row, 3).getValue() || "").trim();
+    setBusy(true, "در حال آماده‌سازی عکس...");
+    photoSelectedAtMs = Date.now();
 
-    if (!personnelCode) {
-      sheet.getRange(row, SENDNOW_COL).setValue(false);
+    await saveProfileSilent();
+
+    const { gate } = await getCurrentAttendanceGate();
+    if (!gate.ok) {
+      setBusy(false);
+      setStatus(gate.message);
+      $("photoInput").value = "";
+      currentPhoto = "";
       return;
     }
 
-    const result = sendPushToPersonnel_(personnelCode, title, body);
+    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
 
-    sheet.getRange(row, SENDNOW_COL).setValue(false);
-    sheet.getRange(row, 5).setValue(new Date());
-    sheet.getRange(row, 5).setNumberFormat("yyyy-mm-dd hh:mm:ss");
-    sheet.getRange(row, 6).setValue(JSON.stringify(result));
-  } finally {
-    lock.releaseLock();
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setBusy(false);
+      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      return;
+    }
+
+    setBusy(true, "در حال دریافت GPS...");
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    pendingLocation = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(pendingLocation)) {
+      setBusy(false);
+
+      if (pendingLocation?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "unavailable") {
+        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "timeout") {
+        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        return;
+      }
+
+      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      return;
+    }
+
+    setBusy(true, "در حال ذخیره تردد...");
+    await createRecord("تردد");
+    setBusy(false);
+  } catch (err) {
+    console.error(err);
+    setBusy(false);
+    setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
 
 /* =========================
-   Monthly Report
+   Record Creation
 ========================= */
 
-// FILE: Code.gs
+async function createRecord(type) {
+  const profile = await getProfile();
 
-function buildMonthlyReport() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var recordsSheet = ss.getSheetByName(RECORDS_SHEET_NAME);
-  var usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
-  var reportSheet = ss.getSheetByName(REPORT_SHEET_NAME) || ss.insertSheet(REPORT_SHEET_NAME);
+  const { policyInfo, gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
+    return;
+  }
 
-  if (!recordsSheet || !usersSheet || !reportSheet) return;
+  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
-  reportSheet.setRightToLeft(true);
+  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
+    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
+    return;
+  }
 
-  var selectedUserText = String(reportSheet.getRange("A1").getDisplayValue() || "").trim();
-  var monthText = String(reportSheet.getRange("B1").getDisplayValue() || "").trim();
-  var startLimitText = String(reportSheet.getRange("C1").getDisplayValue() || "").trim();
-  var endLimitText = String(reportSheet.getRange("D1").getDisplayValue() || "").trim();
+  const loc = hasValidLocation(pendingLocation)
+    ? pendingLocation
+    : emptyLocation("not_received", "GPS دریافت نشد");
 
-  var monthYear = normalizeMonthYear_(monthText);
-  if (!monthYear) return;
+  const now = new Date();
+  const nowMs = now.getTime();
 
-  var startLimit = normalizeTime_(startLimitText) || "07:00:00";
-  var endLimit = normalizeTime_(endLimitText) || "15:00:00";
+  const clickMs = captureStartedAtMs || nowMs;
+  const photoMs = photoSelectedAtMs || "";
+  const photoCompressedMs = photoCompressedAtMs || "";
+  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
 
-  var startLimitSec = timeToSeconds_(startLimit);
-  var endLimitSec = timeToSeconds_(endLimit);
+  const deviceTime = now.toISOString();
+  const deviceTimeAtClick = new Date(clickMs).toISOString();
+  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
+  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
+  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
+  const gpsTimestamp = deviceTimeAtGps;
 
-  var users = getUsersFromSheet_(usersSheet);
-  var selectedUsers = resolveSelectedUsers_(selectedUserText, users);
-  var records = recordsSheet.getDataRange().getValues();
+  const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
+  const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
+  const submitDelayMs = Math.max(0, nowMs - clickMs);
 
-  var header = ["نام و نام خانوادگی", "شماره پرسنلی"];
-  for (var day = 1; day <= 31; day++) header.push(day);
+  const offlineCreated = !navigator.onLine;
+  const createdOnline = navigator.onLine;
 
-  reportSheet.getRange(2, 1, reportSheet.getMaxRows() - 1, Math.max(reportSheet.getMaxColumns(), header.length)).clearContent().clearFormat();
-  reportSheet.getRange(2, 1, 1, header.length).setValues([header]);
+  const sessionClockDriftMs = getSessionClockDriftMs();
+  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
 
-  var output = [];
-  var meta = [];
+  const risk = calculateClockRisk({
+    clickMs,
+    gpsMs,
+    offlineCreated,
+    locationStatus: loc.status,
+    sessionClockDriftMs,
+  });
 
-  for (var u = 0; u < selectedUsers.length; u++) {
-    var user = selectedUsers[u];
-    var perDay = collectUserMonthData_(records, user.code, monthYear);
-    var rowValues = [user.fullName, user.code];
-    var rowMeta = [];
+  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
 
-    for (var d = 1; d <= 31; d++) {
-      var dayItems = perDay[d] || [];
-      if (!dayItems.length) {
-        rowValues.push("");
-        rowMeta.push(null);
-        continue;
-      }
+  const jalaliDateStr = getJalaliIsoDate(now);
+  const hourStr = getTime(now);
 
-      dayItems.sort(function (a, b) {
-        return a.time.localeCompare(b.time);
-      });
+  const record = {
+    clientRecordId,
+    personnelCode: profile.personnelCode,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    type,
+    recordType: type,
+    recordDate: jalaliDateStr,
+    recordHour: hourStr,
+    recordTime: hourStr,
 
-      var firstIn = dayItems[0].time;
-      var lastOut = dayItems[dayItems.length - 1].time;
-      var hasOffline = dayItems.some(function (item) { return item.offline; });
+    latitude: loc.latitude || "",
+    longitude: loc.longitude || "",
+    accuracy: loc.accuracy || "",
+    locationStatus: loc.status || "",
+    locationError: loc.error || "",
 
-      rowValues.push(firstIn + "\n" + lastOut);
-      rowMeta.push({
-        firstIn: firstIn,
-        lastOut: lastOut,
-        firstLate: timeToSeconds_(firstIn) > startLimitSec,
-        lastEarly: timeToSeconds_(lastOut) < endLimitSec,
-        hasOffline: hasOffline
-      });
+    deviceTime,
+    deviceTimeAtClick,
+    deviceTimeAtPhoto,
+    deviceTimeAtPhotoCompressed,
+    deviceTimeAtGps,
+    gpsTimestamp,
+
+    gpsWaitMs,
+    photoDelayMs,
+    submitDelayMs,
+
+    offlineCreated,
+    createdOnline,
+    connectionStatus: offlineCreated ? "offline" : "online",
+    connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
+
+    firstConnectionAfterOfflineRecord: "",
+    lastConnectionBeforeUpload: "",
+    uploadedAt: "",
+    delayAfterFirstConnectionMs: "",
+
+    clockRisk: risk.clockRisk,
+    clockRiskReason: risk.clockRiskReason,
+    sessionClockDriftMs,
+    networkClockDriftMs: networkClockDriftMs ?? "",
+
+    attendancePolicy,
+    policyVersion: Number(policyInfo.policyVersion || 0),
+    policyFetchedAt: policyInfo.policyFetchedAt || "",
+    policySource: policyInfo.policySource || "",
+
+    photo: currentPhoto || "",
+
+    status: "pending",
+    createdAt: now.toISOString(),
+    lastSyncTryAt: "",
+    syncTryCount: 0,
+    syncedAt: "",
+    serverResponse: "",
+  };
+
+  await dbPut(STORE_RECORDS, record);
+
+  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
+  setStatus("تردد با GPS ذخیره شد.");
+  await refreshUi();
+
+  if (navigator.onLine) scheduleSyncPendingRecords(500);
+}
+
+function createClientRecordId(personnelCode, baseMs) {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `${personnelCode}-${baseMs}-${randomPart}`;
+}
+
+/* =========================
+   Sync (CORS-SAFE)
+========================= */
+
+async function markFirstConnectionForOfflineRecords() {
+  if (!db || !navigator.onLine) return;
+
+  try {
+    const nowIso = new Date().toISOString();
+    const records = await dbGetAll(STORE_RECORDS);
+    const list = records.filter(
+      (r) =>
+        r.offlineCreated === true &&
+        (r.status === "pending" || r.status === "failed") &&
+        !r.firstConnectionAfterOfflineRecord
+    );
+
+    for (const r of list) {
+      r.firstConnectionAfterOfflineRecord = nowIso;
+      await dbPut(STORE_RECORDS, r);
     }
 
-    output.push(rowValues);
-    meta.push(rowMeta);
-  }
-
-  if (output.length > 0) {
-    var dataRange = reportSheet.getRange(3, 1, output.length, header.length);
-    dataRange.setValues(output);
-    dataRange.setWrap(true);
-    dataRange.setVerticalAlignment("middle");
-    dataRange.setHorizontalAlignment("center");
-    dataRange.setFontFamily("Tahoma");
-    dataRange.setFontSize(6);
-  }
-
-  setupMonthlyReportValidation_(reportSheet, users);
-
-  reportSheet.getRange("A1").setValue(selectedUserText || "همه");
-  reportSheet.getRange("B1").setValue(monthYear);
-  reportSheet.getRange("C1").setValue(startLimit);
-  reportSheet.getRange("D1").setValue(endLimit);
-
-  formatReportSheet_(reportSheet, header.length, output.length);
-  applyAttendanceStyles_(reportSheet, meta);
+    if (list.length) await refreshUi();
+  } catch (_) {}
 }
 
-function collectUserMonthData_(records, userCode, monthYear) {
-  var perDay = {};
+async function syncPendingRecords() {
+  if (syncRunning || !navigator.onLine) return;
+  syncRunning = true;
 
-  for (var i = 1; i < records.length; i++) {
-    var row = records[i];
-    var code = normalizeDigits_(String(row[1] || "").trim());
-    if (code !== userCode) continue;
+  try {
+    const refreshed = await refreshPolicyIfPossible();
+    const policyInfo = refreshed || (await getAttendancePolicyInfo());
+    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
 
-    var rowDate = normalizeMonthYearDay_(row[4]);
-    if (!rowDate || rowDate.indexOf(monthYear + "/") !== 0) continue;
+    if (!syncGate.ok) {
+      setSyncStatus(syncGate.message);
+      return;
+    }
 
-    var day = Number(rowDate.split("/")[2]);
-    if (!day || day < 1 || day > 31) continue;
+    await markFirstConnectionForOfflineRecords();
 
-    var rowTime = normalizeTime_(row[5]);
-    if (!rowTime) continue;
+    const records = await dbGetAll(STORE_RECORDS);
+    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
 
-    if (!perDay[day]) perDay[day] = [];
-    perDay[day].push({
-      time: rowTime,
-      offline: isOfflineRecord_(row)
-    });
+    if (!list.length) {
+      setSyncStatus("چیزی برای ارسال نیست");
+      return;
+    }
+
+    setSyncStatus("در حال ارسال...");
+
+    for (const r of list) {
+      if (r.status === "sent" || r.status === "syncing") continue;
+
+      const uploadStartIso = new Date().toISOString();
+      const uploadStartMs = new Date(uploadStartIso).getTime();
+
+      r.status = "syncing";
+      r.lastSyncTryAt = uploadStartIso;
+      r.lastConnectionBeforeUpload = uploadStartIso;
+      r.syncTryCount = Number(r.syncTryCount || 0) + 1;
+
+      if (!r.connectionStatus) {
+        r.connectionStatus = r.offlineCreated ? "offline" : "online";
+        r.connectionStatusFa = r.offlineCreated ? "آفلاین" : "آنلاین";
+        r.createdOnline = !r.offlineCreated;
+      }
+
+      if (r.offlineCreated === true && !r.firstConnectionAfterOfflineRecord) {
+        r.firstConnectionAfterOfflineRecord = uploadStartIso;
+      }
+
+      if (r.firstConnectionAfterOfflineRecord) {
+        const firstConnectionMs = new Date(r.firstConnectionAfterOfflineRecord).getTime();
+        if (firstConnectionMs && !isNaN(firstConnectionMs)) {
+          r.delayAfterFirstConnectionMs = Math.max(0, uploadStartMs - firstConnectionMs);
+        }
+      }
+
+      await dbPut(STORE_RECORDS, r);
+      await refreshUi();
+
+      try {
+        const payload = buildServerPayload(r);
+
+        await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload),
+        });
+
+        const sentIso = new Date().toISOString();
+        r.status = "sent";
+        r.syncedAt = sentIso;
+        r.uploadedAt = sentIso;
+        r.serverResponse = "opaque_no_cors";
+        await dbPut(STORE_RECORDS, r);
+      } catch (err) {
+        r.status = "failed";
+        r.serverResponse = JSON.stringify({ ok: false, error: err?.message || "network_error" });
+        await dbPut(STORE_RECORDS, r);
+      }
+    }
+
+    setSyncStatus("ارسال انجام شد");
+    await refreshUi();
+    await fetchMessages();
+  } finally {
+    syncRunning = false;
   }
-
-  return perDay;
 }
 
-function applyAttendanceStyles_(sheet, meta) {
-  var skyBlue = "#87CEEB";
-  var black = "#000000";
-  var red = "#FF0000";
+function buildServerPayload(record) {
+  return {
+    clientRecordId: record.clientRecordId || "",
+    personnelCode: record.personnelCode || "",
+    firstName: record.firstName || "",
+    lastName: record.lastName || "",
+    type: record.type || record.recordType || "",
+    recordType: record.recordType || record.type || "",
+    recordDate: record.recordDate || "",
+    recordHour: record.recordHour || record.recordTime || "",
+    recordTime: record.recordTime || record.recordHour || "",
+    latitude: record.latitude || "",
+    longitude: record.longitude || "",
+    accuracy: record.accuracy || "",
+    locationStatus: record.locationStatus || "",
+    locationError: record.locationError || "",
+    deviceTime: record.deviceTime || "",
+    deviceTimeAtClick: record.deviceTimeAtClick || "",
+    deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
+    deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
+    deviceTimeAtGps: record.deviceTimeAtGps || "",
+    gpsTimestamp: record.gpsTimestamp || "",
+    gpsWaitMs: record.gpsWaitMs ?? "",
+    photoDelayMs: record.photoDelayMs ?? "",
+    submitDelayMs: record.submitDelayMs ?? "",
+    offlineCreated: !!record.offlineCreated,
+    createdOnline: record.createdOnline === true,
+    connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
+    connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
+    firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
+    lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
+    uploadedAt: record.uploadedAt || "",
+    delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
+    clockRisk: record.clockRisk || "",
+    clockRiskReason: record.clockRiskReason || "",
+    sessionClockDriftMs: record.sessionClockDriftMs ?? "",
+    networkClockDriftMs: record.networkClockDriftMs ?? "",
+    attendancePolicy: record.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+    policyVersion: Number(record.policyVersion || 0),
+    policyFetchedAt: record.policyFetchedAt || "",
+    policySource: record.policySource || "",
+    photo: record.photo || "",
+    createdAt: record.createdAt || "",
+    lastSyncTryAt: record.lastSyncTryAt || "",
+    syncTryCount: Number(record.syncTryCount || 0),
+  };
+}
 
-  for (var r = 0; r < meta.length; r++) {
-    for (var d = 0; d < 31; d++) {
-      var info = meta[r][d];
-      if (!info) continue;
+/* =========================
+   Records UI
+========================= */
 
-      var cell = sheet.getRange(3 + r, 3 + d);
-      var text = info.firstIn + "\n" + info.lastOut;
+async function refreshUi() {
+  const rec = await dbGetAll(STORE_RECORDS);
 
-      if (info.hasOffline) {
-        cell.setBackground(skyBlue);
+  if ($("pendingCount")) $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
+  if ($("sentCount")) $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
+  if ($("failedCount")) $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
+
+  renderRecords(rec);
+}
+
+function renderRecords(records) {
+  const el = $("recordsList");
+  if (!el) return;
+
+  if (!records.length) {
+    el.innerHTML = "<p>ترددی ثبت نشده</p>";
+    return;
+  }
+
+  const sorted = [...records].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+  el.innerHTML = sorted
+    .slice(0, 20)
+    .map((r) => {
+      const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
+      const connectionText = r.connectionStatusFa
+        ? ` - ${escapeHtml(r.connectionStatusFa)}`
+        : r.offlineCreated
+          ? " - آفلاین"
+          : " - آنلاین";
+
+      return `
+        <div class="record-item compact-record">
+          <span>${escapeHtml(r.recordDate || "")}</span>
+          <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+/* =========================
+   Admin Messages
+========================= */
+
+async function fetchMessages() {
+  if (!navigator.onLine) return;
+
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
+    const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&_=${Date.now()}`;
+
+    const response = await fetch(url, { method: "GET", mode: "cors", credentials: "omit" });
+    if (!response.ok) return;
+
+    const rawText = await response.text();
+    if (!rawText || rawText.trim() === "" || rawText === "[]" || rawText === "false" || rawText === "null") return;
+
+    let finalMsg = "";
+    try {
+      const data = JSON.parse(rawText);
+      if (data && typeof data === "object") {
+        const msgSource = data.messages || data.message || data;
+        if (Array.isArray(msgSource)) finalMsg = msgSource[msgSource.length - 1];
+        else if (typeof msgSource === "string") finalMsg = msgSource;
+        else finalMsg = JSON.stringify(msgSource);
+      } else if (Array.isArray(data)) {
+        finalMsg = data[data.length - 1];
       } else {
-        cell.setBackground("#FFFFFF");
+        finalMsg = String(data);
       }
-
-      var firstTextStyle = SpreadsheetApp.newTextStyle()
-        .setForegroundColor(info.firstLate ? red : black)
-        .build();
-
-      var secondTextStyle = SpreadsheetApp.newTextStyle()
-        .setForegroundColor(info.lastEarly ? red : black)
-        .build();
-
-      var rich = SpreadsheetApp.newRichTextValue()
-        .setText(text)
-        .setTextStyle(0, info.firstIn.length, firstTextStyle)
-        .setTextStyle(info.firstIn.length + 1, text.length, secondTextStyle)
-        .build();
-
-      cell.setRichTextValue(rich);
+    } catch (e) {
+      finalMsg = rawText.replace(/["\[\]]/g, "").trim();
     }
+
+    if (typeof finalMsg === "string") finalMsg = finalMsg.trim();
+
+    if (finalMsg && finalMsg !== "false" && finalMsg !== "null" && finalMsg !== "undefined") {
+      if (finalMsg !== lastAdminMessage) {
+        lastAdminMessage = finalMsg;
+        showAdminMessage(finalMsg);
+      }
+    }
+  } catch (err) {
+    console.error("Fetch messages failed:", err);
   }
 }
 
-function formatReportSheet_(sheet, lastCol, rowCount) {
-  var totalRows = Math.max(2, rowCount + 1);
+function showAdminMessage(message) {
+  const existingOverlay = document.getElementById("admin-message-overlay");
+  if (existingOverlay) existingOverlay.remove();
 
-  sheet.getRange(2, 1, totalRows, lastCol)
-    .setBorder(true, true, true, true, true, true)
-    .setHorizontalAlignment("center")
-    .setVerticalAlignment("middle")
-    .setFontFamily("Tahoma");
+  const overlay = document.createElement("div");
+  overlay.id = "admin-message-overlay";
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+  `;
 
-  sheet.getRange(2, 1, 1, lastCol)
-    .setBackground("#F3F3F3")
-    .setFontWeight("bold")
-    .setFontSize(7);
+  const container = document.createElement("div");
+  container.style.cssText = `
+    background-color: #fff7ed;
+    border: 2px solid #ea580c;
+    border-radius: 16px;
+    padding: 24px;
+    width: 100%;
+    max-width: 450px;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3), 0 8px 10px -6px rgba(0,0,0,0.3);
+    text-align: right;
+    direction: rtl;
+    box-sizing: border-box;
+    animation: zoomInAdmin 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  `;
 
-  if (rowCount > 0) {
-    sheet.getRange(3, 1, rowCount, lastCol).setFontSize(6);
-    for (var r = 3; r < 3 + rowCount; r++) {
-      sheet.setRowHeight(r, 32);
+  const styleSheet = document.createElement("style");
+  styleSheet.innerText = `
+    @keyframes zoomInAdmin {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
     }
-  }
+  `;
+  document.head.appendChild(styleSheet);
 
-  sheet.setColumnWidth(1, 150);
-  sheet.setColumnWidth(2, 90);
+  const title = document.createElement("div");
+  title.style.cssText = `
+    font-size: 18px;
+    font-weight: bold;
+    color: #c2410c;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+  title.textContent = "🔔 پیام جدید از طرف مدیریت";
 
-  for (var c = 3; c <= lastCol; c++) {
-    sheet.setColumnWidth(c, 45);
-  }
+  const body = document.createElement("div");
+  body.style.cssText = `
+    font-size: 15px;
+    color: #431407;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  `;
+  body.textContent = message;
+
+  const btn = document.createElement("button");
+  btn.style.cssText = `
+    width: 100%;
+    background-color: #ea580c;
+    color: #ffffff;
+    border: none;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  `;
+  btn.textContent = "تایید";
+
+  const dismiss = async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    btn.textContent = "در حال ارسال تاییدیه...";
+    try {
+      await sendMessageReadReceipt(message);
+    } catch (_) {}
+    overlay.remove();
+  };
+  btn.addEventListener("click", dismiss, { passive: false });
+  btn.addEventListener("touchstart", dismiss, { passive: false });
+
+  container.appendChild(title);
+  container.appendChild(body);
+  container.appendChild(btn);
+  overlay.appendChild(container);
+
+  document.body.appendChild(overlay);
 }
 
-function getUsersFromSheet_(usersSheet) {
-  var data = usersSheet.getDataRange().getValues();
-  var users = [];
+async function sendMessageReadReceipt(message) {
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
 
-  for (var i = 1; i < data.length; i++) {
-    var code = normalizeDigits_(String(data[i][0] || "").trim());
-    var firstName = String(data[i][1] || "").trim();
-    var lastName = String(data[i][2] || "").trim();
+    const payload = {
+      type: "MessageReadReceipt",
+      personnelCode: profile.personnelCode,
+      firstName: profile.firstName || "",
+      lastName: profile.lastName || "",
+      message: message,
+      deviceTime: new Date().toISOString()
+    };
 
-    if (!code) continue;
-
-    var fullName = (firstName + " " + lastName).trim();
-    users.push({
-      code: code,
-      fullName: fullName,
-      label: fullName + " - " + code
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
     });
+  } catch (err) {
+    console.error("Failed to send message read receipt:", err);
   }
-
-  return users;
 }
 
-function resolveSelectedUsers_(selected, users) {
-  if (!selected || selected === "همه") return users;
+/* =========================
+   Time / Date
+========================= */
 
-  var selectedCode = "";
-  var codeMatch = normalizeDigits_(selected).match(/\d+/);
-  if (codeMatch) selectedCode = codeMatch[0];
+function getIsoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
+}
 
-  var found = users.filter(function (user) {
-    return user.code === selectedCode || user.label === selected || user.fullName === selected;
+function getTime(d) {
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+/* =========================
+   Clock Risk
+========================= */
+
+function getSessionClockDriftMs() {
+  const realElapsedMs = performance.now() - APP_SESSION_START_PERF_MS;
+  const wallElapsedMs = Date.now() - APP_SESSION_START_WALL_MS;
+  return Math.round(wallElapsedMs - realElapsedMs);
+}
+
+async function getNetworkTimeDriftMs(deviceNowMs) {
+  try {
+    const networkMs = Date.now();
+    if (!networkMs || isNaN(networkMs)) return null;
+    return Math.abs(networkMs - deviceNowMs);
+  } catch (_) {
+    return null;
+  }
+}
+
+function calculateClockRisk(data) {
+  const reasons = [];
+  let score = 0;
+
+  const sessionDrift = Math.abs(Number(data.sessionClockDriftMs) || 0);
+  if (sessionDrift > CLOCK_DRIFT_SESSION_LIMIT_MS) {
+    score += 6;
+    reasons.push("تغییر ساعت در حین برنامه (Session Drift)");
+  }
+
+  if (data.offlineCreated) {
+    score += 1;
+    reasons.push("ثبت آفلاین");
+  }
+
+  if (String(data.locationStatus || "").toLowerCase() !== "ok") {
+    score += 4;
+    reasons.push("GPS نامعتبر/خاموش");
+  }
+
+  return {
+    clockRisk: score >= 6 ? "high" : score >= 3 ? "medium" : "low",
+    clockRiskReason: reasons.length ? reasons.join(" | ") : "نرمال",
+  };
+}
+
+/* =========================
+   Geolocation
+========================= */
+
+function isGeolocationUsable() {
+  return !!navigator.geolocation && window.isSecureContext;
+}
+
+function hasValidLocation(l) {
+  return l && l.status === "ok" && l.latitude !== "" && l.longitude !== "";
+}
+
+function emptyLocation(status, error) {
+  return {
+    latitude: "",
+    longitude: "",
+    accuracy: "",
+    timestamp: null,
+    status,
+    error,
+  };
+}
+
+function chooseBetterLocation(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+
+  if (!hasValidLocation(a)) return b;
+  if (!hasValidLocation(b)) return a;
+
+  return (Number(b.accuracy) || 999999) <= (Number(a.accuracy) || 999999) ? b : a;
+}
+
+function geoErrorToLocation(err) {
+  if (err.code === 1) return emptyLocation("denied", "دسترسی رد شد");
+  if (err.code === 2) return emptyLocation("unavailable", "موقعیت در دسترس نیست");
+  if (err.code === 3) return emptyLocation("timeout", "زمان تمام شد");
+  return emptyLocation("error", "خطای GPS");
+}
+
+function getCurrentPositionSafe(options) {
+  return new Promise((resolve) => {
+    let done = false;
+
+    const timeoutId = setTimeout(() => {
+      if (done) return;
+      done = true;
+      resolve(emptyLocation("timeout", "زمان تمام شد"));
+    }, (options.timeout || 20000) + 3000);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+          status: "ok",
+          error: "",
+        });
+      },
+      (err) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+        resolve(geoErrorToLocation(err));
+      },
+      options
+    );
+  });
+}
+
+function getLocationWithWatch(waitMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    let best = null;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const loc = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
+          status: "ok",
+          error: "",
+        };
+
+        best = chooseBetterLocation(best, loc);
+        if (loc.accuracy <= GOOD_ACCURACY_METERS) finish(loc);
+      },
+      (err) => finish(geoErrorToLocation(err)),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: waitMs,
+      }
+    );
+
+    const timeoutId = setTimeout(() => finish(best), waitMs + 3000);
+
+    function finish(loc) {
+      if (done) return;
+      done = true;
+      navigator.geolocation.clearWatch(watchId);
+      clearTimeout(timeoutId);
+      resolve(loc || emptyLocation("timeout", "GPS دریافت نشد"));
+    }
+  });
+}
+
+async function getLocationIOSFriendly() {
+  if (!isGeolocationUsable()) return emptyLocation("unavailable", "GPS در دسترس نیست");
+
+  const firstLocation = await getCurrentPositionSafe({
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 25000,
   });
 
-  return found.length ? found : users;
+  if (hasValidLocation(firstLocation) && firstLocation.accuracy <= GOOD_ACCURACY_METERS) return firstLocation;
+  if (firstLocation?.status === "denied") return firstLocation;
+
+  const secondLocation = await getCurrentPositionSafe({
+    enableHighAccuracy: false,
+    maximumAge: 0,
+    timeout: 15000,
+  });
+
+  if (secondLocation?.status === "denied") return secondLocation;
+
+  let bestLocation = chooseBetterLocation(firstLocation, secondLocation);
+  if (hasValidLocation(bestLocation) && bestLocation.accuracy <= GOOD_ACCURACY_METERS) return bestLocation;
+
+  const watchedLocation = await getLocationWithWatch(GPS_RETRY_MS);
+  bestLocation = chooseBetterLocation(bestLocation, watchedLocation);
+
+  return bestLocation;
 }
 
-function setupMonthlyReportValidation_(sheet, users) {
-  var list = ["همه"].concat(users.map(function (user) {
-    return user.label;
-  }));
+/* =========================
+   Image
+========================= */
 
-  var rule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(list, true)
-    .build();
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
 
-  sheet.getRange("A1").setDataValidation(rule);
-}
+    reader.onload = (e) => {
+      const img = new Image();
 
-function isOfflineRecord_(row) {
-  for (var i = 0; i < row.length; i++) {
-    var value = row[i];
+      img.onload = () => {
+        const OUT_W = 400;
+        const OUT_H = 600;
 
-    if (value === true) return true;
+        const canvas = document.createElement("canvas");
+        canvas.width = OUT_W;
+        canvas.height = OUT_H;
 
-    var text = String(value || "").toLowerCase().trim();
-    if (!text) continue;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, OUT_W, OUT_H);
 
-    if (text === "true") return true;
-    if (text.indexOf("offline") !== -1) return true;
-    if (text.indexOf("آفلاین") !== -1) return true;
-    if (text.indexOf("ثبت آفلاین") !== -1) return true;
-  }
+        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
+        const drawW = Math.round(img.width * scale);
+        const drawH = Math.round(img.height * scale);
+        const dx = Math.round((OUT_W - drawW) / 2);
+        const dy = Math.round((OUT_H - drawH) / 2);
 
-  return false;
-}
+        ctx.drawImage(img, dx, dy, drawW, drawH);
 
-function normalizeMonthYear_(value) {
-  var text = normalizeDigits_(String(value || ""))
-    .replace(/[-.]/g, "/")
-    .replace(/\s/g, "");
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return reject(new Error("خطا در ساخت تصویر فشرده"));
 
-  var match = text.match(/^(\d{4})\/(\d{1,2})$/);
-  if (!match) return null;
+            const r = new FileReader();
+            r.onloadend = () => resolve(r.result);
+            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
+            r.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          0.6
+        );
+      };
 
-  return match[1] + "/" + match[2].padStart(2, "0");
-}
+      img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
+      img.src = e.target.result;
+    };
 
-function normalizeMonthYearDay_(value) {
-  if (value instanceof Date) {
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy/MM/dd");
-  }
-
-  var text = normalizeDigits_(String(value || ""))
-    .replace(/[-.]/g, "/")
-    .replace(/\s/g, "");
-
-  var match = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-  if (!match) return null;
-
-  return match[1] + "/" + match[2].padStart(2, "0") + "/" + match[3].padStart(2, "0");
-}
-
-function normalizeTime_(value) {
-  if (value instanceof Date) {
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), "HH:mm:ss");
-  }
-
-  var text = normalizeDigits_(String(value || "")).trim();
-  var match = text.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
-  if (!match) return null;
-
-  return match[1].padStart(2, "0") + ":" + match[2].padStart(2, "0") + ":" + (match[3] || "00").padStart(2, "0");
-}
-
-function normalizeDigits_(text) {
-  return String(text || "").replace(/[۰-۹]/g, function (digit) {
-    return "۰۱۲۳۴۵۶۷۸۹".indexOf(digit);
+    reader.onerror = () => reject(new Error("خطا در خواندن فایل تصویر"));
+    reader.readAsDataURL(file);
   });
 }
 
-function timeToSeconds_(timeText) {
-  if (!timeText) return 0;
-  var parts = String(timeText).split(":");
-  return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2] || 0);
+/* =========================
+   Jalali -> Gregorian (helpers)
+========================= */
+
+function jalaliToGregorian_(jy, jm, jd) {
+  const salA = [-61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181, 1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178];
+  const jy2 = jy === 979 ? 0 : jy - 979;
+  let leapJ = -14;
+  let jp = salA[0];
+
+  for (let i = 1; i < 20; i += 1) {
+    const temp = salA[i];
+    const dy = temp - jp;
+    if (jy2 < temp) {
+      const q = Math.floor(jy2 / 33);
+      const r = jy2 % 33;
+      leapJ += q * 8 + Math.floor((r + 4) / 4);
+      if (dy - r > 0 && r === 30) leapJ += 1;
+      break;
+    }
+    leapJ += Math.floor(dy / 33) * 8 + Math.floor(((dy % 33) + 3) / 4);
+    jp = temp;
+  }
+
+  const q = Math.floor(jy2 / 33);
+  leapJ += q * 8 + Math.floor(((jy2 % 33) + 3) / 4);
+
+  const gDays = 365 * jy2 + leapJ + 79;
+  const gy2 = 1600 + 400 * Math.floor(gDays / 146097);
+  let gdm = gDays % 146097;
+
+  let leapG = true;
+  if (gdm >= 36525) {
+    gdm -= 1;
+    gdm %= 36524;
+    if (gdm >= 365) gdm += 1;
+    else leapG = false;
+  }
+
+  let gy = gy2 + 4 * Math.floor(gdm / 1461);
+  gdm %= 1461;
+
+  if (gdm >= 366) {
+    leapG = false;
+    gdm -= 1;
+    gy += Math.floor(gdm / 365);
+    gdm %= 365;
+  }
+
+  let i = 0;
+  const salG = [0, 31, leapG ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  for (i = 1; i <= 12; i += 1) {
+    if (gdm < salG[i]) break;
+    gdm -= salG[i];
+  }
+
+  return [gy, i, gdm + 1];
+}
+
+function parsePersianDateTimeToGregorian_(dateStr, timeStr) {
+  try {
+    const cleanD = dateStr
+      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+      .replace(/[^\d/]/g, "");
+    const cleanT = timeStr
+      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+      .replace(/[^\d:]/g, "");
+
+    const dp = cleanD.split("/");
+    const tp = cleanT.split(":");
+    if (dp.length < 3 || tp.length < 2) return null;
+
+    const jy = parseInt(dp[0], 10);
+    const jm = parseInt(dp[1], 10);
+    const jd = parseInt(dp[2], 10);
+
+    const th = parseInt(tp[0], 10);
+    const tm = parseInt(tp[1], 10);
+    const ts = tp[2] ? parseInt(tp[2], 10) : 0;
+
+    const [gy, gm, gd] = jalaliToGregorian_(jy, jm, jd);
+    return new Date(gy, gm - 1, gd, th, tm, ts);
+  } catch (e) {
+    return null;
+  }
 }

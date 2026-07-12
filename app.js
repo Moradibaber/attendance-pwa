@@ -209,8 +209,29 @@ async function registerForPushNotifications() {
     const messaging = getFirebaseMessaging_();
     if (!messaging) return;
 
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    // Report current status FIRST, whatever it is (granted/denied/default) -
+    // this is what lets the admin see "who denied" in the sheet even when
+    // there's no token at all.
+    await reportPushStatus_(profile.personnelCode, Notification.permission);
+
+    if (Notification.permission === "denied") {
+      // Can't re-trigger the native prompt - the browser blocks that on
+      // purpose. Show a recurring in-app reminder instead, every time the
+      // app opens, until the user fixes it themselves in OS settings.
+      showPushDeniedBanner();
+      return;
+    }
+
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") return;
+    await reportPushStatus_(profile.personnelCode, permission);
+
+    if (permission !== "granted") {
+      if (permission === "denied") showPushDeniedBanner();
+      return;
+    }
 
     const swRegistration = await navigator.serviceWorker.ready;
 
@@ -220,9 +241,6 @@ async function registerForPushNotifications() {
     });
 
     if (!token) return;
-
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile || !profile.personnelCode) return;
 
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
@@ -236,6 +254,63 @@ async function registerForPushNotifications() {
   } catch (err) {
     console.error("Push registration failed:", err);
   }
+}
+
+async function reportPushStatus_(personnelCode, permissionStatus) {
+  try {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone =
+      window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "ReportPushStatus",
+        personnelCode: personnelCode,
+        permissionStatus: permissionStatus,
+        platform: isIOS ? "iOS" : (/Android/.test(navigator.userAgent) ? "Android" : "Other"),
+        isStandalone: !!isStandalone
+      })
+    });
+  } catch (err) {
+    console.error("reportPushStatus_ failed:", err);
+  }
+}
+
+function showPushDeniedBanner() {
+  if (document.getElementById("push-denied-banner")) return;
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  const banner = document.createElement("div");
+  banner.id = "push-denied-banner";
+  banner.style.cssText =
+    "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;" +
+    "background:#7c2d12;color:#fff;padding:14px 16px;border-radius:14px;" +
+    "font-size:14px;line-height:1.7;box-shadow:0 6px 20px rgba(0,0,0,.35);" +
+    "direction:rtl;text-align:right;";
+
+  const steps = isIOS
+    ? "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← فعال کردن Allow Notifications. اگر در لیست نبود، آیکون اپ را از صفحه اصلی حذف کنید، سپس از Safari دوباره Add to Home Screen بزنید."
+    : "تنظیمات گوشی ← اعلان‌ها (Notifications) ← این مرورگر/اپلیکیشن ← فعال کردن اعلان‌ها.";
+
+  banner.innerHTML =
+    '<div style="font-weight:700;margin-bottom:6px;">⚠️ اعلان‌ها غیرفعال است</div>' +
+    "<div>بدون فعال بودن اعلان‌ها، سیستم نمی‌تواند اتصال شما به اینترنت را در پس‌زمینه ثبت کند. " +
+    steps +
+    "</div>" +
+    '<button id="push-denied-dismiss" style="margin-top:10px;background:#fff;color:#7c2d12;border:none;' +
+    'border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;">متوجه شدم</button>';
+
+  document.body.appendChild(banner);
+
+  document.getElementById("push-denied-dismiss")?.addEventListener("click", () => {
+    banner.remove();
+    // Not permanently dismissed - it'll show again next time the app opens
+    // as long as permission is still denied, so it can't be forgotten.
+  });
 }
 
 function showGpsToast(message, duration = 3000, type = "success") {

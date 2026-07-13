@@ -122,7 +122,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند و به برنامه دسترسی های لازم- پذیرفتن،Allow داده شود ", 5000, "error");
       } catch (_) {}
-    }, 4200);
+    }, 5200);
   } catch (_) {}
 
   try {

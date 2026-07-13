@@ -230,7 +230,6 @@ async function registerForPushNotifications() {
     await reportPushStatus_(profile.personnelCode, Notification.permission);
 
     if (Notification.permission === "denied") {
-      showPushDeniedBanner();
       return;
     }
 
@@ -244,7 +243,6 @@ async function registerForPushNotifications() {
     await reportPushStatus_(profile.personnelCode, permission);
 
     if (permission !== "granted") {
-      if (permission === "denied") showPushDeniedBanner();
       return;
     }
 
@@ -274,6 +272,10 @@ async function registerForPushNotifications() {
     try {
       await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));
     } catch (_) {}
+  } finally {
+    // همیشه در پایان اجرا می‌شود، صرف‌نظر از این‌که کدام مسیر بالا طی شده -
+    // این تنها جایی است که وضعیت قفل دکمه «ذخیره مشخصات» به‌روزرسانی می‌شود.
+    enforceNotificationGate();
   }
 }
 
@@ -313,39 +315,80 @@ async function reportPushStatus_(personnelCode, permissionStatus) {
   }
 }
 
-function showPushDeniedBanner() {
-  if (document.getElementById("push-denied-banner")) return;
+let notificationGateOverlay_ = null;
 
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
-  const banner = document.createElement("div");
-  banner.id = "push-denied-banner";
-  banner.style.cssText =
-    "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;" +
-    "background:#7c2d12;color:#fff;padding:14px 16px;border-radius:14px;" +
-    "font-size:14px;line-height:1.7;box-shadow:0 6px 20px rgba(0,0,0,.35);" +
-    "direction:rtl;text-align:right;";
-
-  const steps = isIOS
-    ? "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← فعال کردن Allow Notifications. اگر در لیست نبود، آیکون اپ را از صفحه اصلی حذف کنید، سپس از Safari دوباره Add to Home Screen بزنید."
-    : "تنظیمات گوشی ← اعلان‌ها (Notifications) ← این مرورگر/اپلیکیشن ← فعال کردن اعلان‌ها.";
-
-  banner.innerHTML =
-    '<div style="font-weight:700;margin-bottom:6px;">⚠️ اعلان‌ها غیرفعال است</div>' +
-    "<div>بدون فعال بودن اعلان‌ها، سیستم نمی‌تواند اتصال شما به اینترنت را در پس‌زمینه ثبت کند. " +
-    steps +
-    "</div>" +
-    '<button id="push-denied-dismiss" style="margin-top:10px;background:#fff;color:#7c2d12;border:none;' +
-    'border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;">متوجه شدم</button>';
-
-  document.body.appendChild(banner);
-
-  document.getElementById("push-denied-dismiss")?.addEventListener("click", () => {
-    banner.remove();
-    // Not permanently dismissed - it'll show again next time the app opens
-    // as long as permission is still denied, so it can't be forgotten.
+function positionGateOverlay_() {
+  if (!notificationGateOverlay_) return;
+  const btn = document.getElementById("saveProfileBtn");
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+  Object.assign(notificationGateOverlay_.style, {
+    position: "fixed",
+    top: rect.top + "px",
+    left: rect.left + "px",
+    width: rect.width + "px",
+    height: rect.height + "px"
   });
 }
+
+// جایگزین بنر گوشه‌ی صفحه: دقیقا روی دکمه «ذخیره مشخصات» قرار می‌گیرد و آن
+// را غیرفعال می‌کند تا کاربر نتواند هیچ کاری انجام دهد مگر اینکه اعلان‌ها را
+// واقعا فعال کند - نه صرفا این پیام را ببندد.
+function enforceNotificationGate() {
+  const btn = document.getElementById("saveProfileBtn");
+  if (!btn) return;
+
+  const hasNotificationApi = "Notification" in window;
+  const shouldBlock = hasNotificationApi && Notification.permission === "denied";
+
+  if (!shouldBlock) {
+    btn.disabled = false;
+    if (notificationGateOverlay_) {
+      notificationGateOverlay_.remove();
+      notificationGateOverlay_ = null;
+      window.removeEventListener("scroll", positionGateOverlay_, true);
+      window.removeEventListener("resize", positionGateOverlay_);
+    }
+    return;
+  }
+
+  btn.disabled = true;
+
+  if (!notificationGateOverlay_) {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const steps = isIOS
+      ? "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← فعال کردن Allow Notifications."
+      : "تنظیمات گوشی ← اعلان‌ها ← این مرورگر/اپلیکیشن ← فعال کردن اعلان‌ها.";
+
+    const overlay = document.createElement("div");
+    overlay.id = "notification-gate-overlay";
+    overlay.style.cssText =
+      "z-index:99998;background:#7c2d12;color:#fff;border-radius:10px;" +
+      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+      "text-align:center;padding:6px 8px;font-size:11px;line-height:1.4;direction:rtl;" +
+      "box-shadow:0 4px 14px rgba(0,0,0,.4);";
+    overlay.innerHTML =
+      '<div style="font-weight:700;">⚠️ برای ادامه، اعلان‌ها را فعال کنید</div>' +
+      '<div style="font-size:9.5px;margin-top:2px;">' + steps + "</div>" +
+      '<button id="notification-gate-recheck" style="margin-top:5px;background:#fff;color:#7c2d12;' +
+      'border:none;border-radius:6px;padding:3px 12px;font-size:10.5px;font-weight:700;">بررسی مجدد</button>';
+
+    document.body.appendChild(overlay);
+    notificationGateOverlay_ = overlay;
+
+    document.getElementById("notification-gate-recheck")?.addEventListener("click", enforceNotificationGate);
+    window.addEventListener("scroll", positionGateOverlay_, true);
+    window.addEventListener("resize", positionGateOverlay_);
+  }
+
+  positionGateOverlay_();
+}
+
+// وقتی کاربر از تنظیمات گوشی برمی‌گردد (بعد از فعال کردن اعلان‌ها)، این
+// رویداد اجازه می‌دهد قفل بدون نیاز به لمس دکمه «بررسی مجدد» خودش باز شود.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) enforceNotificationGate();
+});
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");
@@ -826,7 +869,21 @@ async function startAttendanceCapture() {
     return;
   }
 
-  await saveProfileSilent();
+  // مشخصات باید قبلا و به‌صراحت با دکمه «ذخیره مشخصات» ذخیره شده باشد و
+  // دقیقا با مقادیر فعلی فیلدها یکی باشد. اگر کاربر مشخصات را تغییر داده
+  // ولی هنوز ذخیره نکرده، اجازه ثبت تردد داده نمی‌شود.
+  const savedProfile = await dbGet(STORE_PROFILE, "main");
+  const isConfirmed =
+    savedProfile &&
+    savedProfile.personnelCode === personnelCode &&
+    savedProfile.firstName === firstName &&
+    savedProfile.lastName === lastName;
+
+  if (!isConfirmed) {
+    setStatus("لطفا ابتدا مشخصات پرسنلی را با دکمه «ذخیره مشخصات» تایید کنید.");
+    showGpsToast("⚠️ ابتدا مشخصات را ذخیره کنید", 3000, "warning");
+    return;
+  }
 
   const { gate } = await getCurrentAttendanceGate();
   if (!gate.ok) {

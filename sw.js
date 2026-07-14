@@ -1,5 +1,12 @@
-const CACHE_NAME = "attendance-pwa-v64";
-const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
+const CACHE_NAME = "attendance-pwa-v63";
+const FILES = [
+  "./",
+  "index.html",
+  "styles.css",
+  "app.js?v=63",
+  "manifest.json?v=2",
+  "cover-rights-reserved.png"
+];
 
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;

@@ -120,9 +120,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     setTimeout(() => {
       try {
-        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند و به برنامه دسترسی های لازم- پذیرفتن،Allow داده شود ", 5000, "error");
+        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند", 5000, "error");
       } catch (_) {}
-    }, 5200);
+    }, 4200);
   } catch (_) {}
 
   try {
@@ -224,10 +224,11 @@ async function registerForPushNotifications() {
       return;
     }
 
-    // Always report status FIRST, independent of whether Firebase itself
-    // works - this is what makes a failure visible in PushTokens instead
-    // of a totally silent no-op.
-    await reportPushStatus_(profile.personnelCode, Notification.permission);
+    // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
+    // منتظر ماندن برای پاسخ شبکه. گزارش وضعیت به سرور در پس‌زمینه انجام
+    // می‌شود و تاخیر شبکه دیگر روی سرعت نمایش/رفع قفل تاثیری ندارد.
+    enforceNotificationGate();
+    reportPushStatus_(profile.personnelCode, Notification.permission).catch(() => {});
 
     if (Notification.permission === "denied") {
       return;
@@ -235,12 +236,13 @@ async function registerForPushNotifications() {
 
     const messaging = await getFirebaseMessaging_();
     if (!messaging) {
-      await reportPushStatus_(profile.personnelCode, "unsupported_firebase_init_failed");
+      reportPushStatus_(profile.personnelCode, "unsupported_firebase_init_failed").catch(() => {});
       return;
     }
 
     const permission = await Notification.requestPermission();
-    await reportPushStatus_(profile.personnelCode, permission);
+    enforceNotificationGate();
+    reportPushStatus_(profile.personnelCode, permission).catch(() => {});
 
     if (permission !== "granted") {
       return;
@@ -1339,6 +1341,12 @@ async function fetchMessages() {
     const profile = await dbGet(STORE_PROFILE, "main");
     if (!profile || !profile.personnelCode) return;
 
+    // اگر بعد از رفرش صفحه هنوز پیام آخرین تاییدشده بارگذاری نشده، از
+    // پروفایل ذخیره‌شده بخوان تا همان پیام دوباره نمایش داده نشود.
+    if (lastAdminMessage === null && profile.lastConfirmedMessage) {
+      lastAdminMessage = profile.lastConfirmedMessage;
+    }
+
     const pCode = encodeURIComponent(profile.personnelCode.toString().trim());
     const url = `${APPS_SCRIPT_URL}?action=getMessages&personnelCode=${pCode}&_=${Date.now()}`;
 
@@ -1462,16 +1470,28 @@ function showAdminMessage(message) {
   `;
   btn.textContent = "تایید";
 
-  const dismiss = async (e) => {
+  const dismiss = (e) => {
     e.preventDefault();
+    if (btn.disabled) return; // جلوگیری از اجرای دوباره در صورت شلیک همزمان رویدادها
     btn.disabled = true;
-    try {
-      await sendMessageReadReceipt(message);
-    } catch (_) {}
+
+    // بستن فوری صفحه - بدون منتظر ماندن برای پاسخ شبکه
     overlay.remove();
+    lastAdminMessage = message;
+
+    // ذخیره تایید و ارسال رسید در پس‌زمینه - تاخیر شبکه دیگر تاثیری روی
+    // بسته شدن صفحه ندارد
+    (async () => {
+      try {
+        const profile = await dbGet(STORE_PROFILE, "main");
+        if (profile) await dbPut(STORE_PROFILE, { ...profile, lastConfirmedMessage: message });
+      } catch (_) {}
+      try {
+        await sendMessageReadReceipt(message);
+      } catch (_) {}
+    })();
   };
-  btn.addEventListener("click", dismiss, { passive: false });
-  btn.addEventListener("touchstart", dismiss, { passive: false });
+  btn.addEventListener("click", dismiss, { passive: false, once: true });
 
   container.appendChild(title);
   container.appendChild(body);

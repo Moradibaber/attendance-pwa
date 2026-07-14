@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v62";
+const CACHE_NAME = "attendance-pwa-v63";
 const FILES = ["./", "index.html", "styles.css", "app.js", "manifest.json"];
 
 const DB_NAME = "attendance-pwa-db";
@@ -7,8 +7,17 @@ const STORE_RECORDS = "records";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(FILES);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // fetch با {cache:'reload'} به‌جای cache.addAll معمولی - این تضمین
+      // می‌کند که کش مرورگر/GitHub Pages دور زده شود و همیشه آخرین نسخه
+      // واقعی فایل‌ها از شبکه گرفته شود، حتی اگر هدرهای HTTP کش قدیمی
+      // را مجاز بدانند.
+      await Promise.all(
+        FILES.map(async (url) => {
+          const response = await fetch(url, { cache: "reload" });
+          await cache.put(url, response);
+        })
+      );
     })
   );
 

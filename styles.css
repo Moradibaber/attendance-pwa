@@ -27,8 +27,6 @@ body.modal-open{overflow:hidden}
   text-align:center;
 }
 
-#recordBtn{display:none !important}
-
 .card{
   background:var(--card) !important;
   border:1px solid var(--border) !important;
@@ -668,7 +666,7 @@ button{
   .preview,
   .form-hero-image,
   .photo-row img{
-اگر منظورت از **weight** حجم    max-width:60vw !important;
+    max-width:60vw !important;
     max-height:140px !important;
   }
 }

@@ -240,7 +240,7 @@
       <h2>ثبت تردد</h2>
       <input id="photoInput" type="file" accept="image/*" capture="user" />
       <div class="camera-row">
-        <label for="photoInput" class="camera-btn">
+        <label for="photoInput" id="recordBtn" class="camera-btn">
           <span class="cam-ico"></span>
           <span>عکس سلفی خود را بگیرید</span>
         </label>
@@ -267,9 +267,8 @@
     </section>
   </main>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
-<script src="app.js"></script>
-  <script src="app.js?v=57"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+  <script src="app.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => {

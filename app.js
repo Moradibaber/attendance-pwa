@@ -318,10 +318,11 @@ async function reportPushStatus_(personnelCode, permissionStatus) {
 }
 
 let notificationGateOverlay_ = null;
+const NOTIFICATION_GATE_TARGET_ID = "recordBtn"; // قفل روی دکمه «عکس سلفی خود را بگیرید»
 
 function positionGateOverlay_() {
   if (!notificationGateOverlay_) return;
-  const btn = document.getElementById("saveProfileBtn");
+  const btn = document.getElementById(NOTIFICATION_GATE_TARGET_ID);
   if (!btn) return;
   const rect = btn.getBoundingClientRect();
   Object.assign(notificationGateOverlay_.style, {
@@ -333,11 +334,10 @@ function positionGateOverlay_() {
   });
 }
 
-// جایگزین بنر گوشه‌ی صفحه: دقیقا روی دکمه «ذخیره مشخصات» قرار می‌گیرد و آن
-// را غیرفعال می‌کند تا کاربر نتواند هیچ کاری انجام دهد مگر اینکه اعلان‌ها را
-// واقعا فعال کند - نه صرفا این پیام را ببندد.
+// دقیقا روی دکمه «عکس سلفی خود را بگیرید» قرار می‌گیرد و آن را غیرفعال
+// می‌کند تا کاربر نتواند تردد ثبت کند مگر اینکه اعلان‌ها را واقعا فعال کند.
 function enforceNotificationGate() {
-  const btn = document.getElementById("saveProfileBtn");
+  const btn = document.getElementById(NOTIFICATION_GATE_TARGET_ID);
   if (!btn) return;
 
   const hasNotificationApi = "Notification" in window;
@@ -476,10 +476,33 @@ function escapeHtml(v) {
    Events
 ========================= */
 
+function injectWorkLocationField() {
+  const recordBtn = $("recordBtn");
+  if (!recordBtn || document.getElementById("workLocationInput")) return;
+
+  const wrapper = document.createElement("div");
+  wrapper.style.cssText = "margin-bottom:10px;";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = "workLocationInput";
+  input.placeholder = "محل عملیات";
+  input.maxLength = 20;
+  input.autocomplete = "off";
+  input.style.cssText =
+    "width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;" +
+    "border:1.5px solid #64b5f6;font-size:15px;text-align:center;direction:rtl;" +
+    "font-family:inherit;background:#fff;";
+
+  wrapper.appendChild(input);
+  recordBtn.parentNode.insertBefore(wrapper, recordBtn);
+}
+
 function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
   $("recordBtn")?.addEventListener("click", startAttendanceCapture);
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
+  injectWorkLocationField();
 
   const cameraBtn = $("cameraBtn");
   const photoInput = $("photoInput");
@@ -887,6 +910,24 @@ async function startAttendanceCapture() {
     return;
   }
 
+  // دفاع دوم، مستقل از قفل بصری روی دکمه: حتی اگر به هر دلیلی روکش قفل دور
+  // زده شود، ارسال واقعی تردد در صورت غیرفعال بودن اعلان‌ها اینجا هم متوقف
+  // می‌شود.
+  if ("Notification" in window && Notification.permission === "denied") {
+    setStatus("برای ثبت تردد، ابتدا باید اعلان‌ها را در تنظیمات گوشی فعال کنید.");
+    enforceNotificationGate();
+    return;
+  }
+
+  const workLocationEl = document.getElementById("workLocationInput");
+  const workLocation = (workLocationEl?.value || "").trim();
+  if (workLocation.length < 5 || workLocation.length > 20) {
+    setStatus("محل عملیات را وارد کنید (حداقل ۵ و حداکثر ۲۰ کاراکتر).");
+    showGpsToast("⚠️ محل عملیات را کامل کنید", 3000, "warning");
+    workLocationEl?.focus();
+    return;
+  }
+
   const { gate } = await getCurrentAttendanceGate();
   if (!gate.ok) {
     setStatus(gate.message);
@@ -1061,6 +1102,7 @@ async function createRecord(type) {
     recordDate: jalaliDateStr,
     recordHour: hourStr,
     recordTime: hourStr,
+    workLocation: (document.getElementById("workLocationInput")?.value || "").trim(),
 
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
@@ -1745,8 +1787,8 @@ function compressImage(file) {
       const img = new Image();
 
       img.onload = () => {
-        const OUT_W = 400;
-        const OUT_H = 600;
+        const OUT_W = 300;
+        const OUT_H = 450;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
@@ -1774,7 +1816,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.6
+          0.5
         );
       };
 

@@ -500,7 +500,15 @@ function injectWorkLocationField() {
 
 function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
-  $("recordBtn")?.addEventListener("click", startAttendanceCapture);
+  // "recordBtn" یک <label for="photoInput"> است، نه یک <button> ساده - به
+  // صورت پیش‌فرض کلیک روی آن مستقیما و بدون اجرای هیچ جاوااسکریپتی ورودی
+  // فایل را باز می‌کند. با preventDefault جلوی این رفتار پیش‌فرض گرفته
+  // می‌شود تا اعتبارسنجی‌های startAttendanceCapture واقعا اجرا شوند؛ اگر
+  // همه‌چیز تایید شد، خود آن تابع در پایان photoInput.click() را صدا می‌زند.
+  $("recordBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    startAttendanceCapture();
+  });
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
   injectWorkLocationField();
 

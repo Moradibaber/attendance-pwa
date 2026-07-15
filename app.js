@@ -936,11 +936,19 @@ async function startAttendanceCapture() {
     return;
   }
 
-  const { gate } = await getCurrentAttendanceGate();
+  // برای باز شدن سریع دوربین، از آخرین سیاست ذخیره‌شده (بدون تاخیر شبکه)
+  // استفاده می‌کنیم و بروزرسانی واقعی را در پس‌زمینه انجام می‌دهیم - این
+  // تاخیر محسوسی که قبلا بین کلیک و باز شدن دوربین وجود داشت را حذف می‌کند.
+  const policyInfo = await getAttendancePolicyInfo();
+  const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+  const gate = evaluateAttendancePolicy(policy, navigator.onLine);
+
   if (!gate.ok) {
     setStatus(gate.message);
     return;
   }
+
+  if (navigator.onLine) refreshPolicyIfPossible().catch(() => {});
 
   captureStartedAtMs = Date.now();
   photoSelectedAtMs = 0;
@@ -1332,6 +1340,7 @@ function buildServerPayload(record) {
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0),
+    workLocation: record.workLocation || "",
   };
 }
 

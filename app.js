@@ -35,6 +35,14 @@ let syncRunning = false;
 let syncTimer = null;
 let lastAdminMessage = null;
 
+// کش حافظه‌ای پروفایل و سیاست تردد - هدف این است که در لحظه کلیک روی دکمه
+// دوربین، هیچ await ای قبل از فراخوانی photoInput.click() وجود نداشته باشد.
+// در iOS Safari حتی چند await سریع IndexedDB هم می‌تواند «فعال‌سازی کاربر»
+// (user activation) لازم برای باز شدن دوربین را از بین ببرد و باعث شود
+// دوربین اصلا باز نشود، بدون هیچ خطایی.
+let cachedProfile_ = null;
+let cachedPolicyInfo_ = null;
+
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
@@ -680,6 +688,8 @@ async function loadProfile() {
   const p = await dbGet(STORE_PROFILE, "main");
   if (!p) return;
 
+  cachedProfile_ = p;
+
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
   if ($("firstName")) $("firstName").value = p.firstName || "";
   if ($("lastName")) $("lastName").value = p.lastName || "";
@@ -690,6 +700,7 @@ async function saveProfileSilent() {
     const profile = getProfileFromInputs();
     if (!profile.personnelCode || !profile.firstName || !profile.lastName) throw new Error("مشخصات پرسنلی کامل نیست.");
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    cachedProfile_ = { id: "main", ...profile };
     await refreshPolicyIfPossible();
     await fetchMessages();
     registerForPushNotifications();
@@ -745,6 +756,7 @@ async function saveProfile() {
     }
 
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    cachedProfile_ = { id: "main", ...profile };
     await loadProfile();
     registerForPushNotifications();
     setTimeout(() => {
@@ -803,7 +815,7 @@ function evaluateAttendancePolicy(policy, isOnline) {
 async function getAttendancePolicyInfo() {
   const policy = await dbGet(STORE_CONFIG, "attendancePolicy");
   if (!policy) {
-    return {
+    const fallback = {
       id: "attendancePolicy",
       personnelCode: "",
       attendancePolicy: DEFAULT_ATTENDANCE_POLICY,
@@ -811,19 +823,24 @@ async function getAttendancePolicyInfo() {
       policyFetchedAt: "",
       policySource: "default",
     };
+    cachedPolicyInfo_ = fallback;
+    return fallback;
   }
+  cachedPolicyInfo_ = policy;
   return policy;
 }
 
 async function saveAttendancePolicyInfo(data) {
-  await dbPut(STORE_CONFIG, {
+  const toSave = {
     id: "attendancePolicy",
     personnelCode: data.personnelCode || "",
     attendancePolicy: normalizeAttendancePolicy(data.attendancePolicy),
     policyVersion: Number(data.policyVersion || 0),
     policyFetchedAt: data.policyFetchedAt || "",
     policySource: data.policySource || "",
-  });
+  };
+  await dbPut(STORE_CONFIG, toSave);
+  cachedPolicyInfo_ = toSave;
 }
 
 async function ensurePolicyLoadedAtStartup() {
@@ -892,7 +909,7 @@ async function getCurrentAttendanceGate() {
    Attendance Capture
 ========================= */
 
-async function startAttendanceCapture() {
+function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
   const lastName = $("lastName")?.value.trim() || "";
@@ -903,14 +920,14 @@ async function startAttendanceCapture() {
   }
 
   // مشخصات باید قبلا و به‌صراحت با دکمه «ذخیره مشخصات» ذخیره شده باشد و
-  // دقیقا با مقادیر فعلی فیلدها یکی باشد. اگر کاربر مشخصات را تغییر داده
-  // ولی هنوز ذخیره نکرده، اجازه ثبت تردد داده نمی‌شود.
-  const savedProfile = await dbGet(STORE_PROFILE, "main");
+  // دقیقا با مقادیر فعلی فیلدها یکی باشد. از کش حافظه‌ای استفاده می‌شود
+  // (نه dbGet) تا هیچ await ای قبل از باز شدن دوربین وجود نداشته باشد -
+  // در غیر این صورت در iOS Safari دوربین اصلا باز نمی‌شود.
   const isConfirmed =
-    savedProfile &&
-    savedProfile.personnelCode === personnelCode &&
-    savedProfile.firstName === firstName &&
-    savedProfile.lastName === lastName;
+    cachedProfile_ &&
+    cachedProfile_.personnelCode === personnelCode &&
+    cachedProfile_.firstName === firstName &&
+    cachedProfile_.lastName === lastName;
 
   if (!isConfirmed) {
     setStatus("لطفا ابتدا مشخصات پرسنلی را با دکمه «ذخیره مشخصات» تایید کنید.");
@@ -936,10 +953,9 @@ async function startAttendanceCapture() {
     return;
   }
 
-  // برای باز شدن سریع دوربین، از آخرین سیاست ذخیره‌شده (بدون تاخیر شبکه)
-  // استفاده می‌کنیم و بروزرسانی واقعی را در پس‌زمینه انجام می‌دهیم - این
-  // تاخیر محسوسی که قبلا بین کلیک و باز شدن دوربین وجود داشت را حذف می‌کند.
-  const policyInfo = await getAttendancePolicyInfo();
+  // از کش حافظه‌ای سیاست تردد استفاده می‌شود (بدون await) تا زنجیره
+  // فعال‌سازی کاربر که برای باز شدن دوربین لازم است حفظ شود.
+  const policyInfo = cachedPolicyInfo_ || { attendancePolicy: DEFAULT_ATTENDANCE_POLICY };
   const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
   const gate = evaluateAttendancePolicy(policy, navigator.onLine);
 

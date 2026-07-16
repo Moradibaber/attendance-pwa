@@ -1,7 +1,7 @@
 const CACHE_NAME = "attendance-pwa-v70";
 const FILES = [
   "./",
-  "index.html",
+  "index.html", 
   "styles.css",
   "app.js?v=63",
   "manifest.json?v=2",

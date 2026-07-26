@@ -508,35 +508,22 @@ function injectWorkLocationField() {
 
 function bindEvents() {
   $("saveProfileBtn")?.addEventListener("click", saveProfile);
-  // "recordBtn" یک <label for="photoInput"> است، نه یک <button> ساده - به
-  // صورت پیش‌فرض کلیک روی آن مستقیما و بدون اجرای هیچ جاوااسکریپتی ورودی
-  // فایل را باز می‌کند. با preventDefault جلوی این رفتار پیش‌فرض گرفته
-  // می‌شود تا اعتبارسنجی‌های startAttendanceCapture واقعا اجرا شوند؛ اگر
-  // همه‌چیز تایید شد، خود آن تابع در پایان photoInput.click() را صدا می‌زند.
+
+  // Main attendance button
   $("recordBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
     startAttendanceCapture();
   });
+
+  // Old file input (keep for safety, but we no longer use it)
   $("photoInput")?.addEventListener("change", handlePhotoSelected);
-  injectWorkLocationField();
 
-  const cameraBtn = $("cameraBtn");
-  const photoInput = $("photoInput");
-
-  if (cameraBtn && photoInput) {
-    const openCamera = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      photoInput.value = "";
-      photoInput.click();
-    };
-      $("captureBtn")?.addEventListener("click", captureFromVideo);
+  // New live camera buttons
+  $("captureBtn")?.addEventListener("click", captureFromVideo);
   $("cancelCameraBtn")?.addEventListener("click", closeCamera);
-    cameraBtn.addEventListener("click", openCamera);
-    cameraBtn.addEventListener("touchend", openCamera, { passive: false });
-  }
-}
 
+  injectWorkLocationField();
+}
 /* =========================
    Auto Sync
 ========================= */
@@ -989,9 +976,9 @@ function startAttendanceCapture() {
   // setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
   setStatus("لطفاً گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید و فقط صورت خود را در کادر قرار دهید. نزدیک نکنید.");
 
-    // ===== NEW: Open forced front camera instead of native file input =====
+     // ===== Open forced front camera =====
   setStatus("در حال باز کردن دوربین سلفی...");
-  await openFrontCamera();
+  openFrontCamera();
 }
 
 async function handlePhotoSelected() {

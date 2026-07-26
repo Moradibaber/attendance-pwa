@@ -985,7 +985,9 @@ function startAttendanceCapture() {
   }
 
   photoInput.value = "";
-  setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+  // setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
+  setStatus("لطفاً گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید و فقط صورت خود را در کادر قرار دهید. نزدیک نکنید.");
+
   photoInput.click();
 }
 

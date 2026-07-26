@@ -198,7 +198,20 @@
   .splash-card {
     text-align: center;
   }
+records {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
 
+.records::-webkit-scrollbar {
+  width: 6px;
+}
+
+.records::-webkit-scrollbar-thumb {
+  background: #c5a88d;
+  border-radius: 10px;
+}
   .splash-card img {
     max-width: 220px;
     border-radius: 14px;
@@ -271,9 +284,9 @@
     </section>
 
     <section class="card">
-      <h2>ترددهای اخیر</h2>
-      <div id="recordsList" class="records"></div>
-    </section>
+  <h2>ترددهای اخیر</h2>
+  <div id="recordsList" class="records" style="max-height: 220px; overflow-y: auto; padding-right: 4px;"></div>
+</section>
 
     <p style="text-align:center; font-size:11px; color:#5c3e21; opacity:.75; margin:10px 0 4px;">
       ⓒ 2026 Designed &amp; Developed by Mohamad Moradi Babersad

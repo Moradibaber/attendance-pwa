@@ -34,7 +34,7 @@ let pendingLocation = null;
 let syncRunning = false;
 let syncTimer = null;
 let lastAdminMessage = null;
-
+let cameraStream = null;
 // کش حافظه‌ای پروفایل و سیاست تردد - هدف این است که در لحظه کلیک روی دکمه
 // دوربین، هیچ await ای قبل از فراخوانی photoInput.click() وجود نداشته باشد.
 // در iOS Safari حتی چند await سریع IndexedDB هم می‌تواند «فعال‌سازی کاربر»
@@ -530,7 +530,8 @@ function bindEvents() {
       photoInput.value = "";
       photoInput.click();
     };
-
+      $("captureBtn")?.addEventListener("click", captureFromVideo);
+  $("cancelCameraBtn")?.addEventListener("click", closeCamera);
     cameraBtn.addEventListener("click", openCamera);
     cameraBtn.addEventListener("touchend", openCamera, { passive: false });
   }
@@ -988,7 +989,9 @@ function startAttendanceCapture() {
   // setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
   setStatus("لطفاً گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید و فقط صورت خود را در کادر قرار دهید. نزدیک نکنید.");
 
-  photoInput.click();
+    // ===== NEW: Open forced front camera instead of native file input =====
+  setStatus("در حال باز کردن دوربین سلفی...");
+  await openFrontCamera();
 }
 
 async function handlePhotoSelected() {
@@ -1863,7 +1866,156 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
+/* =========================
+   Live Front Camera (forced)
+========================= */
 
+async function openFrontCamera() {
+  const overlay = $("cameraOverlay");
+  const video = $("cameraVideo");
+
+  if (!overlay || !video) {
+    setStatus("خطا: المان دوربین پیدا نشد");
+    return;
+  }
+
+  try {
+    // Stop any previous stream
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: { exact: "user" },   // FORCE front camera only
+        width:  { ideal: 640 },
+        height: { ideal: 480 }
+      }
+    };
+
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = cameraStream;
+
+    overlay.style.display = "flex";
+    setStatus("دوربین سلفی آماده است. عکس بگیرید.");
+  } catch (err) {
+    console.error("Camera error:", err);
+    setStatus("نمی‌توان دوربین سلفی را باز کرد. لطفاً دسترسی دوربین را مجاز کنید.");
+    closeCamera();
+  }
+}
+
+function closeCamera() {
+  const overlay = $("cameraOverlay");
+  const video = $("cameraVideo");
+
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  if (video) video.srcObject = null;
+  if (overlay) overlay.style.display = "none";
+}
+
+function captureFromVideo() {
+  const video = $("cameraVideo");
+  if (!video || !video.videoWidth) {
+    setStatus("ویدیو هنوز آماده نیست");
+    return;
+  }
+
+  // Create a canvas and draw the current video frame
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
+
+  // Convert to blob → File (so we can reuse the existing compressImage function)
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
+      setStatus("خطا در گرفتن عکس");
+      return;
+    }
+
+    closeCamera();
+
+    // Create a fake File object so the rest of your code works unchanged
+    const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+
+    // From here we continue exactly like the old handlePhotoSelected
+    await processCapturedPhoto(file);
+  }, "image/jpeg", 0.85);
+}
+
+/**
+ * This function contains the same logic that was previously in handlePhotoSelected
+ * after the file was selected. We reuse it so nothing else breaks.
+ */
+async function processCapturedPhoto(file) {
+  try {
+    setBusy(true, "در حال آماده‌سازی عکس...");
+    photoSelectedAtMs = Date.now();
+
+    await saveProfileSilent();
+
+    const { gate } = await getCurrentAttendanceGate();
+    if (!gate.ok) {
+      setBusy(false);
+      setStatus(gate.message);
+      currentPhoto = "";
+      return;
+    }
+
+    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
+
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setBusy(false);
+      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      return;
+    }
+
+    setBusy(true, "در حال دریافت GPS...");
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    pendingLocation = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(pendingLocation)) {
+      setBusy(false);
+      if (pendingLocation?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "unavailable") {
+        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "timeout") {
+        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        return;
+      }
+      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      return;
+    }
+
+    setBusy(true, "در حال ذخیره تردد...");
+    await createRecord("تردد");
+    setBusy(false);
+  } catch (err) {
+    console.error(err);
+    setBusy(false);
+    setStatus("خطا در پردازش عکس یا ثبت تردد");
+  }
+}
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

@@ -1,4 +1,4 @@
-/* FILE: /app.js */
+/* FILE: /app.js */ 
 /* REPLACE FULL FILE */
 
 const DB_NAME = "attendance-pwa-db";

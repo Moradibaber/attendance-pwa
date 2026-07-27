@@ -2017,6 +2017,52 @@ function captureFromVideo() {
 /**
  * Same logic that was previously in handlePhotoSelected after the file was selected.
  */
+/**
+ * Very simple heuristic to catch many laptop/phone screen photos.
+ * Screens usually have higher average brightness and lower texture variation.
+ */
+function isProbablyScreenPhoto_(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const size = 120;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+
+        let sum = 0;
+        let sumSq = 0;
+        let count = 0;
+
+        // sample every 4th pixel
+        for (let i = 0; i < data.length; i += 16) {
+          const r = data[i], g = data[i+1], b = data[i+2];
+          const bright = (r + g + b) / 3;
+          sum += bright;
+          sumSq += bright * bright;
+          count++;
+        }
+
+        const mean = sum / count;
+        const variance = (sumSq / count) - (mean * mean);
+
+        // Screens are often brighter and have lower overall variance
+        const isScreen = mean > 145 && variance < 1800;
+
+        console.log("Screen check → mean:", mean.toFixed(1), "variance:", variance.toFixed(0), "→", isScreen);
+        resolve(isScreen);
+      } catch (e) {
+        resolve(false);
+      }
+    };
+    img.onerror = () => resolve(false);
+    img.src = dataUrl;
+  });
+}
 async function processCapturedPhoto(file) {
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
@@ -2034,6 +2080,18 @@ async function processCapturedPhoto(file) {
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
+        // Simple anti-screen check (rejects many laptop / phone screen photos)
+    try {
+      const isScreenLike = await isProbablyScreenPhoto_(currentPhoto);
+      if (isScreenLike) {
+        setBusy(false);
+        setStatus("عکس نامعتبر است (احتمال عکس از روی صفحه نمایش).\nلطفاً فقط از چهره واقعی عکس بگیرید.");
+        currentPhoto = "";
+        return;
+      }
+    } catch (e) {
+      console.warn("screen check failed", e);
+    }
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");

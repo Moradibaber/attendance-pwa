@@ -1345,6 +1345,7 @@ function buildServerPayload(record) {
     policyFetchedAt: record.policyFetchedAt || "",
     policySource: record.policySource || "",
     photo: record.photo || "",
+    photo2: record.photo2 || "",
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0),

@@ -1860,9 +1860,13 @@ function compressImage(file) {
 /* =========================
    Live Front Camera (forced) + Blink Liveness
 ========================= */
+/* =========================
+   Live Front Camera (forced) + Blink Liveness (5-second wait)
+========================= */
 
 let blinkReady_ = false;
 let blinkTimer_ = null;
+let countdownInterval_ = null;
 
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
@@ -1875,10 +1879,15 @@ async function openFrontCamera() {
     return;
   }
 
+  // reset state
   blinkReady_ = false;
   if (blinkTimer_) {
     clearTimeout(blinkTimer_);
     blinkTimer_ = null;
+  }
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
   }
 
   try {
@@ -1900,37 +1909,55 @@ async function openFrontCamera() {
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
-    // Disable capture until user has time to blink
+    // Disable capture button
     if (captureBtn) {
       captureBtn.style.opacity = "0.45";
       captureBtn.style.pointerEvents = "none";
-      captureBtn.textContent = "چشمک بزنید...";
+      captureBtn.textContent = "صبر کنید...";
     }
+
+    // Initial instruction
     if (instruction) {
       instruction.innerHTML =
         'گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید<br>' +
         '<span style="color:#fbbf24;">لطفاً یک‌بار واضح چشمک بزنید</span><br>' +
-        'سپس دکمه «گرفتن عکس» فعال می‌شود';
+        '<span id="countdownText" style="color:#fbbf24; font-size:18px;">۵</span> ثانیه صبر کنید';
     }
 
     overlay.style.display = "flex";
-    setStatus("دوربین سلفی آماده است. لطفاً چشمک بزنید.");
+    setStatus("لطفاً چشمک بزنید و ۵ ثانیه صبر کنید...");
 
-    // After 2.8 seconds allow capture (gives time for a natural blink)
+    // Live countdown 5 → 1
+    let remaining = 5;
+    countdownInterval_ = setInterval(() => {
+      remaining--;
+      const cdEl = document.getElementById("countdownText");
+      if (cdEl) cdEl.textContent = remaining > 0 ? remaining : "۰";
+
+      if (remaining <= 0) {
+        clearInterval(countdownInterval_);
+        countdownInterval_ = null;
+      }
+    }, 1000);
+
+    // After full 5 seconds enable capture
     blinkTimer_ = setTimeout(() => {
       blinkReady_ = true;
+
       if (captureBtn) {
         captureBtn.style.opacity = "1";
         captureBtn.style.pointerEvents = "auto";
         captureBtn.textContent = "گرفتن عکس";
       }
+
       if (instruction) {
         instruction.innerHTML =
           'گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید<br>' +
-          '<span style="color:#4ade80;">حالا دکمه گرفتن عکس را بزنید</span>';
+          '<span style="color:#4ade80; font-size:17px;">حالا دکمه «گرفتن عکس» را بزنید</span>';
       }
+
       setStatus("حالا عکس بگیرید.");
-    }, 2800);
+    }, 5000);
 
   } catch (err) {
     console.error("Camera error:", err);
@@ -1948,6 +1975,10 @@ function closeCamera() {
     clearTimeout(blinkTimer_);
     blinkTimer_ = null;
   }
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
+  }
   blinkReady_ = false;
 
   if (cameraStream) {
@@ -1957,7 +1988,7 @@ function closeCamera() {
   if (video) video.srcObject = null;
   if (overlay) overlay.style.display = "none";
 
-  // reset button state for next open
+  // reset button for next time
   if (captureBtn) {
     captureBtn.style.opacity = "0.45";
     captureBtn.style.pointerEvents = "none";
@@ -1967,7 +1998,7 @@ function closeCamera() {
 
 function captureFromVideo() {
   if (!blinkReady_) {
-    setStatus("لطفاً ابتدا چشمک بزنید و منتظر فعال شدن دکمه بمانید.");
+    setStatus("لطفاً تا پایان ۵ ثانیه صبر کنید و سپس عکس بگیرید.");
     return;
   }
 
@@ -1984,7 +2015,7 @@ function captureFromVideo() {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
 
-  // Convert to blob → File (so we can reuse the existing compressImage function)
+  // Convert to blob → File
   canvas.toBlob(async (blob) => {
     if (!blob) {
       setStatus("خطا در گرفتن عکس");
@@ -1993,17 +2024,13 @@ function captureFromVideo() {
 
     closeCamera();
 
-    // Create a fake File object so the rest of your code works unchanged
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
-
-    // From here we continue exactly like the old handlePhotoSelected
     await processCapturedPhoto(file);
   }, "image/jpeg", 0.85);
 }
 
 /**
- * This function contains the same logic that was previously in handlePhotoSelected
- * after the file was selected. We reuse it so nothing else breaks.
+ * Same logic that was previously in handlePhotoSelected after the file was selected.
  */
 async function processCapturedPhoto(file) {
   try {

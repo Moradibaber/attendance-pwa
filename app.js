@@ -1865,26 +1865,29 @@ function compressImage(file) {
    Live Front Camera (forced) + Blink Liveness (5-second wait)
 ========================= */
 
-let blinkReady_ = false;
-let blinkTimer_ = null;
+/* =========================
+   Live Front Camera – Forced 2-second auto capture
+   (strong logical anti photo-of-photo / imitation)
+========================= */
+
+let autoCaptureTimer_ = null;
 let countdownInterval_ = null;
 
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
-  const captureBtn = $("captureBtn");
   const instruction = $("cameraInstruction");
+  const countdownEl = $("countdownText");
 
   if (!overlay || !video) {
     setStatus("خطا: المان دوربین پیدا نشد");
     return;
   }
 
-  // reset state
-  blinkReady_ = false;
-  if (blinkTimer_) {
-    clearTimeout(blinkTimer_);
-    blinkTimer_ = null;
+  // Clear previous timers
+  if (autoCaptureTimer_) {
+    clearTimeout(autoCaptureTimer_);
+    autoCaptureTimer_ = null;
   }
   if (countdownInterval_) {
     clearInterval(countdownInterval_);
@@ -1901,7 +1904,7 @@ async function openFrontCamera() {
     const constraints = {
       audio: false,
       video: {
-        facingMode: { exact: "user" },   // FORCE front camera only
+        facingMode: { exact: "user" },
         width:  { ideal: 640 },
         height: { ideal: 480 }
       }
@@ -1910,55 +1913,39 @@ async function openFrontCamera() {
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
-    // Disable capture button
-    if (captureBtn) {
-      captureBtn.style.opacity = "0.45";
-      captureBtn.style.pointerEvents = "none";
-      captureBtn.textContent = "صبر کنید...";
-    }
-
-    // Initial instruction
+    // Reset UI
     if (instruction) {
       instruction.innerHTML =
-        'گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید<br>' +
-        '<span style="color:#fbbf24;">لطفاً یک‌بار واضح چشمک بزنید</span><br>' +
-        '<span id="countdownText" style="color:#fbbf24; font-size:18px;">۵</span> ثانیه صبر کنید';
+        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
+        '<span style="color:#fbbf24;">عکس بعد از ۲ ثانیه به‌صورت خودکار گرفته می‌شود</span>';
+    }
+    if (countdownEl) {
+      countdownEl.textContent = "۲";
+      countdownEl.style.color = "#4ade80";
     }
 
     overlay.style.display = "flex";
-    setStatus("لطفاً چشمک بزنید و ۵ ثانیه صبر کنید...");
+    setStatus("لطفاً ثابت بمانید – عکس به‌زودی گرفته می‌شود");
 
-    // Live countdown 5 → 1
-    let remaining = 5;
+    // Live countdown 2 → 1 → 0
+    let remaining = 2;
     countdownInterval_ = setInterval(() => {
       remaining--;
-      const cdEl = document.getElementById("countdownText");
-      if (cdEl) cdEl.textContent = remaining > 0 ? remaining : "۰";
-
+      if (countdownEl) {
+        countdownEl.textContent = remaining > 0 ? remaining : "۰";
+        if (remaining <= 0) countdownEl.style.color = "#f87171";
+      }
       if (remaining <= 0) {
         clearInterval(countdownInterval_);
         countdownInterval_ = null;
       }
     }, 1000);
 
-    // After full 5 seconds enable capture
-    blinkTimer_ = setTimeout(() => {
-      blinkReady_ = true;
-
-      if (captureBtn) {
-        captureBtn.style.opacity = "1";
-        captureBtn.style.pointerEvents = "auto";
-        captureBtn.textContent = "گرفتن عکس";
-      }
-
-      if (instruction) {
-        instruction.innerHTML =
-          'گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید<br>' +
-          '<span style="color:#4ade80; font-size:17px;">حالا دکمه «گرفتن عکس» را بزنید</span>';
-      }
-
-      setStatus("حالا عکس بگیرید.");
-    }, 5000);
+    // Auto-capture after exactly 2 seconds
+    autoCaptureTimer_ = setTimeout(() => {
+      autoCaptureTimer_ = null;
+      captureFromVideo();           // take the photo automatically
+    }, 2000);
 
   } catch (err) {
     console.error("Camera error:", err);
@@ -1970,17 +1957,15 @@ async function openFrontCamera() {
 function closeCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
-  const captureBtn = $("captureBtn");
 
-  if (blinkTimer_) {
-    clearTimeout(blinkTimer_);
-    blinkTimer_ = null;
+  if (autoCaptureTimer_) {
+    clearTimeout(autoCaptureTimer_);
+    autoCaptureTimer_ = null;
   }
   if (countdownInterval_) {
     clearInterval(countdownInterval_);
     countdownInterval_ = null;
   }
-  blinkReady_ = false;
 
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
@@ -1988,38 +1973,36 @@ function closeCamera() {
   }
   if (video) video.srcObject = null;
   if (overlay) overlay.style.display = "none";
-
-  // reset button for next time
-  if (captureBtn) {
-    captureBtn.style.opacity = "0.45";
-    captureBtn.style.pointerEvents = "none";
-    captureBtn.textContent = "گرفتن عکس";
-  }
 }
 
 function captureFromVideo() {
-  if (!blinkReady_) {
-    setStatus("لطفاً تا پایان ۵ ثانیه صبر کنید و سپس عکس بگیرید.");
-    return;
+  // Prevent double capture
+  if (autoCaptureTimer_) {
+    clearTimeout(autoCaptureTimer_);
+    autoCaptureTimer_ = null;
+  }
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
   }
 
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");
+    closeCamera();
     return;
   }
 
-  // Create a canvas and draw the current video frame
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
 
-  // Convert to blob → File
   canvas.toBlob(async (blob) => {
     if (!blob) {
       setStatus("خطا در گرفتن عکس");
+      closeCamera();
       return;
     }
 

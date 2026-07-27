@@ -1913,37 +1913,60 @@ function captureFromVideo() {
     return;
   }
 
-  // Create a canvas and draw the current video frame
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0);
+  setStatus("لطفاً یک‌بار چشمک بزنید...");
+  $("captureBtn").disabled = true;
+  $("cancelCameraBtn").disabled = true;
 
-  // Convert to blob → File (so we can reuse the existing compressImage function)
-  canvas.toBlob(async (blob) => {
-    if (!blob) {
-      setStatus("خطا در گرفتن عکس");
+  // Take first photo
+  takePhotoFromVideo().then(async (photo1) => {
+    // Wait 1 second for the user to blink
+    await new Promise(r => setTimeout(r, 1100));
+
+    // Take second photo
+    const photo2 = await takePhotoFromVideo();
+
+    closeCamera();
+    $("captureBtn").disabled = false;
+    $("cancelCameraBtn").disabled = false;
+
+    // Continue with both photos
+    await processCapturedPhotoWithLiveness(photo1, photo2);
+  }).catch(err => {
+    console.error(err);
+    setStatus("خطا در گرفتن عکس");
+    closeCamera();
+    $("captureBtn").disabled = false;
+    $("cancelCameraBtn").disabled = false;
+  });
+}
+
+function takePhotoFromVideo() {
+  return new Promise((resolve, reject) => {
+    const video = $("cameraVideo");
+    if (!video || !video.videoWidth) {
+      reject(new Error("ویدیو آماده نیست"));
       return;
     }
 
-    closeCamera();
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
 
-    // Create a fake File object so the rest of your code works unchanged
-    const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
-
-    // From here we continue exactly like the old handlePhotoSelected
-    await processCapturedPhoto(file);
-  }, "image/jpeg", 0.85);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("خطا در ساخت عکس"));
+        return;
+      }
+      const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+      resolve(file);
+    }, "image/jpeg", 0.85);
+  });
 }
-
-/**
- * This function contains the same logic that was previously in handlePhotoSelected
- * after the file was selected. We reuse it so nothing else breaks.
- */
-async function processCapturedPhoto(file) {
+async function processCapturedPhotoWithLiveness(file1, file2) {
   try {
-    setBusy(true, "در حال آماده‌سازی عکس...");
+    setBusy(true, "در حال آماده‌سازی عکس‌ها...");
     photoSelectedAtMs = Date.now();
 
     await saveProfileSilent();
@@ -1952,51 +1975,45 @@ async function processCapturedPhoto(file) {
     if (!gate.ok) {
       setBusy(false);
       setStatus(gate.message);
-      currentPhoto = "";
       return;
     }
 
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
+    setStatus("در حال آماده‌سازی عکس‌ها...");
+    
+    // Compress both photos
+    const photo1 = await compressImage(file1);
+    const photo2 = await compressImage(file2);
+    
+    currentPhoto = photo1;               // main photo for the record
+    window.__livenessPhoto2 = photo2;    // second photo for blink check
+
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
     if (preview) {
-      preview.src = currentPhoto;
+      preview.src = photo1;
       preview.style.display = "block";
     }
 
     if (!isGeolocationUsable()) {
       setBusy(false);
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      setStatus("GPS در دسترس نیست.");
       return;
     }
 
     setBusy(true, "در حال دریافت GPS...");
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
 
     if (!hasValidLocation(pendingLocation)) {
       setBusy(false);
-      if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
-        return;
-      }
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-      if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-        return;
-      }
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      setStatus("GPS دریافت نشد. لطفاً دوباره تلاش کنید.");
       return;
     }
 
     setBusy(true, "در حال ذخیره تردد...");
     await createRecord("تردد");
     setBusy(false);
+
   } catch (err) {
     console.error(err);
     setBusy(false);

@@ -1058,7 +1058,7 @@ async function handlePhotoSelected() {
    Record Creation
 ========================= */
 
-async function createRecord(type) {
+async function createRecord(type, photo1, photo2) {
   const profile = await getProfile();
 
   const { policyInfo, gate } = await getCurrentAttendanceGate();
@@ -1165,7 +1165,8 @@ async function createRecord(type) {
     policyFetchedAt: policyInfo.policyFetchedAt || "",
     policySource: policyInfo.policySource || "",
 
-    photo: currentPhoto || "",
+    photo: photo1 || currentPhoto || "",
+    photo2: photo2 || "",
 
     status: "pending",
     createdAt: now.toISOString(),
@@ -2018,6 +2019,63 @@ async function processCapturedPhoto(file) {
 
     setBusy(true, "در حال ذخیره تردد...");
     await createRecord("تردد");
+    setBusy(false);
+  } catch (err) {
+    console.error(err);
+    setBusy(false);
+    setStatus("خطا در پردازش عکس یا ثبت تردد");
+  }
+}
+async function processCapturedPhotoWithBlink(file1, file2) {
+  try {
+    setBusy(true, "در حال آماده‌سازی عکس‌ها...");
+    photoSelectedAtMs = Date.now();
+
+    await saveProfileSilent();
+
+    const { gate } = await getCurrentAttendanceGate();
+    if (!gate.ok) {
+      setBusy(false);
+      setStatus(gate.message);
+      currentPhoto = "";
+      return;
+    }
+
+    setStatus("در حال فشرده‌سازی عکس‌ها...");
+    const photo1 = await compressImage(file1);
+    const photo2 = await compressImage(file2);
+    photoCompressedAtMs = Date.now();
+
+    currentPhoto = photo1; // for preview
+
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = photo1;
+      preview.style.display = "block";
+    }
+
+    if (!isGeolocationUsable()) {
+      setBusy(false);
+      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      return;
+    }
+
+    setBusy(true, "در حال دریافت GPS...");
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
+    pendingLocation = await getLocationIOSFriendly();
+
+    if (!hasValidLocation(pendingLocation)) {
+      setBusy(false);
+      if (pendingLocation?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        return;
+      }
+      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
+      return;
+    }
+
+    setBusy(true, "در حال ذخیره تردد...");
+    await createRecord("تردد", photo1, photo2);   // ← we will update createRecord too
     setBusy(false);
   } catch (err) {
     console.error(err);

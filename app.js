@@ -1857,13 +1857,28 @@ function compressImage(file) {
    Live Front Camera (forced)
 ========================= */
 
+/* =========================
+   Live Front Camera (forced) + Blink Liveness
+========================= */
+
+let blinkReady_ = false;
+let blinkTimer_ = null;
+
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
+  const captureBtn = $("captureBtn");
+  const instruction = $("cameraInstruction");
 
   if (!overlay || !video) {
     setStatus("خطا: المان دوربین پیدا نشد");
     return;
+  }
+
+  blinkReady_ = false;
+  if (blinkTimer_) {
+    clearTimeout(blinkTimer_);
+    blinkTimer_ = null;
   }
 
   try {
@@ -1885,8 +1900,38 @@ async function openFrontCamera() {
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
+    // Disable capture until user has time to blink
+    if (captureBtn) {
+      captureBtn.style.opacity = "0.45";
+      captureBtn.style.pointerEvents = "none";
+      captureBtn.textContent = "چشمک بزنید...";
+    }
+    if (instruction) {
+      instruction.innerHTML =
+        'گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید<br>' +
+        '<span style="color:#fbbf24;">لطفاً یک‌بار واضح چشمک بزنید</span><br>' +
+        'سپس دکمه «گرفتن عکس» فعال می‌شود';
+    }
+
     overlay.style.display = "flex";
-    setStatus("دوربین سلفی آماده است. عکس بگیرید.");
+    setStatus("دوربین سلفی آماده است. لطفاً چشمک بزنید.");
+
+    // After 2.8 seconds allow capture (gives time for a natural blink)
+    blinkTimer_ = setTimeout(() => {
+      blinkReady_ = true;
+      if (captureBtn) {
+        captureBtn.style.opacity = "1";
+        captureBtn.style.pointerEvents = "auto";
+        captureBtn.textContent = "گرفتن عکس";
+      }
+      if (instruction) {
+        instruction.innerHTML =
+          'گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید<br>' +
+          '<span style="color:#4ade80;">حالا دکمه گرفتن عکس را بزنید</span>';
+      }
+      setStatus("حالا عکس بگیرید.");
+    }, 2800);
+
   } catch (err) {
     console.error("Camera error:", err);
     setStatus("نمی‌توان دوربین سلفی را باز کرد. لطفاً دسترسی دوربین را مجاز کنید.");
@@ -1897,6 +1942,13 @@ async function openFrontCamera() {
 function closeCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
+  const captureBtn = $("captureBtn");
+
+  if (blinkTimer_) {
+    clearTimeout(blinkTimer_);
+    blinkTimer_ = null;
+  }
+  blinkReady_ = false;
 
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
@@ -1904,9 +1956,21 @@ function closeCamera() {
   }
   if (video) video.srcObject = null;
   if (overlay) overlay.style.display = "none";
+
+  // reset button state for next open
+  if (captureBtn) {
+    captureBtn.style.opacity = "0.45";
+    captureBtn.style.pointerEvents = "none";
+    captureBtn.textContent = "گرفتن عکس";
+  }
 }
 
 function captureFromVideo() {
+  if (!blinkReady_) {
+    setStatus("لطفاً ابتدا چشمک بزنید و منتظر فعال شدن دکمه بمانید.");
+    return;
+  }
+
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");

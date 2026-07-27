@@ -1166,7 +1166,7 @@ async function createRecord(type) {
     policySource: policyInfo.policySource || "",
 
     photo: currentPhoto || "",
-
+    photo2: window.__livenessPhoto2 || "",
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",

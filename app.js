@@ -1811,7 +1811,7 @@ function compressImage(file) {
     reader.onload = (e) => {
       const img = new Image();
 
-      img.onload = () => {
+      img.onload = () => { 
         // Slightly larger canvas + higher JPEG quality → better Face++ results
         const OUT_W = 360;
         const OUT_H = 480;

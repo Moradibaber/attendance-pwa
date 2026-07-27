@@ -1166,7 +1166,7 @@ async function createRecord(type) {
     policySource: policyInfo.policySource || "",
 
     photo: currentPhoto || "",
-    photo2: window.__livenessPhoto2 || "",
+
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
@@ -1345,11 +1345,9 @@ function buildServerPayload(record) {
     policyFetchedAt: record.policyFetchedAt || "",
     policySource: record.policySource || "",
     photo: record.photo || "",
-    photo2: record.photo2 || "",
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0),
-    photo2: data.photo2 || "",
     workLocation: record.workLocation || "",
   };
 }
@@ -1915,60 +1913,37 @@ function captureFromVideo() {
     return;
   }
 
-  setStatus("لطفاً یک‌بار چشمک بزنید...");
-  $("captureBtn").disabled = true;
-  $("cancelCameraBtn").disabled = true;
+  // Create a canvas and draw the current video frame
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
 
-  // Take first photo
-  takePhotoFromVideo().then(async (photo1) => {
-    // Wait 1 second for the user to blink
-    await new Promise(r => setTimeout(r, 1100));
-
-    // Take second photo
-    const photo2 = await takePhotoFromVideo();
-
-    closeCamera();
-    $("captureBtn").disabled = false;
-    $("cancelCameraBtn").disabled = false;
-
-    // Continue with both photos
-    await processCapturedPhotoWithLiveness(photo1, photo2);
-  }).catch(err => {
-    console.error(err);
-    setStatus("خطا در گرفتن عکس");
-    closeCamera();
-    $("captureBtn").disabled = false;
-    $("cancelCameraBtn").disabled = false;
-  });
-}
-
-function takePhotoFromVideo() {
-  return new Promise((resolve, reject) => {
-    const video = $("cameraVideo");
-    if (!video || !video.videoWidth) {
-      reject(new Error("ویدیو آماده نیست"));
+  // Convert to blob → File (so we can reuse the existing compressImage function)
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
+      setStatus("خطا در گرفتن عکس");
       return;
     }
 
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
+    closeCamera();
 
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error("خطا در ساخت عکس"));
-        return;
-      }
-      const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
-      resolve(file);
-    }, "image/jpeg", 0.85);
-  });
+    // Create a fake File object so the rest of your code works unchanged
+    const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+
+    // From here we continue exactly like the old handlePhotoSelected
+    await processCapturedPhoto(file);
+  }, "image/jpeg", 0.85);
 }
-async function processCapturedPhotoWithLiveness(file1, file2) {
+
+/**
+ * This function contains the same logic that was previously in handlePhotoSelected
+ * after the file was selected. We reuse it so nothing else breaks.
+ */
+async function processCapturedPhoto(file) {
   try {
-    setBusy(true, "در حال آماده‌سازی عکس‌ها...");
+    setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
     await saveProfileSilent();
@@ -1977,45 +1952,51 @@ async function processCapturedPhotoWithLiveness(file1, file2) {
     if (!gate.ok) {
       setBusy(false);
       setStatus(gate.message);
+      currentPhoto = "";
       return;
     }
 
-    setStatus("در حال آماده‌سازی عکس‌ها...");
-    
-    // Compress both photos
-    const photo1 = await compressImage(file1);
-    const photo2 = await compressImage(file2);
-    
-    currentPhoto = photo1;               // main photo for the record
-    window.__livenessPhoto2 = photo2;    // second photo for blink check
-
+    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
     if (preview) {
-      preview.src = photo1;
+      preview.src = currentPhoto;
       preview.style.display = "block";
     }
 
     if (!isGeolocationUsable()) {
       setBusy(false);
-      setStatus("GPS در دسترس نیست.");
+      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
       return;
     }
 
     setBusy(true, "در حال دریافت GPS...");
+    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
 
     if (!hasValidLocation(pendingLocation)) {
       setBusy(false);
-      setStatus("GPS دریافت نشد. لطفاً دوباره تلاش کنید.");
+      if (pendingLocation?.status === "denied") {
+        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "unavailable") {
+        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
+        return;
+      }
+      if (pendingLocation?.status === "timeout") {
+        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        return;
+      }
+      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
       return;
     }
 
     setBusy(true, "در حال ذخیره تردد...");
     await createRecord("تردد");
     setBusy(false);
-
   } catch (err) {
     console.error(err);
     setBusy(false);

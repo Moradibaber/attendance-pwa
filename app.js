@@ -1177,8 +1177,8 @@ async function createRecord(type) {
 
   await dbPut(STORE_RECORDS, record);
 
-  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-  setStatus("تردد با GPS ذخیره شد.");
+  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
+  setStatus("تردد ذخیره شد.");
   await refreshUi();
 
   if (navigator.onLine) scheduleSyncPendingRecords(500);

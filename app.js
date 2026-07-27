@@ -1914,9 +1914,10 @@ async function openFrontCamera() {
     video.srcObject = cameraStream;
 
     // Reset UI
-    if (instruction) {
+        if (instruction) {
       instruction.innerHTML =
-        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
+        'گوشی را در فاصله <span style="color:#fbbf24;">۴۰ تا ۵۰ سانتی‌متر</span> نگه دارید<br>' +
+        'صورت کامل در کادر باشد<br>' +
         '<span style="color:#fbbf24;">عکس بعد از ۲ ثانیه به‌صورت خودکار گرفته می‌شود</span>';
     }
     if (countdownEl) {

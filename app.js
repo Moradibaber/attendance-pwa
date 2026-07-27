@@ -1020,7 +1020,7 @@ async function handlePhotoSelected() {
       return;
     }
 
-    setBusy(true, "در حال دریافت GPS...");
+    setBusy(true, "در حال دریافت ...");
     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
 

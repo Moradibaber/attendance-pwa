@@ -1045,7 +1045,7 @@ async function handlePhotoSelected() {
     }
 
     setBusy(true, "در حال ذخیره تردد...");
-    // await createRecord("تردد");
+    await createRecord("تردد");
     setBusy(false);
   } catch (err) {
     console.error(err);
@@ -1058,144 +1058,132 @@ async function handlePhotoSelected() {
    Record Creation
 ========================= */
 
-async function createRecord(type, photo1, photo2) {
-  // Prevent accidental double call
-  if (window.__creatingRecord) {
-    console.warn("createRecord already running – ignored");
+async function createRecord(type) {
+  const profile = await getProfile();
+
+  const { policyInfo, gate } = await getCurrentAttendanceGate();
+  if (!gate.ok) {
+    setStatus(gate.message);
     return;
   }
-  window.__creatingRecord = true;
 
-  try {
-    const profile = await getProfile();
+  const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
 
-    const { policyInfo, gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setStatus(gate.message);
-      return;
-    }
-
-    const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
-    if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
-      setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
-      return;
-    }
-
-    const loc = hasValidLocation(pendingLocation)
-      ? pendingLocation
-      : emptyLocation("not_received", "GPS دریافت نشد");
-
-    const now = new Date();
-    const nowMs = now.getTime();
-
-    const clickMs = captureStartedAtMs || nowMs;
-    const photoMs = photoSelectedAtMs || "";
-    const photoCompressedMs = photoCompressedAtMs || "";
-    const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
-
-    const deviceTime = now.toISOString();
-    const deviceTimeAtClick = new Date(clickMs).toISOString();
-    const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
-    const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
-    const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
-    const gpsTimestamp = deviceTimeAtGps;
-
-    const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
-    const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
-    const submitDelayMs = Math.max(0, nowMs - clickMs);
-
-    const offlineCreated = !navigator.onLine;
-    const createdOnline = navigator.onLine;
-
-    const sessionClockDriftMs = getSessionClockDriftMs();
-    const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
-
-    const risk = calculateClockRisk({
-      clickMs,
-      gpsMs,
-      offlineCreated,
-      locationStatus: loc.status,
-      sessionClockDriftMs,
-    });
-
-    const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
-    const jalaliDateStr = getJalaliIsoDate(now);
-    const hourStr = getTime(now);
-
-    const record = {
-      clientRecordId,
-      personnelCode: profile.personnelCode,
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      type,
-      recordType: type,
-      recordDate: jalaliDateStr,
-      recordHour: hourStr,
-      recordTime: hourStr,
-      workLocation: (document.getElementById("workLocationInput")?.value || "").trim(),
-
-      latitude: loc.latitude || "",
-      longitude: loc.longitude || "",
-      accuracy: loc.accuracy || "",
-      locationStatus: loc.status || "",
-      locationError: loc.error || "",
-
-      deviceTime,
-      deviceTimeAtClick,
-      deviceTimeAtPhoto,
-      deviceTimeAtPhotoCompressed,
-      deviceTimeAtGps,
-      gpsTimestamp,
-
-      gpsWaitMs,
-      photoDelayMs,
-      submitDelayMs,
-
-      offlineCreated,
-      createdOnline,
-      connectionStatus: offlineCreated ? "offline" : "online",
-      connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
-
-      firstConnectionAfterOfflineRecord: "",
-      lastConnectionBeforeUpload: "",
-      uploadedAt: "",
-      delayAfterFirstConnectionMs: "",
-
-      clockRisk: risk.clockRisk,
-      clockRiskReason: risk.clockRiskReason,
-      sessionClockDriftMs,
-      networkClockDriftMs: networkClockDriftMs ?? "",
-
-      attendancePolicy,
-      policyVersion: Number(policyInfo.policyVersion || 0),
-      policyFetchedAt: policyInfo.policyFetchedAt || "",
-      policySource: policyInfo.policySource || "",
-
-      photo: photo1 || currentPhoto || "",
-      photo2: photo2 || "",
-
-      status: "pending",
-      createdAt: now.toISOString(),
-      lastSyncTryAt: "",
-      syncTryCount: 0,
-      syncedAt: "",
-      serverResponse: "",
-    };
-
-    await dbPut(STORE_RECORDS, record);
-
-    showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
-    setStatus("تردد با GPS ذخیره شد.");
-    await refreshUi();
-
-    if (navigator.onLine) scheduleSyncPendingRecords(500);
-
-  } finally {
-    window.__creatingRecord = false;
+  if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
+    setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
+    return;
   }
+
+  const loc = hasValidLocation(pendingLocation)
+    ? pendingLocation
+    : emptyLocation("not_received", "GPS دریافت نشد");
+
+  const now = new Date();
+  const nowMs = now.getTime();
+
+  const clickMs = captureStartedAtMs || nowMs;
+  const photoMs = photoSelectedAtMs || "";
+  const photoCompressedMs = photoCompressedAtMs || "";
+  const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
+
+  const deviceTime = now.toISOString();
+  const deviceTimeAtClick = new Date(clickMs).toISOString();
+  const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
+  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
+  const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
+  const gpsTimestamp = deviceTimeAtGps;
+
+  const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
+  const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
+  const submitDelayMs = Math.max(0, nowMs - clickMs);
+
+  const offlineCreated = !navigator.onLine;
+  const createdOnline = navigator.onLine;
+
+  const sessionClockDriftMs = getSessionClockDriftMs();
+  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+
+  const risk = calculateClockRisk({
+    clickMs,
+    gpsMs,
+    offlineCreated,
+    locationStatus: loc.status,
+    sessionClockDriftMs,
+  });
+
+  const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
+
+  const jalaliDateStr = getJalaliIsoDate(now);
+  const hourStr = getTime(now);
+
+  const record = {
+    clientRecordId,
+    personnelCode: profile.personnelCode,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    type,
+    recordType: type,
+    recordDate: jalaliDateStr,
+    recordHour: hourStr,
+    recordTime: hourStr,
+    workLocation: (document.getElementById("workLocationInput")?.value || "").trim(),
+
+    latitude: loc.latitude || "",
+    longitude: loc.longitude || "",
+    accuracy: loc.accuracy || "",
+    locationStatus: loc.status || "",
+    locationError: loc.error || "",
+
+    deviceTime,
+    deviceTimeAtClick,
+    deviceTimeAtPhoto,
+    deviceTimeAtPhotoCompressed,
+    deviceTimeAtGps,
+    gpsTimestamp,
+
+    gpsWaitMs,
+    photoDelayMs,
+    submitDelayMs,
+
+    offlineCreated,
+    createdOnline,
+    connectionStatus: offlineCreated ? "offline" : "online",
+    connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
+
+    firstConnectionAfterOfflineRecord: "",
+    lastConnectionBeforeUpload: "",
+    uploadedAt: "",
+    delayAfterFirstConnectionMs: "",
+
+    clockRisk: risk.clockRisk,
+    clockRiskReason: risk.clockRiskReason,
+    sessionClockDriftMs,
+    networkClockDriftMs: networkClockDriftMs ?? "",
+
+    attendancePolicy,
+    policyVersion: Number(policyInfo.policyVersion || 0),
+    policyFetchedAt: policyInfo.policyFetchedAt || "",
+    policySource: policyInfo.policySource || "",
+
+    photo: currentPhoto || "",
+
+    status: "pending",
+    createdAt: now.toISOString(),
+    lastSyncTryAt: "",
+    syncTryCount: 0,
+    syncedAt: "",
+    serverResponse: "",
+  };
+
+  await dbPut(STORE_RECORDS, record);
+
+  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
+  setStatus("تردد با GPS ذخیره شد.");
+  await refreshUi();
+
+  if (navigator.onLine) scheduleSyncPendingRecords(500);
 }
+
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -1870,13 +1858,11 @@ function compressImage(file) {
 ========================= */
 
 async function openFrontCamera() {
-  const overlay = document.getElementById("cameraOverlay");
-  const video   = document.getElementById("cameraVideo");
-  const captureBtn = document.getElementById("captureBtn");
+  const overlay = $("cameraOverlay");
+  const video = $("cameraVideo");
 
   if (!overlay || !video) {
-    console.error("cameraOverlay or cameraVideo not found in DOM");
-    setStatus("خطا: المان دوربین پیدا نشد. صفحه را یک‌بار رفرش کنید.");
+    setStatus("خطا: المان دوربین پیدا نشد");
     return;
   }
 
@@ -1890,7 +1876,7 @@ async function openFrontCamera() {
     const constraints = {
       audio: false,
       video: {
-        facingMode: { ideal: "user" },   // ideal instead of exact (more compatible)
+        facingMode: { exact: "user" },   // FORCE front camera only
         width:  { ideal: 640 },
         height: { ideal: 480 }
       }
@@ -1898,19 +1884,6 @@ async function openFrontCamera() {
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
-
-    // Reset instruction text
-    const instruction = document.getElementById("cameraInstruction");
-    if (instruction) {
-      instruction.textContent = "گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید";
-      instruction.style.color = "#fff";
-    }
-
-    // Reset button
-    if (captureBtn) {
-      captureBtn.textContent = "گرفتن عکس";
-      captureBtn.style.background = "#16a34a";
-    }
 
     overlay.style.display = "flex";
     setStatus("دوربین سلفی آماده است. عکس بگیرید.");
@@ -1933,92 +1906,37 @@ function closeCamera() {
   if (overlay) overlay.style.display = "none";
 }
 
-async function captureFromVideo() {
+function captureFromVideo() {
   const video = $("cameraVideo");
-  const instruction = $("cameraInstruction");
-  const captureBtn = $("captureBtn");
-
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");
     return;
   }
 
-  // Helper
-  function captureFrame() {
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
-    return new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.85);
-    });
-  }
+  // Create a canvas and draw the current video frame
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0);
 
-  try {
-    // ========== STEP 1: First photo ==========
-    if (instruction) {
-      instruction.textContent = "عکس اول را بگیرید (چشم‌ها باز)";
-      instruction.style.color = "#fff";
+  // Convert to blob → File (so we can reuse the existing compressImage function)
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
+      setStatus("خطا در گرفتن عکس");
+      return;
     }
-    setStatus("عکس اول را بگیرید (چشم‌ها باز)");
-
-    // Wait for user to press the green button
-    await new Promise((resolve) => {
-      const handler = async () => {
-        captureBtn.removeEventListener("click", handler);
-        resolve();
-      };
-      captureBtn.addEventListener("click", handler, { once: true });
-    });
-
-    const blob1 = await captureFrame();
-    if (instruction) instruction.textContent = "عکس اول گرفته شد ✅";
-
-    // ========== STEP 2: Force blink ==========
-    if (instruction) {
-      instruction.innerHTML = "حالا <b style='color:#fbbf24'>یک بار چشمک بزنید</b><br>سپس دکمه را دوباره بزنید";
-      instruction.style.color = "#fbbf24";
-    }
-    setStatus("حالا یک بار چشمک بزنید و دوباره دکمه را بزنید");
-
-    // Change button text temporarily
-    const originalText = captureBtn.textContent;
-    captureBtn.textContent = "چشمک زدم - عکس دوم";
-    captureBtn.style.background = "#f59e0b";
-
-    // Wait for second press
-    await new Promise((resolve) => {
-      const handler = async () => {
-        captureBtn.removeEventListener("click", handler);
-        resolve();
-      };
-      captureBtn.addEventListener("click", handler, { once: true });
-    });
-
-    const blob2 = await captureFrame();
-
-    // Restore button
-    captureBtn.textContent = originalText;
-    captureBtn.style.background = "#16a34a";
 
     closeCamera();
 
-    const file1 = new File([blob1], "selfie1.jpg", { type: "image/jpeg" });
-    const file2 = new File([blob2], "selfie2.jpg", { type: "image/jpeg" });
+    // Create a fake File object so the rest of your code works unchanged
+    const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
 
-    await processCapturedPhotoWithBlink(file1, file2);
-
-  } catch (err) {
-    console.error(err);
-    closeCamera();
-    setStatus("خطا در گرفتن عکس");
-    if (captureBtn) {
-      captureBtn.textContent = "گرفتن عکس";
-      captureBtn.style.background = "#16a34a";
-    }
-  }
+    // From here we continue exactly like the old handlePhotoSelected
+    await processCapturedPhoto(file);
+  }, "image/jpeg", 0.85);
 }
+
 /**
  * This function contains the same logic that was previously in handlePhotoSelected
  * after the file was selected. We reuse it so nothing else breaks.
@@ -2078,63 +1996,6 @@ async function processCapturedPhoto(file) {
 
     setBusy(true, "در حال ذخیره تردد...");
     await createRecord("تردد");
-    setBusy(false);
-  } catch (err) {
-    console.error(err);
-    setBusy(false);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
-  }
-}
-async function processCapturedPhotoWithBlink(file1, file2) {
-  try {
-    setBusy(true, "در حال آماده‌سازی عکس‌ها...");
-    photoSelectedAtMs = Date.now();
-
-    await saveProfileSilent();
-
-    const { gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setBusy(false);
-      setStatus(gate.message);
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال فشرده‌سازی عکس‌ها...");
-    const photo1 = await compressImage(file1);
-    const photo2 = await compressImage(file2);
-    photoCompressedAtMs = Date.now();
-
-    currentPhoto = photo1; // for preview
-
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = photo1;
-      preview.style.display = "block";
-    }
-
-    if (!isGeolocationUsable()) {
-      setBusy(false);
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
-      return;
-    }
-
-    setBusy(true, "در حال دریافت GPS...");
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(pendingLocation)) {
-      setBusy(false);
-      if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
-        return;
-      }
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-      return;
-    }
-
-    setBusy(true, "در حال ذخیره تردد...");
-    await createRecord("تردد", photo1, photo2);   // ← we will update createRecord too
     setBusy(false);
   } catch (err) {
     console.error(err);

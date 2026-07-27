@@ -294,11 +294,12 @@ records {
   </main>
 
   <!-- Live Front Camera Overlay -->
+    <!-- Live Front Camera Overlay -->
   <div id="cameraOverlay" style="display:none; position:fixed; inset:0; background:#000; z-index:99999; flex-direction:column; align-items:center; justify-content:center;">
     <video id="cameraVideo" autoplay playsinline muted style="width:100%; max-width:480px; height:auto; background:#111; border-radius:12px;"></video>
     
-    <div style="margin-top:20px; display:flex; gap:16px;">
-      <button id="captureBtn" style="padding:14px 28px; font-size:18px; border-radius:50px; border:none; background:#16a34a; color:white; font-weight:bold;">
+    <div style="margin-top:16px; display:flex; gap:16px;">
+      <button id="captureBtn" style="padding:14px 28px; font-size:18px; border-radius:50px; border:none; background:#16a34a; color:white; font-weight:bold; opacity:0.45; pointer-events:none;">
         گرفتن عکس
       </button>
       <button id="cancelCameraBtn" style="padding:14px 28px; font-size:18px; border-radius:50px; border:none; background:#dc2626; color:white; font-weight:bold;">
@@ -306,8 +307,10 @@ records {
       </button>
     </div>
     
-    <p style="color:#fff; margin-top:12px; font-size:14px; text-align:center; padding:0 16px;">
-        گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید،در غیر اینصورت تردد شما با مشکل روبرو خواهد شد
+    <p id="cameraInstruction" style="color:#fff; margin-top:14px; font-size:15px; text-align:center; padding:0 18px; line-height:1.6; font-weight:600;">
+      گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید<br>
+      <span style="color:#fbbf24;">لطفاً یک‌بار واضح چشمک بزنید</span><br>
+      سپس دکمه «گرفتن عکس» فعال می‌شود
     </p>
   </div>
 

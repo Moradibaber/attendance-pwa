@@ -1349,6 +1349,7 @@ function buildServerPayload(record) {
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0),
+    photo2: data.photo2 || "",
     workLocation: record.workLocation || "",
   };
 }

@@ -1925,7 +1925,7 @@ async function openFrontCamera() {
     }
 
     overlay.style.display = "flex";
-    setStatus("لطفاً ثابت بمانید – عکس به‌زودی گرفته می‌شود");
+    setStatus("لطفاً منتظر بمانید");
 
     // Live countdown 2 → 1 → 0
     let remaining = 2;

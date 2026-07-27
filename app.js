@@ -1910,12 +1910,14 @@ function closeCamera() {
 async function captureFromVideo() {
   const video = $("cameraVideo");
   const instruction = $("cameraInstruction");
+  const captureBtn = $("captureBtn");
+
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");
     return;
   }
 
-  // Helper to capture one frame
+  // Helper
   function captureFrame() {
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
@@ -1923,41 +1925,72 @@ async function captureFromVideo() {
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0);
     return new Promise((resolve) => {
-      canvas.toBlob((blob) => {
-        resolve(blob);
-      }, "image/jpeg", 0.85);
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.85);
     });
   }
 
   try {
-    // ===== PHOTO 1 =====
-    if (instruction) instruction.textContent = "عکس اول گرفته شد... حالا یک بار چشمک بزنید";
-    setStatus("عکس اول گرفته شد. لطفاً یک بار چشمک بزنید...");
+    // ========== STEP 1: First photo ==========
+    if (instruction) {
+      instruction.textContent = "عکس اول را بگیرید (چشم‌ها باز)";
+      instruction.style.color = "#fff";
+    }
+    setStatus("عکس اول را بگیرید (چشم‌ها باز)");
+
+    // Wait for user to press the green button
+    await new Promise((resolve) => {
+      const handler = async () => {
+        captureBtn.removeEventListener("click", handler);
+        resolve();
+      };
+      captureBtn.addEventListener("click", handler, { once: true });
+    });
 
     const blob1 = await captureFrame();
+    if (instruction) instruction.textContent = "عکس اول گرفته شد ✅";
 
-    // Wait for blink
-    await new Promise(r => setTimeout(r, 1200));
+    // ========== STEP 2: Force blink ==========
+    if (instruction) {
+      instruction.innerHTML = "حالا <b style='color:#fbbf24'>یک بار چشمک بزنید</b><br>سپس دکمه را دوباره بزنید";
+      instruction.style.color = "#fbbf24";
+    }
+    setStatus("حالا یک بار چشمک بزنید و دوباره دکمه را بزنید");
 
-    // ===== PHOTO 2 (after blink) =====
-    if (instruction) instruction.textContent = "عکس دوم (چشمک) گرفته شد";
-    setStatus("عکس دوم گرفته شد. در حال پردازش...");
+    // Change button text temporarily
+    const originalText = captureBtn.textContent;
+    captureBtn.textContent = "چشمک زدم - عکس دوم";
+    captureBtn.style.background = "#f59e0b";
+
+    // Wait for second press
+    await new Promise((resolve) => {
+      const handler = async () => {
+        captureBtn.removeEventListener("click", handler);
+        resolve();
+      };
+      captureBtn.addEventListener("click", handler, { once: true });
+    });
 
     const blob2 = await captureFrame();
 
+    // Restore button
+    captureBtn.textContent = originalText;
+    captureBtn.style.background = "#16a34a";
+
     closeCamera();
 
-    // Create two File objects
     const file1 = new File([blob1], "selfie1.jpg", { type: "image/jpeg" });
     const file2 = new File([blob2], "selfie2.jpg", { type: "image/jpeg" });
 
-    // Process both
     await processCapturedPhotoWithBlink(file1, file2);
 
   } catch (err) {
     console.error(err);
     closeCamera();
     setStatus("خطا در گرفتن عکس");
+    if (captureBtn) {
+      captureBtn.textContent = "گرفتن عکس";
+      captureBtn.style.background = "#16a34a";
+    }
   }
 }
 /**

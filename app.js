@@ -1859,11 +1859,13 @@ function compressImage(file) {
 ========================= */
 
 async function openFrontCamera() {
-  const overlay = $("cameraOverlay");
-  const video = $("cameraVideo");
+  const overlay = document.getElementById("cameraOverlay");
+  const video   = document.getElementById("cameraVideo");
+  const captureBtn = document.getElementById("captureBtn");
 
   if (!overlay || !video) {
-    setStatus("خطا: المان دوربین پیدا نشد");
+    console.error("cameraOverlay or cameraVideo not found in DOM");
+    setStatus("خطا: المان دوربین پیدا نشد. صفحه را یک‌بار رفرش کنید.");
     return;
   }
 
@@ -1877,7 +1879,7 @@ async function openFrontCamera() {
     const constraints = {
       audio: false,
       video: {
-        facingMode: { exact: "user" },   // FORCE front camera only
+        facingMode: { ideal: "user" },   // ideal instead of exact (more compatible)
         width:  { ideal: 640 },
         height: { ideal: 480 }
       }
@@ -1885,6 +1887,19 @@ async function openFrontCamera() {
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
+
+    // Reset instruction text
+    const instruction = document.getElementById("cameraInstruction");
+    if (instruction) {
+      instruction.textContent = "گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید";
+      instruction.style.color = "#fff";
+    }
+
+    // Reset button
+    if (captureBtn) {
+      captureBtn.textContent = "گرفتن عکس";
+      captureBtn.style.background = "#16a34a";
+    }
 
     overlay.style.display = "flex";
     setStatus("دوربین سلفی آماده است. عکس بگیرید.");

@@ -1906,37 +1906,59 @@ function closeCamera() {
   if (overlay) overlay.style.display = "none";
 }
 
-function captureFromVideo() {
+async function captureFromVideo() {
   const video = $("cameraVideo");
+  const instruction = $("cameraInstruction");
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");
     return;
   }
 
-  // Create a canvas and draw the current video frame
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0);
+  // Helper to capture one frame
+  function captureFrame() {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, "image/jpeg", 0.85);
+    });
+  }
 
-  // Convert to blob → File (so we can reuse the existing compressImage function)
-  canvas.toBlob(async (blob) => {
-    if (!blob) {
-      setStatus("خطا در گرفتن عکس");
-      return;
-    }
+  try {
+    // ===== PHOTO 1 =====
+    if (instruction) instruction.textContent = "عکس اول گرفته شد... حالا یک بار چشمک بزنید";
+    setStatus("عکس اول گرفته شد. لطفاً یک بار چشمک بزنید...");
+
+    const blob1 = await captureFrame();
+
+    // Wait for blink
+    await new Promise(r => setTimeout(r, 1200));
+
+    // ===== PHOTO 2 (after blink) =====
+    if (instruction) instruction.textContent = "عکس دوم (چشمک) گرفته شد";
+    setStatus("عکس دوم گرفته شد. در حال پردازش...");
+
+    const blob2 = await captureFrame();
 
     closeCamera();
 
-    // Create a fake File object so the rest of your code works unchanged
-    const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+    // Create two File objects
+    const file1 = new File([blob1], "selfie1.jpg", { type: "image/jpeg" });
+    const file2 = new File([blob2], "selfie2.jpg", { type: "image/jpeg" });
 
-    // From here we continue exactly like the old handlePhotoSelected
-    await processCapturedPhoto(file);
-  }, "image/jpeg", 0.85);
+    // Process both
+    await processCapturedPhotoWithBlink(file1, file2);
+
+  } catch (err) {
+    console.error(err);
+    closeCamera();
+    setStatus("خطا در گرفتن عکس");
+  }
 }
-
 /**
  * This function contains the same logic that was previously in handlePhotoSelected
  * after the file was selected. We reuse it so nothing else breaks.

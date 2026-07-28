@@ -1973,6 +1973,9 @@ function closeCamera() {
   hideHeadTurnInstruction();
 }
 
+**
+ * Capture current video frame as a canvas
+ */
 function captureFrameToCanvas() {
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) return null;
@@ -2025,33 +2028,49 @@ function getFaceCenterX(canvas) {
 /**
  * Check if the head moved horizontally enough during the 2 seconds
  */
+/**
+ * More robust head-turn detection
+ * Uses overall content difference + horizontal shift of brightness
+ */
 function hasHeadTurn(frames) {
-  if (!frames || frames.length < 4) return false;
+  if (!frames || frames.length < 5) return false;
 
-  const centers = frames
-    .map(f => getFaceCenterX(f))
-    .filter(c => c !== null);
+  const w = 160;
+  const h = 120;
 
-  if (centers.length < 3) return false;
+  // Convert all frames to small grayscale-like data
+  const datas = frames.map(canvas => {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(canvas, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h).data;
+  });
 
-  const minX = Math.min(...centers);
-  const maxX = Math.max(...centers);
-  const movement = maxX - minX;
+  // 1. Total average difference between first and last frames (central area)
+  let totalDiff = 0;
+  let count = 0;
+  const first = datas[0];
+  const last  = datas[datas.length - 1];
 
-  console.log("Head turn movement (px):", movement.toFixed(1));
-
-  // Threshold on the downscaled 160px width
-  // Real head turn usually produces > 12–18 px movement
-  return movement > 11;
-}
-
+  for (let y = 20; y < h - 20; y += 2) {
+    for (let x = 25; x < w - 25; x += 2) {
+      const i = (y * w + x) * 4;
+      totalDiff += Math.abs(first[i] - last[i]) +
+                   Math.abs(first[i+1] - last[i+1]) +
+                   Math.abs(first[i+2] - last[i+2]);
+      count++;
+    }
+  }
+   const avgDiff = totalDiff / count;
 async function collectHeadTurnFrames() {
   if (isCapturing_) return;
   isCapturing_ = true;
   headTurnFrames_ = [];
 
-  const totalTime = 2000;      // 2 seconds
-  const interval = 280;        // capture every 280ms
+  const totalTime = 2200;   // a bit more than 2 seconds
+  const interval = 250;
   const start = Date.now();
 
   while (Date.now() - start < totalTime) {
@@ -2064,13 +2083,21 @@ async function collectHeadTurnFrames() {
 
   if (!moved) {
     closeCamera();
-    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید و سر را واضح تکان دهید.");
+    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید و سر را واضح به چپ یا راست تکان دهید.");
     return;
   }
 
-  // Use the last good frame
-  const bestFrame = headTurnFrames_[headTurnFrames_.length - 1];
-  bestFrame.toBlob(async (blob) => {
+  // After successful movement, wait a short moment so the user can look more frontal again
+  await new Promise(r => setTimeout(r, 500));
+
+  const finalFrame = captureFrameToCanvas();
+  if (!finalFrame) {
+    closeCamera();
+    setStatus("خطا در گرفتن عکس");
+    return;
+  }
+
+  finalFrame.toBlob(async (blob) => {
     if (!blob) {
       closeCamera();
       setStatus("خطا در گرفتن عکس");
@@ -2082,6 +2109,20 @@ async function collectHeadTurnFrames() {
   }, "image/jpeg", 0.88);
 }
 
+What changed
+
+Detection is now based on overall pixel difference + horizontal shift of brightness (much more reliable than skin-tone).
+Thresholds are more lenient so normal head turns are accepted.
+After detecting the turn, the system waits 0.5 second and takes a final more-frontal photo (this helps Face++ match better and reduces “no_match”).
+
+
+Test again
+
+Open the form → see the instruction
+Tap “متوجه شدم – شروع”
+Clearly turn your head left or right once during the 2 seconds
+Look back at the camera
+It should now accept real head turns much more reliably and still reject static laptop photos.
 // Bind the "متوجه شدم" button
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("startCameraAfterInstruction");

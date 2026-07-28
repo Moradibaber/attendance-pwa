@@ -311,15 +311,16 @@ records {
   </div>
 
   <!-- Live Front Camera Overlay -->
+    <!-- Live Front Camera Overlay - 1 second forced capture -->
   <div id="cameraOverlay" style="display:none; position:fixed; inset:0; background:#000; z-index:99999; flex-direction:column; align-items:center; justify-content:center;">
     <video id="cameraVideo" autoplay playsinline muted style="width:100%; max-width:480px; height:auto; background:#111; border-radius:12px;"></video>
     
     <div style="margin-top:24px; text-align:center; padding:0 20px;">
-      <div id="cameraSpinner" style="width:36px; height:36px; border:3px solid rgba(255,255,255,0.25); border-top-color:#4ade80; border-radius:50%; margin:0 auto 14px; animation:spin 0.8s linear infinite;"></div>
-      <p id="cameraInstruction" style="color:#fff; font-size:16px; font-weight:600; line-height:1.7; margin:0;">
-        سر را به چپ یا راست تکان دهید<br>
-        <span style="color:#94a3b8; font-size:14px;">لطفاً چند لحظه صبر کنید...</span>
+      <p id="cameraInstruction" style="color:#fff; font-size:17px; font-weight:700; line-height:1.7; margin:0;">
+        صورت خود را روبه‌روی دوربین نگه دارید<br>
+        <span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>
       </p>
+      <p id="countdownText" style="color:#4ade80; font-size:52px; font-weight:800; margin:16px 0 0 0;">۱</p>
     </div>
 
     <button id="cancelCameraBtn" style="margin-top:28px; padding:12px 32px; font-size:16px; border-radius:50px; border:none; background:#dc2626; color:white; font-weight:bold;">

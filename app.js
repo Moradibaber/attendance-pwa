@@ -1979,59 +1979,55 @@ function captureFrameToCanvas() {
  * Balanced head-turn detection
  * Requires clear horizontal movement of the face area
  */
+/**
+ * Simple & more reliable movement detection for mobile
+ * Accepts if there is clear overall change between early and late frames
+ */
 function hasHeadTurn(frames) {
-  if (!frames || frames.length < 6) return false;
+  if (!frames || frames.length < 5) return false;
 
-  const w = 160;
-  const h = 120;
+  const w = 120;
+  const h = 90;
 
-  const datas = frames.map(canvas => {
+  function getData(canvas) {
     const c = document.createElement("canvas");
     c.width = w;
     c.height = h;
     const ctx = c.getContext("2d");
     ctx.drawImage(canvas, 0, 0, w, h);
     return ctx.getImageData(0, 0, w, h).data;
-  });
-
-  // Brightness-weighted center X (focuses on the face area)
-  function getCenterX(data) {
-    let sumX = 0, sumW = 0;
-    for (let y = 18; y < h - 18; y += 2) {
-      for (let x = 12; x < w - 12; x += 2) {
-        const i = (y * w + x) * 4;
-        const r = data[i], g = data[i+1], b = data[i+2];
-        const bright = (r + g + b) / 3;
-
-        // Prefer skin-like or brighter central pixels
-        if (bright > 55 && r > 60) {
-          sumX += x * bright;
-          sumW += bright;
-        }
-      }
-    }
-    return sumW > 0 ? sumX / sumW : 80;
   }
 
-  const centers = datas.map(getCenterX);
+  const first = getData(frames[0]);
+  const mid   = getData(frames[Math.floor(frames.length / 2)]);
+  const last  = getData(frames[frames.length - 1]);
 
-  const minC = Math.min(...centers);
-  const maxC = Math.max(...centers);
-  const horizontalMove = maxC - minC;
+  function diff(a, b) {
+    let total = 0;
+    let count = 0;
+    // only central area
+    for (let y = 15; y < h - 15; y += 2) {
+      for (let x = 20; x < w - 20; x += 2) {
+        const i = (y * w + x) * 4;
+        total += Math.abs(a[i] - b[i]) +
+                 Math.abs(a[i+1] - b[i+1]) +
+                 Math.abs(a[i+2] - b[i+2]);
+        count++;
+      }
+    }
+    return total / count;
+  }
 
-  // Directed movement (average of first half vs second half)
-  const mid = Math.floor(centers.length / 2);
-  const avgFirst  = centers.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
-  const avgSecond = centers.slice(mid).reduce((a, b) => a + b, 0) / (centers.length - mid);
-  const directedMove = Math.abs(avgSecond - avgFirst);
+  const d1 = diff(first, mid);
+  const d2 = diff(mid, last);
+  const d3 = diff(first, last);
 
-  console.log("Head-turn → horizontalMove:", horizontalMove.toFixed(1),
-              "directedMove:", directedMove.toFixed(1));
+  const maxDiff = Math.max(d1, d2, d3);
 
-  // Balanced thresholds
-  // Real clear head turn usually > 12–14
-  // Static laptop photo with normal hand shake is usually much lower in directedMove
-  return horizontalMove > 8 && directedMove > 3;
+  console.log("Movement maxDiff:", maxDiff.toFixed(1));
+
+  // Lower threshold – real head turn easily passes, static photo usually fails
+  return maxDiff > 11;
 }
 async function collectHeadTurnFrames() {
   if (isCapturing_) return;

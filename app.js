@@ -1972,16 +1972,15 @@ function captureFrameToCanvas() {
 }
 
 /**
- * Robust head-turn detection
- * Uses overall content difference + horizontal shift of brightness
+ * Stricter head-turn detection
+ * Requires clear horizontal movement (not just camera shake)
  */
 function hasHeadTurn(frames) {
-  if (!frames || frames.length < 5) return false;
+  if (!frames || frames.length < 6) return false;
 
   const w = 160;
   const h = 120;
 
-  // Convert all frames to small images
   const datas = frames.map(canvas => {
     const c = document.createElement("canvas");
     c.width = w;
@@ -1991,31 +1990,14 @@ function hasHeadTurn(frames) {
     return ctx.getImageData(0, 0, w, h).data;
   });
 
-  // 1. Average pixel difference between first and last frame
-  let totalDiff = 0;
-  let count = 0;
-  const first = datas[0];
-  const last  = datas[datas.length - 1];
-
-  for (let y = 20; y < h - 20; y += 2) {
-    for (let x = 25; x < w - 25; x += 2) {
-      const i = (y * w + x) * 4;
-      totalDiff += Math.abs(first[i] - last[i]) +
-                   Math.abs(first[i + 1] - last[i + 1]) +
-                   Math.abs(first[i + 2] - last[i + 2]);
-      count++;
-    }
-  }
-  const avgDiff = totalDiff / count;
-
-  // 2. Horizontal movement of the brightness center
+  // Calculate brightness center X for every frame
   function getCenterX(data) {
     let sumX = 0, sumW = 0;
-    for (let y = 25; y < h - 25; y += 3) {
-      for (let x = 20; x < w - 20; x += 3) {
+    for (let y = 20; y < h - 20; y += 2) {
+      for (let x = 15; x < w - 15; x += 2) {
         const i = (y * w + x) * 4;
         const bright = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        if (bright > 70) {
+        if (bright > 60) {
           sumX += x * bright;
           sumW += bright;
         }
@@ -2025,14 +2007,28 @@ function hasHeadTurn(frames) {
   }
 
   const centers = datas.map(getCenterX);
+
   const minC = Math.min(...centers);
   const maxC = Math.max(...centers);
   const horizontalMove = maxC - minC;
 
-  console.log("Head-turn → avgDiff:", avgDiff.toFixed(1), "horizontalMove:", horizontalMove.toFixed(1));
+  // Also check that the movement is not just random shake
+  // by measuring the range relative to the middle frames
+  const mid = centers[Math.floor(centers.length / 2)];
+  const leftSide  = centers.slice(0, Math.floor(centers.length / 2));
+  const rightSide = centers.slice(Math.floor(centers.length / 2));
 
-  // Lenient thresholds so real head turns pass
-  return avgDiff > 14 || horizontalMove > 9;
+  const avgLeft  = leftSide.reduce((a, b) => a + b, 0) / leftSide.length;
+  const avgRight = rightSide.reduce((a, b) => a + b, 0) / rightSide.length;
+  const directedMove = Math.abs(avgRight - avgLeft);
+
+  console.log("Head-turn → horizontalMove:", horizontalMove.toFixed(1),
+              "directedMove:", directedMove.toFixed(1));
+
+  // STRICT thresholds
+  // Real clear head turn usually produces horizontalMove > 18 and directedMove > 10
+  // Camera shake on a static photo is usually much smaller in directed movement
+  return horizontalMove > 16 && directedMove > 9;
 }
 
 async function collectHeadTurnFrames() {
@@ -2040,8 +2036,8 @@ async function collectHeadTurnFrames() {
   isCapturing_ = true;
   headTurnFrames_ = [];
 
-  const totalTime = 2200;   // ~2.2 seconds
-  const interval = 250;
+  const totalTime = 2500;   // 2.5 seconds – more time to turn
+  const interval = 220;
   const start = Date.now();
 
   while (Date.now() - start < totalTime) {
@@ -2058,8 +2054,8 @@ async function collectHeadTurnFrames() {
     return;
   }
 
-  // Wait a moment so the user can look more frontal again
-  await new Promise(r => setTimeout(r, 500));
+  // Wait so the user can return to frontal position
+  await new Promise(r => setTimeout(r, 600));
 
   const finalFrame = captureFrameToCanvas();
   if (!finalFrame) {

@@ -1005,7 +1005,19 @@ async function handlePhotoSelected() {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
+        currentPhoto = await compressImage(file);
+
+    // Simple glare / bright-spot check (common when photographing a screen)
+    try {
+      const hasGlare = await hasStrongGlare_(currentPhoto);
+      if (hasGlare) {
+        setBusy(false);
+        setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
+        currentPhoto = "";
+        return;
+      }
+    } catch (e) {}
+
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -1854,6 +1866,41 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
+function hasStrongGlare_(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const size = 100;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+
+        let veryBright = 0;
+        let total = 0;
+
+        for (let i = 0; i < data.length; i += 16) {
+          const r = data[i], g = data[i+1], b = data[i+2];
+          const bright = (r + g + b) / 3;
+          total++;
+          if (bright > 245) veryBright++;
+        }
+
+        const ratio = veryBright / total;
+        console.log("Glare ratio:", (ratio * 100).toFixed(1) + "%");
+        resolve(ratio > 0.018);
+      } catch (e) {
+        resolve(false);
+      }
+    };
+    img.onerror = () => resolve(false);
+    img.src = dataUrl;
+  });
+}
+
 /* =========================
    Live Front Camera – Forced 1-second capture
    (No movement / head-turn check)
@@ -2014,7 +2061,19 @@ async function processCapturedPhoto(file) {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-    currentPhoto = await compressImage(file);
+        currentPhoto = await compressImage(file);
+
+    // Simple glare / bright-spot check (common when photographing a screen)
+    try {
+      const hasGlare = await hasStrongGlare_(currentPhoto);
+      if (hasGlare) {
+        setBusy(false);
+        setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
+        currentPhoto = "";
+        return;
+      }
+    } catch (e) {}
+
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");

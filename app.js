@@ -2031,7 +2031,7 @@ function hasHeadTurn(frames) {
   // Balanced thresholds
   // Real clear head turn usually > 12–14
   // Static laptop photo with normal hand shake is usually much lower in directedMove
-  return horizontalMove > 12 && directedMove > 7;
+  return horizontalMove > 8 && directedMove > 3;
 }
 async function collectHeadTurnFrames() {
   if (isCapturing_) return;

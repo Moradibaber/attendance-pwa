@@ -2038,8 +2038,8 @@ async function collectHeadTurnFrames() {
   isCapturing_ = true;
   headTurnFrames_ = [];
 
-  const totalTime = 2800;   // almost 3 seconds – enough time to turn clearly
-  const interval = 230;
+  const totalTime = 3000;   // 3 full seconds
+  const interval = 250;
   const start = Date.now();
 
   while (Date.now() - start < totalTime) {
@@ -2056,8 +2056,8 @@ async function collectHeadTurnFrames() {
     return;
   }
 
-  // Give the user a moment to look back at the camera
-  await new Promise(r => setTimeout(r, 700));
+  // Wait so you can look back at the camera
+  await new Promise(r => setTimeout(r, 600));
 
   const finalFrame = captureFrameToCanvas();
   if (!finalFrame) {

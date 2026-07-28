@@ -304,22 +304,23 @@ records {
     <!-- Live Front Camera Overlay -->
     <!-- Live Front Camera Overlay - Forced 2-second capture -->
     <!-- Live Front Camera Overlay - Forced 2-second capture -->
+    <!-- Live Front Camera Overlay - Hidden two-frame liveness -->
   <div id="cameraOverlay" style="display:none; position:fixed; inset:0; background:#000; z-index:99999; flex-direction:column; align-items:center; justify-content:center;">
     <video id="cameraVideo" autoplay playsinline muted style="width:100%; max-width:480px; height:auto; background:#111; border-radius:12px;"></video>
     
-    <div style="margin-top:20px; text-align:center; padding:0 20px;">
-      <p id="cameraInstruction" style="color:#fff; font-size:16px; font-weight:700; line-height:1.7; margin:0;">
-        گوشی را در فاصله <span style="color:#fbbf24;">۴۰ تا ۵۰ سانتی‌متر</span> نگه دارید<br>
-        صورت کامل در کادر باشد<br>
-        <span style="color:#fbbf24;">عکس بعد از ۲ ثانیه به‌صورت خودکار گرفته می‌شود</span>
+    <div style="margin-top:24px; text-align:center; padding:0 20px;">
+      <div id="cameraSpinner" style="width:36px; height:36px; border:3px solid rgba(255,255,255,0.25); border-top-color:#4ade80; border-radius:50%; margin:0 auto 14px; animation:spin 0.8s linear infinite;"></div>
+      <p id="cameraInstruction" style="color:#fff; font-size:16px; font-weight:600; line-height:1.7; margin:0;">
+        صورت خود را روبه‌روی دوربین نگه دارید<br>
+        <span style="color:#94a3b8; font-size:14px;">لطفاً ثابت بمانید...</span>
       </p>
-      <p id="countdownText" style="color:#4ade80; font-size:48px; font-weight:800; margin:12px 0 0 0; letter-spacing:2px;">۲</p>
     </div>
 
-    <button id="cancelCameraBtn" style="margin-top:24px; padding:12px 32px; font-size:16px; border-radius:50px; border:none; background:#dc2626; color:white; font-weight:bold;">
+    <button id="cancelCameraBtn" style="margin-top:28px; padding:12px 32px; font-size:16px; border-radius:50px; border:none; background:#dc2626; color:white; font-weight:bold;">
       انصراف
     </button>
   </div>
+  
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
   <script src="app.js"></script>

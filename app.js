@@ -1855,50 +1855,33 @@ function compressImage(file) {
   });
 }
 /* =========================
-   Live Front Camera + Head-Turn Challenge (2 seconds)
+   Live Front Camera – Forced 1-second capture
+   (No movement / head-turn check)
 ========================= */
 
 let autoCaptureTimer_ = null;
-let isCapturing_ = false;
-let headTurnFrames_ = [];
-
-function showHeadTurnInstruction() {
-  const instructionBox = $("headTurnInstruction");
-  if (instructionBox) {
-    instructionBox.style.display = "flex";
-  }
-}
-
-function hideHeadTurnInstruction() {
-  const instructionBox = $("headTurnInstruction");
-  if (instructionBox) {
-    instructionBox.style.display = "none";
-  }
-}
+let countdownInterval_ = null;
 
 async function openFrontCamera() {
-  // First show the instruction, camera opens only after user confirms
-  showHeadTurnInstruction();
-}
-
-async function startCameraAfterInstruction() {
-  hideHeadTurnInstruction();
-
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
   const instruction = $("cameraInstruction");
+  const countdownEl = $("countdownText");
 
   if (!overlay || !video) {
     setStatus("خطا: المان دوربین پیدا نشد");
     return;
   }
 
+  // Clear previous timers
   if (autoCaptureTimer_) {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
   }
-  isCapturing_ = false;
-  headTurnFrames_ = [];
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
+  }
 
   try {
     if (cameraStream) {
@@ -1920,17 +1903,36 @@ async function startCameraAfterInstruction() {
 
     if (instruction) {
       instruction.innerHTML =
-        'سر را به چپ یا راست تکان دهید<br>' +
-        '<span style="color:#94a3b8; font-size:14px;">لطفاً چند لحظه صبر کنید...</span>';
+        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
+        '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>';
+    }
+    if (countdownEl) {
+      countdownEl.textContent = "۱";
+      countdownEl.style.color = "#4ade80";
     }
 
     overlay.style.display = "flex";
-    setStatus("در حال بررسی...");
+    setStatus("لطفاً ثابت بمانید...");
 
-    // Start collecting frames after a short settle time
+    // Countdown 1 → 0
+    let remaining = 1;
+    countdownInterval_ = setInterval(() => {
+      remaining--;
+      if (countdownEl) {
+        countdownEl.textContent = remaining > 0 ? remaining : "۰";
+        if (remaining <= 0) countdownEl.style.color = "#f87171";
+      }
+      if (remaining <= 0) {
+        clearInterval(countdownInterval_);
+        countdownInterval_ = null;
+      }
+    }, 1000);
+
+    // Auto-capture after exactly 1 second
     autoCaptureTimer_ = setTimeout(() => {
-      collectHeadTurnFrames();
-    }, 600);
+      autoCaptureTimer_ = null;
+      captureFromVideo();
+    }, 1000);
 
   } catch (err) {
     console.error("Camera error:", err);
@@ -1947,8 +1949,10 @@ function closeCamera() {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
   }
-  isCapturing_ = false;
-  headTurnFrames_ = [];
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
+  }
 
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
@@ -1956,135 +1960,44 @@ function closeCamera() {
   }
   if (video) video.srcObject = null;
   if (overlay) overlay.style.display = "none";
-  hideHeadTurnInstruction();
 }
 
-function captureFrameToCanvas() {
+function captureFromVideo() {
+  if (autoCaptureTimer_) {
+    clearTimeout(autoCaptureTimer_);
+    autoCaptureTimer_ = null;
+  }
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
+  }
+
   const video = $("cameraVideo");
-  if (!video || !video.videoWidth) return null;
+  if (!video || !video.videoWidth) {
+    setStatus("ویدیو هنوز آماده نیست");
+    closeCamera();
+    return;
+  }
 
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
-  return canvas;
-}
 
-/**
- * Stricter head-turn detection
- * Requires clear horizontal movement (not just camera shake)
- */
-/**
- * Balanced head-turn detection
- * Requires clear horizontal movement of the face area
- */
-/**
- * Simple & more reliable movement detection for mobile
- * Accepts if there is clear overall change between early and late frames
- */
-function hasHeadTurn(frames) {
-  if (!frames || frames.length < 5) return false;
-
-  const w = 120;
-  const h = 90;
-
-  function getData(canvas) {
-    const c = document.createElement("canvas");
-    c.width = w;
-    c.height = h;
-    const ctx = c.getContext("2d");
-    ctx.drawImage(canvas, 0, 0, w, h);
-    return ctx.getImageData(0, 0, w, h).data;
-  }
-
-  const first = getData(frames[0]);
-  const mid   = getData(frames[Math.floor(frames.length / 2)]);
-  const last  = getData(frames[frames.length - 1]);
-
-  function diff(a, b) {
-    let total = 0;
-    let count = 0;
-    // only central area
-    for (let y = 15; y < h - 15; y += 2) {
-      for (let x = 20; x < w - 20; x += 2) {
-        const i = (y * w + x) * 4;
-        total += Math.abs(a[i] - b[i]) +
-                 Math.abs(a[i+1] - b[i+1]) +
-                 Math.abs(a[i+2] - b[i+2]);
-        count++;
-      }
-    }
-    return total / count;
-  }
-
-  const d1 = diff(first, mid);
-  const d2 = diff(mid, last);
-  const d3 = diff(first, last);
-
-  const maxDiff = Math.max(d1, d2, d3);
-
-  console.log("Movement maxDiff:", maxDiff.toFixed(1));
-
-  // Lower threshold – real head turn easily passes, static photo usually fails
-  return maxDiff > 11;
-}
-async function collectHeadTurnFrames() {
-  if (isCapturing_) return;
-  isCapturing_ = true;
-  headTurnFrames_ = [];
-
-  const totalTime = 3000;   // 3 full seconds
-  const interval = 250;
-  const start = Date.now();
-
-  while (Date.now() - start < totalTime) {
-    const frame = captureFrameToCanvas();
-    if (frame) headTurnFrames_.push(frame);
-    await new Promise(r => setTimeout(r, interval));
-  }
-
-  const moved = hasHeadTurn(headTurnFrames_);
-
-  if (!moved) {
-    closeCamera();
-    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید و سر را واضح به چپ یا راست تکان دهید.");
-    return;
-  }
-
-  // Wait so you can look back at the camera
-  await new Promise(r => setTimeout(r, 600));
-
-  const finalFrame = captureFrameToCanvas();
-  if (!finalFrame) {
-    closeCamera();
-    setStatus("خطا در گرفتن عکس");
-    return;
-  }
-
-  finalFrame.toBlob(async (blob) => {
+  canvas.toBlob(async (blob) => {
     if (!blob) {
-      closeCamera();
       setStatus("خطا در گرفتن عکس");
+      closeCamera();
       return;
     }
+
     closeCamera();
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
     await processCapturedPhoto(file);
   }, "image/jpeg", 0.88);
 }
 
-// Bind the "متوجه شدم" button
-document.addEventListener("DOMContentLoaded", () => {
-  const btn = document.getElementById("startCameraAfterInstruction");
-  if (btn) {
-    btn.addEventListener("click", startCameraAfterInstruction);
-  }
-});
-
-/**
- * Process the captured photo (GPS + save record)
- */
 async function processCapturedPhoto(file) {
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");

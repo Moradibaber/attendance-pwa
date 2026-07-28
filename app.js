@@ -1855,20 +1855,6 @@ function compressImage(file) {
   });
 }
 /* =========================
-   Live Front Camera (forced)
-========================= */
-
-/* =========================
-   Live Front Camera (forced) + Blink Liveness
-========================= */
-/* =========================
-   Live Front Camera (forced) + Blink Liveness (5-second wait)
-========================= */
-/* =========================
-   Live Front Camera + Hidden Two-Frame Micro-Movement Check
-========================= */
-
-/* =========================
    Live Front Camera + Head-Turn Challenge (2 seconds)
 ========================= */
 
@@ -1973,9 +1959,6 @@ function closeCamera() {
   hideHeadTurnInstruction();
 }
 
-**
- * Capture current video frame as a canvas
- */
 function captureFrameToCanvas() {
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) return null;
@@ -1989,47 +1972,7 @@ function captureFrameToCanvas() {
 }
 
 /**
- * Estimate horizontal center of the face using simple skin-tone sampling
- */
-function getFaceCenterX(canvas) {
-  if (!canvas) return null;
-
-  const w = 160;
-  const h = 120;
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d");
-  ctx.drawImage(canvas, 0, 0, w, h);
-  const data = ctx.getImageData(0, 0, w, h).data;
-
-  let sumX = 0;
-  let count = 0;
-
-  for (let y = 15; y < h - 15; y += 2) {
-    for (let x = 20; x < w - 20; x += 2) {
-      const i = (y * w + x) * 4;
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-
-      // Simple skin-tone range
-      if (r > 95 && g > 40 && b > 20 &&
-          r > g && r > b &&
-          Math.abs(r - g) > 15) {
-        sumX += x;
-        count++;
-      }
-    }
-  }
-
-  if (count < 30) return null; // not enough skin pixels
-  return sumX / count;
-}
-
-/**
- * Check if the head moved horizontally enough during the 2 seconds
- */
-/**
- * More robust head-turn detection
+ * Robust head-turn detection
  * Uses overall content difference + horizontal shift of brightness
  */
 function hasHeadTurn(frames) {
@@ -2038,7 +1981,7 @@ function hasHeadTurn(frames) {
   const w = 160;
   const h = 120;
 
-  // Convert all frames to small grayscale-like data
+  // Convert all frames to small images
   const datas = frames.map(canvas => {
     const c = document.createElement("canvas");
     c.width = w;
@@ -2048,7 +1991,7 @@ function hasHeadTurn(frames) {
     return ctx.getImageData(0, 0, w, h).data;
   });
 
-  // 1. Total average difference between first and last frames (central area)
+  // 1. Average pixel difference between first and last frame
   let totalDiff = 0;
   let count = 0;
   const first = datas[0];
@@ -2058,18 +2001,46 @@ function hasHeadTurn(frames) {
     for (let x = 25; x < w - 25; x += 2) {
       const i = (y * w + x) * 4;
       totalDiff += Math.abs(first[i] - last[i]) +
-                   Math.abs(first[i+1] - last[i+1]) +
-                   Math.abs(first[i+2] - last[i+2]);
+                   Math.abs(first[i + 1] - last[i + 1]) +
+                   Math.abs(first[i + 2] - last[i + 2]);
       count++;
     }
   }
-   const avgDiff = totalDiff / count;
+  const avgDiff = totalDiff / count;
+
+  // 2. Horizontal movement of the brightness center
+  function getCenterX(data) {
+    let sumX = 0, sumW = 0;
+    for (let y = 25; y < h - 25; y += 3) {
+      for (let x = 20; x < w - 20; x += 3) {
+        const i = (y * w + x) * 4;
+        const bright = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        if (bright > 70) {
+          sumX += x * bright;
+          sumW += bright;
+        }
+      }
+    }
+    return sumW > 0 ? sumX / sumW : 80;
+  }
+
+  const centers = datas.map(getCenterX);
+  const minC = Math.min(...centers);
+  const maxC = Math.max(...centers);
+  const horizontalMove = maxC - minC;
+
+  console.log("Head-turn → avgDiff:", avgDiff.toFixed(1), "horizontalMove:", horizontalMove.toFixed(1));
+
+  // Lenient thresholds so real head turns pass
+  return avgDiff > 14 || horizontalMove > 9;
+}
+
 async function collectHeadTurnFrames() {
   if (isCapturing_) return;
   isCapturing_ = true;
   headTurnFrames_ = [];
 
-  const totalTime = 2200;   // a bit more than 2 seconds
+  const totalTime = 2200;   // ~2.2 seconds
   const interval = 250;
   const start = Date.now();
 
@@ -2087,7 +2058,7 @@ async function collectHeadTurnFrames() {
     return;
   }
 
-  // After successful movement, wait a short moment so the user can look more frontal again
+  // Wait a moment so the user can look more frontal again
   await new Promise(r => setTimeout(r, 500));
 
   const finalFrame = captureFrameToCanvas();
@@ -2109,20 +2080,6 @@ async function collectHeadTurnFrames() {
   }, "image/jpeg", 0.88);
 }
 
-What changed
-
-Detection is now based on overall pixel difference + horizontal shift of brightness (much more reliable than skin-tone).
-Thresholds are more lenient so normal head turns are accepted.
-After detecting the turn, the system waits 0.5 second and takes a final more-frontal photo (this helps Face++ match better and reduces “no_match”).
-
-
-Test again
-
-Open the form → see the instruction
-Tap “متوجه شدم – شروع”
-Clearly turn your head left or right once during the 2 seconds
-Look back at the camera
-It should now accept real head turns much more reliably and still reject static laptop photos.
 // Bind the "متوجه شدم" button
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("startCameraAfterInstruction");
@@ -2132,7 +2089,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /**
- * Same logic as before
+ * Process the captured photo (GPS + save record)
  */
 async function processCapturedPhoto(file) {
   try {
@@ -2196,7 +2153,6 @@ async function processCapturedPhoto(file) {
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
-
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

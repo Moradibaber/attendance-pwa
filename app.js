@@ -1864,38 +1864,30 @@ function compressImage(file) {
 /* =========================
    Live Front Camera (forced) + Blink Liveness (5-second wait)
 ========================= */
-
 /* =========================
-   Live Front Camera – Forced 2-second auto capture
-   (strong logical anti photo-of-photo / imitation)
+   Live Front Camera + Hidden Two-Frame Micro-Movement Check
 ========================= */
 
 let autoCaptureTimer_ = null;
-let countdownInterval_ = null;
+let isCapturing_ = false;
 
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
   const instruction = $("cameraInstruction");
-  const countdownEl = $("countdownText");
 
   if (!overlay || !video) {
     setStatus("خطا: المان دوربین پیدا نشد");
     return;
   }
 
-  // Clear previous timers
   if (autoCaptureTimer_) {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
   }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
+  isCapturing_ = false;
 
   try {
-    // Stop any previous stream
     if (cameraStream) {
       cameraStream.getTracks().forEach(t => t.stop());
       cameraStream = null;
@@ -1913,40 +1905,19 @@ async function openFrontCamera() {
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
-    // Reset UI
-        if (instruction) {
+    if (instruction) {
       instruction.innerHTML =
-        'گوشی را در فاصله <span style="color:#fbbf24;">۴۰ تا ۵۰ سانتی‌متر</span> نگه دارید<br>' +
-        'صورت کامل در کادر باشد<br>' +
-        '<span style="color:#fbbf24;">عکس بعد از ۲ ثانیه به‌صورت خودکار گرفته می‌شود</span>';
-    }
-    if (countdownEl) {
-      countdownEl.textContent = "۲";
-      countdownEl.style.color = "#4ade80";
+        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
+        '<span style="color:#94a3b8; font-size:14px;">لطفاً ثابت بمانید...</span>';
     }
 
     overlay.style.display = "flex";
-    setStatus("لطفاً منتظر بمانید");
+    setStatus("در حال آماده‌سازی...");
 
-    // Live countdown 2 → 1 → 0
-    let remaining = 2;
-    countdownInterval_ = setInterval(() => {
-      remaining--;
-      if (countdownEl) {
-        countdownEl.textContent = remaining > 0 ? remaining : "۰";
-        if (remaining <= 0) countdownEl.style.color = "#f87171";
-      }
-      if (remaining <= 0) {
-        clearInterval(countdownInterval_);
-        countdownInterval_ = null;
-      }
-    }, 1000);
-
-    // Auto-capture after exactly 2 seconds
+    // Give user time to settle, then start hidden two-frame check
     autoCaptureTimer_ = setTimeout(() => {
-      autoCaptureTimer_ = null;
-      captureFromVideo();           // take the photo automatically
-    }, 2000);
+      runHiddenTwoFrameCheck();
+    }, 1800);
 
   } catch (err) {
     console.error("Camera error:", err);
@@ -1963,10 +1934,7 @@ function closeCamera() {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
   }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
+  isCapturing_ = false;
 
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
@@ -1976,93 +1944,120 @@ function closeCamera() {
   if (overlay) overlay.style.display = "none";
 }
 
-function captureFromVideo() {
-  // Prevent double capture
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
-
+/**
+ * Capture current video frame as a canvas
+ */
+function captureFrameToCanvas() {
   const video = $("cameraVideo");
-  if (!video || !video.videoWidth) {
-    setStatus("ویدیو هنوز آماده نیست");
-    closeCamera();
-    return;
-  }
+  if (!video || !video.videoWidth) return null;
 
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
+  return canvas;
+}
 
-  canvas.toBlob(async (blob) => {
+/**
+ * Compare two frames for micro-movement.
+ * Returns true if enough movement is detected (real person).
+ */
+function hasMicroMovement(canvasA, canvasB) {
+  if (!canvasA || !canvasB) return false;
+
+  const w = 160;
+  const h = 120;
+  const c1 = document.createElement("canvas");
+  const c2 = document.createElement("canvas");
+  c1.width = c2.width = w;
+  c1.height = c2.height = h;
+
+  const ctx1 = c1.getContext("2d");
+  const ctx2 = c2.getContext("2d");
+  ctx1.drawImage(canvasA, 0, 0, w, h);
+  ctx2.drawImage(canvasB, 0, 0, w, h);
+
+  const d1 = ctx1.getImageData(0, 0, w, h).data;
+  const d2 = ctx2.getImageData(0, 0, w, h).data;
+
+  let diff = 0;
+  let count = 0;
+
+  // Sample central area (where the face usually is)
+  for (let y = 20; y < h - 20; y += 2) {
+    for (let x = 30; x < w - 30; x += 2) {
+      const i = (y * w + x) * 4;
+      const dr = Math.abs(d1[i] - d2[i]);
+      const dg = Math.abs(d1[i + 1] - d2[i + 1]);
+      const db = Math.abs(d1[i + 2] - d2[i + 2]);
+      diff += dr + dg + db;
+      count++;
+    }
+  }
+
+  const avgDiff = diff / count;
+  console.log("Micro-movement avgDiff:", avgDiff.toFixed(2));
+
+  // Threshold: static photo/screen is usually < 8-12
+  // Real person with natural movement is usually > 18-25
+  return avgDiff > 16;
+}
+
+async function runHiddenTwoFrameCheck() {
+  if (isCapturing_) return;
+  isCapturing_ = true;
+
+  const instruction = $("cameraInstruction");
+  if (instruction) {
+    instruction.innerHTML =
+      'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
+      '<span style="color:#94a3b8; font-size:14px;">لطفاً ثابت بمانید...</span>';
+  }
+
+  // Frame A
+  const frameA = captureFrameToCanvas();
+  if (!frameA) {
+    closeCamera();
+    setStatus("خطا در گرفتن تصویر. دوباره تلاش کنید.");
+    return;
+  }
+
+  // Wait for natural micro-movement
+  await new Promise(r => setTimeout(r, 850));
+
+  // Frame B
+  const frameB = captureFrameToCanvas();
+  if (!frameB) {
+    closeCamera();
+    setStatus("خطا در گرفتن تصویر. دوباره تلاش کنید.");
+    return;
+  }
+
+  const moved = hasMicroMovement(frameA, frameB);
+
+  if (!moved) {
+    closeCamera();
+    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید.");
+    return;
+  }
+
+  // Movement detected → use the second frame and continue
+  frameB.toBlob(async (blob) => {
     if (!blob) {
-      setStatus("خطا در گرفتن عکس");
       closeCamera();
+      setStatus("خطا در گرفتن عکس");
       return;
     }
-
     closeCamera();
-
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
     await processCapturedPhoto(file);
-  }, "image/jpeg", 0.85);
+  }, "image/jpeg", 0.88);
 }
 
 /**
  * Same logic that was previously in handlePhotoSelected after the file was selected.
  */
-/**
- * Very simple heuristic to catch many laptop/phone screen photos.
- * Screens usually have higher average brightness and lower texture variation.
- */
-function isProbablyScreenPhoto_(dataUrl) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const size = 120;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, size, size);
-        const data = ctx.getImageData(0, 0, size, size).data;
-
-        let sum = 0;
-        let sumSq = 0;
-        let count = 0;
-
-        // sample every 4th pixel
-        for (let i = 0; i < data.length; i += 16) {
-          const r = data[i], g = data[i+1], b = data[i+2];
-          const bright = (r + g + b) / 3;
-          sum += bright;
-          sumSq += bright * bright;
-          count++;
-        }
-
-        const mean = sum / count;
-        const variance = (sumSq / count) - (mean * mean);
-
-        // Screens are often brighter and have lower overall variance
-        const isScreen = mean > 145 && variance < 1800;
-
-        console.log("Screen check → mean:", mean.toFixed(1), "variance:", variance.toFixed(0), "→", isScreen);
-        resolve(isScreen);
-      } catch (e) {
-        resolve(false);
-      }
-    };
-    img.onerror = () => resolve(false);
-    img.src = dataUrl;
-  });
-}
 async function processCapturedPhoto(file) {
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
@@ -2080,18 +2075,6 @@ async function processCapturedPhoto(file) {
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
     currentPhoto = await compressImage(file);
-        // Simple anti-screen check (rejects many laptop / phone screen photos)
-    try {
-      const isScreenLike = await isProbablyScreenPhoto_(currentPhoto);
-      if (isScreenLike) {
-        setBusy(false);
-        setStatus("عکس نامعتبر است (احتمال عکس از روی صفحه نمایش).\nلطفاً فقط از چهره واقعی عکس بگیرید.");
-        currentPhoto = "";
-        return;
-      }
-    } catch (e) {
-      console.warn("screen check failed", e);
-    }
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -2106,7 +2089,7 @@ async function processCapturedPhoto(file) {
       return;
     }
 
-    setBusy(true, "در حال دریافت ...");
+    setBusy(true, "در حال دریافت GPS...");
     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
 
@@ -2137,6 +2120,11 @@ async function processCapturedPhoto(file) {
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
+/* =========================
+   Live Front Camera – Forced 2-second auto capture
+   (strong logical anti photo-of-photo / imitation)
+========================= */
+
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

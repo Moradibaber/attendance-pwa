@@ -1868,10 +1868,36 @@ function compressImage(file) {
    Live Front Camera + Hidden Two-Frame Micro-Movement Check
 ========================= */
 
+/* =========================
+   Live Front Camera + Head-Turn Challenge (2 seconds)
+========================= */
+
 let autoCaptureTimer_ = null;
 let isCapturing_ = false;
+let headTurnFrames_ = [];
+
+function showHeadTurnInstruction() {
+  const instructionBox = $("headTurnInstruction");
+  if (instructionBox) {
+    instructionBox.style.display = "flex";
+  }
+}
+
+function hideHeadTurnInstruction() {
+  const instructionBox = $("headTurnInstruction");
+  if (instructionBox) {
+    instructionBox.style.display = "none";
+  }
+}
 
 async function openFrontCamera() {
+  // First show the instruction, camera opens only after user confirms
+  showHeadTurnInstruction();
+}
+
+async function startCameraAfterInstruction() {
+  hideHeadTurnInstruction();
+
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
   const instruction = $("cameraInstruction");
@@ -1886,6 +1912,7 @@ async function openFrontCamera() {
     autoCaptureTimer_ = null;
   }
   isCapturing_ = false;
+  headTurnFrames_ = [];
 
   try {
     if (cameraStream) {
@@ -1907,17 +1934,17 @@ async function openFrontCamera() {
 
     if (instruction) {
       instruction.innerHTML =
-        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
-        '<span style="color:#94a3b8; font-size:14px;">لطفاً ثابت بمانید...</span>';
+        'سر را به چپ یا راست تکان دهید<br>' +
+        '<span style="color:#94a3b8; font-size:14px;">لطفاً چند لحظه صبر کنید...</span>';
     }
 
     overlay.style.display = "flex";
-    setStatus("در حال آماده‌سازی...");
+    setStatus("در حال بررسی...");
 
-    // Give user time to settle, then start hidden two-frame check
+    // Start collecting frames after a short settle time
     autoCaptureTimer_ = setTimeout(() => {
-      runHiddenTwoFrameCheck();
-    }, 1800);
+      collectHeadTurnFrames();
+    }, 600);
 
   } catch (err) {
     console.error("Camera error:", err);
@@ -1935,6 +1962,7 @@ function closeCamera() {
     autoCaptureTimer_ = null;
   }
   isCapturing_ = false;
+  headTurnFrames_ = [];
 
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
@@ -1942,11 +1970,9 @@ function closeCamera() {
   }
   if (video) video.srcObject = null;
   if (overlay) overlay.style.display = "none";
+  hideHeadTurnInstruction();
 }
 
-/**
- * Capture current video frame as a canvas
- */
 function captureFrameToCanvas() {
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) return null;
@@ -1960,90 +1986,91 @@ function captureFrameToCanvas() {
 }
 
 /**
- * Compare two frames for micro-movement.
- * Returns true if enough movement is detected (real person).
+ * Estimate horizontal center of the face using simple skin-tone sampling
  */
-function hasMicroMovement(canvasA, canvasB) {
-  if (!canvasA || !canvasB) return false;
+function getFaceCenterX(canvas) {
+  if (!canvas) return null;
 
   const w = 160;
   const h = 120;
-  const c1 = document.createElement("canvas");
-  const c2 = document.createElement("canvas");
-  c1.width = c2.width = w;
-  c1.height = c2.height = h;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(canvas, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
 
-  const ctx1 = c1.getContext("2d");
-  const ctx2 = c2.getContext("2d");
-  ctx1.drawImage(canvasA, 0, 0, w, h);
-  ctx2.drawImage(canvasB, 0, 0, w, h);
-
-  const d1 = ctx1.getImageData(0, 0, w, h).data;
-  const d2 = ctx2.getImageData(0, 0, w, h).data;
-
-  let diff = 0;
+  let sumX = 0;
   let count = 0;
 
-  // Sample central area (where the face usually is)
-  for (let y = 20; y < h - 20; y += 2) {
-    for (let x = 30; x < w - 30; x += 2) {
+  for (let y = 15; y < h - 15; y += 2) {
+    for (let x = 20; x < w - 20; x += 2) {
       const i = (y * w + x) * 4;
-      const dr = Math.abs(d1[i] - d2[i]);
-      const dg = Math.abs(d1[i + 1] - d2[i + 1]);
-      const db = Math.abs(d1[i + 2] - d2[i + 2]);
-      diff += dr + dg + db;
-      count++;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+
+      // Simple skin-tone range
+      if (r > 95 && g > 40 && b > 20 &&
+          r > g && r > b &&
+          Math.abs(r - g) > 15) {
+        sumX += x;
+        count++;
+      }
     }
   }
 
-  const avgDiff = diff / count;
-  console.log("Micro-movement avgDiff:", avgDiff.toFixed(2));
-
-  // Threshold: static photo/screen is usually < 8-12
-  // Real person with natural movement is usually > 18-25
-  return avgDiff > 16;
+  if (count < 30) return null; // not enough skin pixels
+  return sumX / count;
 }
 
-async function runHiddenTwoFrameCheck() {
+/**
+ * Check if the head moved horizontally enough during the 2 seconds
+ */
+function hasHeadTurn(frames) {
+  if (!frames || frames.length < 4) return false;
+
+  const centers = frames
+    .map(f => getFaceCenterX(f))
+    .filter(c => c !== null);
+
+  if (centers.length < 3) return false;
+
+  const minX = Math.min(...centers);
+  const maxX = Math.max(...centers);
+  const movement = maxX - minX;
+
+  console.log("Head turn movement (px):", movement.toFixed(1));
+
+  // Threshold on the downscaled 160px width
+  // Real head turn usually produces > 12–18 px movement
+  return movement > 11;
+}
+
+async function collectHeadTurnFrames() {
   if (isCapturing_) return;
   isCapturing_ = true;
+  headTurnFrames_ = [];
 
-  const instruction = $("cameraInstruction");
-  if (instruction) {
-    instruction.innerHTML =
-      'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
-      '<span style="color:#94a3b8; font-size:14px;">لطفاً ثابت بمانید...</span>';
+  const totalTime = 2000;      // 2 seconds
+  const interval = 280;        // capture every 280ms
+  const start = Date.now();
+
+  while (Date.now() - start < totalTime) {
+    const frame = captureFrameToCanvas();
+    if (frame) headTurnFrames_.push(frame);
+    await new Promise(r => setTimeout(r, interval));
   }
 
-  // Frame A
-  const frameA = captureFrameToCanvas();
-  if (!frameA) {
-    closeCamera();
-    setStatus("خطا در گرفتن تصویر. دوباره تلاش کنید.");
-    return;
-  }
-
-  // Wait for natural micro-movement
-  await new Promise(r => setTimeout(r, 850));
-
-  // Frame B
-  const frameB = captureFrameToCanvas();
-  if (!frameB) {
-    closeCamera();
-    setStatus("خطا در گرفتن تصویر. دوباره تلاش کنید.");
-    return;
-  }
-
-  const moved = hasMicroMovement(frameA, frameB);
+  const moved = hasHeadTurn(headTurnFrames_);
 
   if (!moved) {
     closeCamera();
-    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید.");
+    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید و سر را واضح تکان دهید.");
     return;
   }
 
-  // Movement detected → use the second frame and continue
-  frameB.toBlob(async (blob) => {
+  // Use the last good frame
+  const bestFrame = headTurnFrames_[headTurnFrames_.length - 1];
+  bestFrame.toBlob(async (blob) => {
     if (!blob) {
       closeCamera();
       setStatus("خطا در گرفتن عکس");
@@ -2055,8 +2082,16 @@ async function runHiddenTwoFrameCheck() {
   }, "image/jpeg", 0.88);
 }
 
+// Bind the "متوجه شدم" button
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("startCameraAfterInstruction");
+  if (btn) {
+    btn.addEventListener("click", startCameraAfterInstruction);
+  }
+});
+
 /**
- * Same logic that was previously in handlePhotoSelected after the file was selected.
+ * Same logic as before
  */
 async function processCapturedPhoto(file) {
   try {
@@ -2120,10 +2155,6 @@ async function processCapturedPhoto(file) {
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
-/* =========================
-   Live Front Camera – Forced 2-second auto capture
-   (strong logical anti photo-of-photo / imitation)
-========================= */
 
 /* =========================
    Jalali -> Gregorian (helpers)

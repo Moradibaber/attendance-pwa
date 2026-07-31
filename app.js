@@ -404,46 +404,64 @@ function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");
   if (oldToast) oldToast.remove();
 
+  // Inject styles once
+  if (!document.getElementById("gps-toast-style")) {
+    const style = document.createElement("style");
+    style.id = "gps-toast-style";
+    style.textContent = `
+      @keyframes gpsToastIn {
+        0%   { opacity: 0; transform: translate(-50%, -46%) scale(0.85); }
+        100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      }
+      @keyframes gpsToastOut {
+        0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        100% { opacity: 0; transform: translate(-50%, -46%) scale(0.85); }
+      }
+      #gps-toast {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #fff;
+        padding: 22px 28px;
+        border-radius: 18px;
+        font-size: 18px;
+        font-weight: 700;
+        font-family: Tahoma, Vazirmatn, sans-serif;
+        z-index: 10000;
+        direction: rtl;
+        text-align: center;
+        width: 82%;
+        max-width: 380px;
+        border: 2px solid rgba(255,255,255,0.85);
+        line-height: 1.7;
+        white-space: pre-line;
+        animation: gpsToastIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      }
+      #gps-toast.success {
+        background: rgba(22, 163, 74, 0.96);
+        box-shadow: 0 14px 40px rgba(22, 163, 74, 0.4);
+      }
+      #gps-toast.error {
+        background: rgba(220, 38, 38, 0.95);
+        box-shadow: 0 14px 40px rgba(220, 38, 38, 0.35);
+      }
+      #gps-toast.hiding {
+        animation: gpsToastOut 0.3s ease forwards;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   const toast = document.createElement("div");
   toast.id = "gps-toast";
+  toast.className = type === "success" ? "success" : "error"; 
   toast.textContent = message;
-
-  const isSuccess = type === "success";
-
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%) scale(0.8)",
-    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
-    color: "#ffffff",
-    padding: "25px 40px",
-    borderRadius: "20px",
-    fontSize: "22px",
-    fontWeight: "bold",
-    fontFamily: "Tahoma, sans-serif",
-    boxShadow: isSuccess ? "0 15px 50px rgba(22, 163, 74, 0.45)" : "0 15px 50px rgba(0, 0, 0, 0.5)",
-    zIndex: "10000",
-    opacity: "0",
-    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-    direction: "rtl",
-    textAlign: "center",
-    width: "80%",
-    maxWidth: "400px",
-    border: "3px solid #ffffff",
-  });
-
   document.body.appendChild(toast);
 
   setTimeout(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 100);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
-    setTimeout(() => toast.remove(), 400);
+    toast.classList.add("hiding");
+    setTimeout(() => toast.remove(), 320);
   }, duration);
 }
 
@@ -1072,49 +1090,38 @@ async function handlePhotoSelected() {
 
 async function createRecord(type) {
   const profile = await getProfile();
-
   const { policyInfo, gate } = await getCurrentAttendanceGate();
   if (!gate.ok) {
     setStatus(gate.message);
     return;
   }
-
   const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
     return;
   }
-
   const loc = hasValidLocation(pendingLocation)
     ? pendingLocation
     : emptyLocation("not_received", "GPS دریافت نشد");
-
   const now = new Date();
   const nowMs = now.getTime();
-
   const clickMs = captureStartedAtMs || nowMs;
   const photoMs = photoSelectedAtMs || "";
   const photoCompressedMs = photoCompressedAtMs || "";
   const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
-
   const deviceTime = now.toISOString();
   const deviceTimeAtClick = new Date(clickMs).toISOString();
   const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
   const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
   const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
   const gpsTimestamp = deviceTimeAtGps;
-
   const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
   const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
   const submitDelayMs = Math.max(0, nowMs - clickMs);
-
   const offlineCreated = !navigator.onLine;
   const createdOnline = navigator.onLine;
-
   const sessionClockDriftMs = getSessionClockDriftMs();
   const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
-
   const risk = calculateClockRisk({
     clickMs,
     gpsMs,
@@ -1122,12 +1129,9 @@ async function createRecord(type) {
     locationStatus: loc.status,
     sessionClockDriftMs,
   });
-
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
   const jalaliDateStr = getJalaliIsoDate(now);
   const hourStr = getTime(now);
-
   const record = {
     clientRecordId,
     personnelCode: profile.personnelCode,
@@ -1139,46 +1143,37 @@ async function createRecord(type) {
     recordHour: hourStr,
     recordTime: hourStr,
     workLocation: (document.getElementById("workLocationInput")?.value || "").trim(),
-
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
-
     deviceTime,
     deviceTimeAtClick,
     deviceTimeAtPhoto,
     deviceTimeAtPhotoCompressed,
     deviceTimeAtGps,
     gpsTimestamp,
-
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
-
     offlineCreated,
     createdOnline,
     connectionStatus: offlineCreated ? "offline" : "online",
     connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
-
     firstConnectionAfterOfflineRecord: "",
     lastConnectionBeforeUpload: "",
     uploadedAt: "",
     delayAfterFirstConnectionMs: "",
-
     clockRisk: risk.clockRisk,
     clockRiskReason: risk.clockRiskReason,
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
-
     attendancePolicy,
     policyVersion: Number(policyInfo.policyVersion || 0),
     policyFetchedAt: policyInfo.policyFetchedAt || "",
     policySource: policyInfo.policySource || "",
-
     photo: currentPhoto || "",
-
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
@@ -1188,12 +1183,32 @@ async function createRecord(type) {
   };
 
   await dbPut(STORE_RECORDS, record);
-
-  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
-  setStatus("تردد ذخیره شد.");
   await refreshUi();
 
-  if (navigator.onLine) scheduleSyncPendingRecords(500);
+  // Online: wait until send finishes, then show success
+  if (navigator.onLine) {
+    setBusy(true, "در حال ارسال تردد...");
+    setStatus("در حال ارسال تردد، لطفاً صبر کنید...");
+    setSyncStatus("در حال ارسال...");
+
+    await syncPendingRecords();
+
+    // Check if this record was actually marked as sent
+    const all = await dbGetAll(STORE_RECORDS);
+    const mine = all.find((x) => x.clientRecordId === clientRecordId);
+    if (mine && mine.status === "sent") {
+      showGpsToast("✅ تردد با موفقیت ثبت شد\nادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
+      setStatus("تردد با موفقیت ارسال شد.");
+    } else {
+      showGpsToast("تردد ذخیره شد و به‌زودی ارسال می‌شود", 4000, "success");
+      setStatus("تردد ذخیره شد — در انتظار ارسال");
+      scheduleSyncPendingRecords(2000);
+    }
+  } else {
+    // Offline
+    showGpsToast("تردد ذخیره شد و بعداً ارسال می‌شود", 4000, "success");
+    setStatus("تردد ذخیره شد — آفلاین");
+  }
 }
 
 function createClientRecordId(personnelCode, baseMs) {
@@ -2110,7 +2125,7 @@ async function processCapturedPhoto(file) {
       return;
     }
 
-    setBusy(true, "در حال ذخیره تردد...");
+    setBusy(true, "در حال ثبت و ارسال تردد...");
     await createRecord("تردد");
     setBusy(false);
   } catch (err) {

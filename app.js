@@ -1072,49 +1072,38 @@ async function handlePhotoSelected() {
 
 async function createRecord(type) {
   const profile = await getProfile();
-
   const { policyInfo, gate } = await getCurrentAttendanceGate();
   if (!gate.ok) {
     setStatus(gate.message);
     return;
   }
-
   const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
-
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
     return;
   }
-
   const loc = hasValidLocation(pendingLocation)
     ? pendingLocation
     : emptyLocation("not_received", "GPS دریافت نشد");
-
   const now = new Date();
   const nowMs = now.getTime();
-
   const clickMs = captureStartedAtMs || nowMs;
   const photoMs = photoSelectedAtMs || "";
   const photoCompressedMs = photoCompressedAtMs || "";
   const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
-
   const deviceTime = now.toISOString();
   const deviceTimeAtClick = new Date(clickMs).toISOString();
   const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
   const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
   const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
   const gpsTimestamp = deviceTimeAtGps;
-
   const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
   const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
   const submitDelayMs = Math.max(0, nowMs - clickMs);
-
   const offlineCreated = !navigator.onLine;
   const createdOnline = navigator.onLine;
-
   const sessionClockDriftMs = getSessionClockDriftMs();
   const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
-
   const risk = calculateClockRisk({
     clickMs,
     gpsMs,
@@ -1122,12 +1111,9 @@ async function createRecord(type) {
     locationStatus: loc.status,
     sessionClockDriftMs,
   });
-
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
-
   const jalaliDateStr = getJalaliIsoDate(now);
   const hourStr = getTime(now);
-
   const record = {
     clientRecordId,
     personnelCode: profile.personnelCode,
@@ -1139,46 +1125,37 @@ async function createRecord(type) {
     recordHour: hourStr,
     recordTime: hourStr,
     workLocation: (document.getElementById("workLocationInput")?.value || "").trim(),
-
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
-
     deviceTime,
     deviceTimeAtClick,
     deviceTimeAtPhoto,
     deviceTimeAtPhotoCompressed,
     deviceTimeAtGps,
     gpsTimestamp,
-
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
-
     offlineCreated,
     createdOnline,
     connectionStatus: offlineCreated ? "offline" : "online",
     connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
-
     firstConnectionAfterOfflineRecord: "",
     lastConnectionBeforeUpload: "",
     uploadedAt: "",
     delayAfterFirstConnectionMs: "",
-
     clockRisk: risk.clockRisk,
     clockRiskReason: risk.clockRiskReason,
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
-
     attendancePolicy,
     policyVersion: Number(policyInfo.policyVersion || 0),
     policyFetchedAt: policyInfo.policyFetchedAt || "",
     policySource: policyInfo.policySource || "",
-
     photo: currentPhoto || "",
-
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
@@ -1188,14 +1165,33 @@ async function createRecord(type) {
   };
 
   await dbPut(STORE_RECORDS, record);
-
-  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
-  setStatus("تردد ذخیره شد.");
   await refreshUi();
 
-  if (navigator.onLine) scheduleSyncPendingRecords(500);
-}
+  // Online: wait until send finishes, then show success
+  if (navigator.onLine) {
+    setBusy(true, "در حال ارسال تردد...");
+    setStatus("در حال ارسال تردد، لطفاً صبر کنید...");
+    setSyncStatus("در حال ارسال...");
 
+    await syncPendingRecords();
+
+    // Check if this record was actually marked as sent
+    const all = await dbGetAll(STORE_RECORDS);
+    const mine = all.find((x) => x.clientRecordId === clientRecordId);
+    if (mine && mine.status === "sent") {
+      showGpsToast("✅ تردد با موفقیت ثبت شد\nادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
+      setStatus("تردد با موفقیت ارسال شد.");
+    } else {
+      showGpsToast("تردد ذخیره شد و به‌زودی ارسال می‌شود", 4000, "success");
+      setStatus("تردد ذخیره شد — در انتظار ارسال");
+      scheduleSyncPendingRecords(2000);
+    }
+  } else {
+    // Offline
+    showGpsToast("تردد ذخیره شد و بعداً ارسال می‌شود", 4000, "success");
+    setStatus("تردد ذخیره شد — آفلاین");
+  }
+}
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -2110,7 +2106,7 @@ async function processCapturedPhoto(file) {
       return;
     }
 
-    setBusy(true, "در حال ذخیره تردد...");
+        setBusy(true, "در حال ثبت و ارسال تردد...");
     await createRecord("تردد");
     setBusy(false);
   } catch (err) {

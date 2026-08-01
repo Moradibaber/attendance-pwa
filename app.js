@@ -1,4 +1,4 @@
-/* FILE: /app.js */  
+/* FILE: /app.js */ 
 /* REPLACE FULL FILE */
 
 const DB_NAME = "attendance-pwa-db";
@@ -1020,7 +1020,7 @@ async function handlePhotoSelected() {
       return;
     }
 
-    setBusy(true, "در حال دریافت ...");
+    setBusy(true, "در حال دریافت GPS...");
     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
 
@@ -1177,8 +1177,8 @@ async function createRecord(type) {
 
   await dbPut(STORE_RECORDS, record);
 
-  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
-  setStatus("تردد ذخیره شد.");
+  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
+  setStatus("تردد با GPS ذخیره شد.");
   await refreshUi();
 
   if (navigator.onLine) scheduleSyncPendingRecords(500);
@@ -1811,10 +1811,9 @@ function compressImage(file) {
     reader.onload = (e) => {
       const img = new Image();
 
-      img.onload = () => { 
-        // Slightly larger canvas + higher JPEG quality → better Face++ results
-        const OUT_W = 360;
-        const OUT_H = 480;
+      img.onload = () => {
+        const OUT_W = 300;
+        const OUT_H = 450;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
@@ -1842,7 +1841,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.72          // was 0.5 – higher quality for Face++
+          0.5
         );
       };
 
@@ -1858,63 +1857,17 @@ function compressImage(file) {
    Live Front Camera (forced)
 ========================= */
 
-/* =========================
-   Live Front Camera (forced) + Blink Liveness
-========================= */
-/* =========================
-   Live Front Camera (forced) + Blink Liveness (5-second wait)
-========================= */
-/* =========================
-   Live Front Camera + Hidden Two-Frame Micro-Movement Check
-========================= */
-
-/* =========================
-   Live Front Camera + Head-Turn Challenge (2 seconds)
-========================= */
-
-let autoCaptureTimer_ = null;
-let isCapturing_ = false;
-let headTurnFrames_ = [];
-
-function showHeadTurnInstruction() {
-  const instructionBox = $("headTurnInstruction");
-  if (instructionBox) {
-    instructionBox.style.display = "flex";
-  }
-}
-
-function hideHeadTurnInstruction() {
-  const instructionBox = $("headTurnInstruction");
-  if (instructionBox) {
-    instructionBox.style.display = "none";
-  }
-}
-
 async function openFrontCamera() {
-  // First show the instruction, camera opens only after user confirms
-  showHeadTurnInstruction();
-}
-
-async function startCameraAfterInstruction() {
-  hideHeadTurnInstruction();
-
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
-  const instruction = $("cameraInstruction");
 
   if (!overlay || !video) {
     setStatus("خطا: المان دوربین پیدا نشد");
     return;
   }
 
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  isCapturing_ = false;
-  headTurnFrames_ = [];
-
   try {
+    // Stop any previous stream
     if (cameraStream) {
       cameraStream.getTracks().forEach(t => t.stop());
       cameraStream = null;
@@ -1923,7 +1876,7 @@ async function startCameraAfterInstruction() {
     const constraints = {
       audio: false,
       video: {
-        facingMode: { exact: "user" },
+        facingMode: { exact: "user" },   // FORCE front camera only
         width:  { ideal: 640 },
         height: { ideal: 480 }
       }
@@ -1932,20 +1885,8 @@ async function startCameraAfterInstruction() {
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
-    if (instruction) {
-      instruction.innerHTML =
-        'سر را به چپ یا راست تکان دهید<br>' +
-        '<span style="color:#94a3b8; font-size:14px;">لطفاً چند لحظه صبر کنید...</span>';
-    }
-
     overlay.style.display = "flex";
-    setStatus("در حال بررسی...");
-
-    // Start collecting frames after a short settle time
-    autoCaptureTimer_ = setTimeout(() => {
-      collectHeadTurnFrames();
-    }, 600);
-
+    setStatus("دوربین سلفی آماده است. عکس بگیرید.");
   } catch (err) {
     console.error("Camera error:", err);
     setStatus("نمی‌توان دوربین سلفی را باز کرد. لطفاً دسترسی دوربین را مجاز کنید.");
@@ -1957,182 +1898,48 @@ function closeCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
 
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  isCapturing_ = false;
-  headTurnFrames_ = [];
-
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;
   }
   if (video) video.srcObject = null;
   if (overlay) overlay.style.display = "none";
-  hideHeadTurnInstruction();
 }
 
-**
- * Capture current video frame as a canvas
- */
-function captureFrameToCanvas() {
+function captureFromVideo() {
   const video = $("cameraVideo");
-  if (!video || !video.videoWidth) return null;
+  if (!video || !video.videoWidth) {
+    setStatus("ویدیو هنوز آماده نیست");
+    return;
+  }
 
+  // Create a canvas and draw the current video frame
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
-  return canvas;
-}
 
-/**
- * Estimate horizontal center of the face using simple skin-tone sampling
- */
-function getFaceCenterX(canvas) {
-  if (!canvas) return null;
-
-  const w = 160;
-  const h = 120;
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d");
-  ctx.drawImage(canvas, 0, 0, w, h);
-  const data = ctx.getImageData(0, 0, w, h).data;
-
-  let sumX = 0;
-  let count = 0;
-
-  for (let y = 15; y < h - 15; y += 2) {
-    for (let x = 20; x < w - 20; x += 2) {
-      const i = (y * w + x) * 4;
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-
-      // Simple skin-tone range
-      if (r > 95 && g > 40 && b > 20 &&
-          r > g && r > b &&
-          Math.abs(r - g) > 15) {
-        sumX += x;
-        count++;
-      }
-    }
-  }
-
-  if (count < 30) return null; // not enough skin pixels
-  return sumX / count;
-}
-
-/**
- * Check if the head moved horizontally enough during the 2 seconds
- */
-/**
- * More robust head-turn detection
- * Uses overall content difference + horizontal shift of brightness
- */
-function hasHeadTurn(frames) {
-  if (!frames || frames.length < 5) return false;
-
-  const w = 160;
-  const h = 120;
-
-  // Convert all frames to small grayscale-like data
-  const datas = frames.map(canvas => {
-    const c = document.createElement("canvas");
-    c.width = w;
-    c.height = h;
-    const ctx = c.getContext("2d");
-    ctx.drawImage(canvas, 0, 0, w, h);
-    return ctx.getImageData(0, 0, w, h).data;
-  });
-
-  // 1. Total average difference between first and last frames (central area)
-  let totalDiff = 0;
-  let count = 0;
-  const first = datas[0];
-  const last  = datas[datas.length - 1];
-
-  for (let y = 20; y < h - 20; y += 2) {
-    for (let x = 25; x < w - 25; x += 2) {
-      const i = (y * w + x) * 4;
-      totalDiff += Math.abs(first[i] - last[i]) +
-                   Math.abs(first[i+1] - last[i+1]) +
-                   Math.abs(first[i+2] - last[i+2]);
-      count++;
-    }
-  }
-   const avgDiff = totalDiff / count;
-async function collectHeadTurnFrames() {
-  if (isCapturing_) return;
-  isCapturing_ = true;
-  headTurnFrames_ = [];
-
-  const totalTime = 2200;   // a bit more than 2 seconds
-  const interval = 250;
-  const start = Date.now();
-
-  while (Date.now() - start < totalTime) {
-    const frame = captureFrameToCanvas();
-    if (frame) headTurnFrames_.push(frame);
-    await new Promise(r => setTimeout(r, interval));
-  }
-
-  const moved = hasHeadTurn(headTurnFrames_);
-
-  if (!moved) {
-    closeCamera();
-    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید و سر را واضح به چپ یا راست تکان دهید.");
-    return;
-  }
-
-  // After successful movement, wait a short moment so the user can look more frontal again
-  await new Promise(r => setTimeout(r, 500));
-
-  const finalFrame = captureFrameToCanvas();
-  if (!finalFrame) {
-    closeCamera();
-    setStatus("خطا در گرفتن عکس");
-    return;
-  }
-
-  finalFrame.toBlob(async (blob) => {
+  // Convert to blob → File (so we can reuse the existing compressImage function)
+  canvas.toBlob(async (blob) => {
     if (!blob) {
-      closeCamera();
       setStatus("خطا در گرفتن عکس");
       return;
     }
+
     closeCamera();
+
+    // Create a fake File object so the rest of your code works unchanged
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+
+    // From here we continue exactly like the old handlePhotoSelected
     await processCapturedPhoto(file);
-  }, "image/jpeg", 0.88);
+  }, "image/jpeg", 0.85);
 }
 
-What changed
-
-Detection is now based on overall pixel difference + horizontal shift of brightness (much more reliable than skin-tone).
-Thresholds are more lenient so normal head turns are accepted.
-After detecting the turn, the system waits 0.5 second and takes a final more-frontal photo (this helps Face++ match better and reduces “no_match”).
-
-
-Test again
-
-Open the form → see the instruction
-Tap “متوجه شدم – شروع”
-Clearly turn your head left or right once during the 2 seconds
-Look back at the camera
-It should now accept real head turns much more reliably and still reject static laptop photos.
-// Bind the "متوجه شدم" button
-document.addEventListener("DOMContentLoaded", () => {
-  const btn = document.getElementById("startCameraAfterInstruction");
-  if (btn) {
-    btn.addEventListener("click", startCameraAfterInstruction);
-  }
-});
-
 /**
- * Same logic as before
+ * This function contains the same logic that was previously in handlePhotoSelected
+ * after the file was selected. We reuse it so nothing else breaks.
  */
 async function processCapturedPhoto(file) {
   try {
@@ -2196,7 +2003,6 @@ async function processCapturedPhoto(file) {
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
-
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

@@ -2062,18 +2062,7 @@ async function processCapturedPhoto(file) {
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
         currentPhoto = await compressImage(file);
-
-    // Simple glare / bright-spot check (common when photographing a screen)
-    try {
-      const hasGlare = await hasStrongGlare_(currentPhoto);
-      if (hasGlare) {
-        setBusy(false);
-        setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
-        currentPhoto = "";
-        return;
-      }
-    } catch (e) {}
-
+    
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");

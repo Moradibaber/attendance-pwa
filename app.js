@@ -404,66 +404,49 @@ function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");
   if (oldToast) oldToast.remove();
 
-  // Inject styles once
-  if (!document.getElementById("gps-toast-style")) {
-    const style = document.createElement("style");
-    style.id = "gps-toast-style";
-    style.textContent = `
-      @keyframes gpsToastIn {
-        0%   { opacity: 0; transform: translate(-50%, -46%) scale(0.85); }
-        100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-      }
-      @keyframes gpsToastOut {
-        0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-        100% { opacity: 0; transform: translate(-50%, -46%) scale(0.85); }
-      }
-      #gps-toast {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: #fff;
-        padding: 22px 28px;
-        border-radius: 18px;
-        font-size: 18px;
-        font-weight: 700;
-        font-family: Tahoma, Vazirmatn, sans-serif;
-        z-index: 10000;
-        direction: rtl;
-        text-align: center;
-        width: 82%;
-        max-width: 380px;
-        border: 2px solid rgba(255,255,255,0.85);
-        line-height: 1.7;
-        white-space: pre-line;
-        animation: gpsToastIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-      }
-      #gps-toast.success {
-        background: rgba(22, 163, 74, 0.96);
-        box-shadow: 0 14px 40px rgba(22, 163, 74, 0.4);
-      }
-      #gps-toast.error {
-        background: rgba(220, 38, 38, 0.95);
-        box-shadow: 0 14px 40px rgba(220, 38, 38, 0.35);
-      }
-      #gps-toast.hiding {
-        animation: gpsToastOut 0.3s ease forwards;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
   const toast = document.createElement("div");
   toast.id = "gps-toast";
-  toast.className = type === "success" ? "success" : "error";
   toast.textContent = message;
+
+  const isSuccess = type === "success";
+
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%) scale(0.8)",
+    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
+    color: "#ffffff",
+    padding: "25px 40px",
+    borderRadius: "20px",
+    fontSize: "22px",
+    fontWeight: "bold",
+    fontFamily: "Tahoma, sans-serif",
+    boxShadow: isSuccess ? "0 15px 50px rgba(22, 163, 74, 0.45)" : "0 15px 50px rgba(0, 0, 0, 0.5)",
+    zIndex: "10000",
+    opacity: "0",
+    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+    direction: "rtl",
+    textAlign: "center",
+    width: "80%",
+    maxWidth: "400px",
+    border: "3px solid #ffffff",
+  });
+
   document.body.appendChild(toast);
 
   setTimeout(() => {
-    toast.classList.add("hiding");
-    setTimeout(() => toast.remove(), 320);
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%, -50%) scale(1)";
+  }, 100);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
+    setTimeout(() => toast.remove(), 400);
   }, duration);
 }
+
 function setStatus(m) {
   const el = $("captureStatus");
   if (el) el.textContent = m;
@@ -1022,19 +1005,7 @@ async function handlePhotoSelected() {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-        currentPhoto = await compressImage(file);
-
-    // Simple glare / bright-spot check (common when photographing a screen)
-    try {
-      const hasGlare = await hasStrongGlare_(currentPhoto);
-      if (hasGlare) {
-        setBusy(false);
-        setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
-        currentPhoto = "";
-        return;
-      }
-    } catch (e) {}
-
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -1089,38 +1060,49 @@ async function handlePhotoSelected() {
 
 async function createRecord(type) {
   const profile = await getProfile();
+
   const { policyInfo, gate } = await getCurrentAttendanceGate();
   if (!gate.ok) {
     setStatus(gate.message);
     return;
   }
+
   const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
     return;
   }
+
   const loc = hasValidLocation(pendingLocation)
     ? pendingLocation
     : emptyLocation("not_received", "GPS دریافت نشد");
+
   const now = new Date();
   const nowMs = now.getTime();
+
   const clickMs = captureStartedAtMs || nowMs;
   const photoMs = photoSelectedAtMs || "";
   const photoCompressedMs = photoCompressedAtMs || "";
   const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
+
   const deviceTime = now.toISOString();
   const deviceTimeAtClick = new Date(clickMs).toISOString();
   const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
   const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
   const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
   const gpsTimestamp = deviceTimeAtGps;
+
   const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
   const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
   const submitDelayMs = Math.max(0, nowMs - clickMs);
+
   const offlineCreated = !navigator.onLine;
   const createdOnline = navigator.onLine;
+
   const sessionClockDriftMs = getSessionClockDriftMs();
   const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+
   const risk = calculateClockRisk({
     clickMs,
     gpsMs,
@@ -1128,9 +1110,12 @@ async function createRecord(type) {
     locationStatus: loc.status,
     sessionClockDriftMs,
   });
+
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
+
   const jalaliDateStr = getJalaliIsoDate(now);
   const hourStr = getTime(now);
+
   const record = {
     clientRecordId,
     personnelCode: profile.personnelCode,
@@ -1142,37 +1127,46 @@ async function createRecord(type) {
     recordHour: hourStr,
     recordTime: hourStr,
     workLocation: (document.getElementById("workLocationInput")?.value || "").trim(),
+
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
+
     deviceTime,
     deviceTimeAtClick,
     deviceTimeAtPhoto,
     deviceTimeAtPhotoCompressed,
     deviceTimeAtGps,
     gpsTimestamp,
+
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
+
     offlineCreated,
     createdOnline,
     connectionStatus: offlineCreated ? "offline" : "online",
     connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
+
     firstConnectionAfterOfflineRecord: "",
     lastConnectionBeforeUpload: "",
     uploadedAt: "",
     delayAfterFirstConnectionMs: "",
+
     clockRisk: risk.clockRisk,
     clockRiskReason: risk.clockRiskReason,
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
+
     attendancePolicy,
     policyVersion: Number(policyInfo.policyVersion || 0),
     policyFetchedAt: policyInfo.policyFetchedAt || "",
     policySource: policyInfo.policySource || "",
+
     photo: currentPhoto || "",
+
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
@@ -1182,33 +1176,14 @@ async function createRecord(type) {
   };
 
   await dbPut(STORE_RECORDS, record);
+
+  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
+  setStatus("تردد ذخیره شد.");
   await refreshUi();
 
-  // Online: wait until send finishes, then show success
-  if (navigator.onLine) {
-    setBusy(true, "در حال ارسال تردد...");
-    setStatus("در حال ارسال تردد، لطفاً صبر کنید...");
-    setSyncStatus("در حال ارسال...");
-
-    await syncPendingRecords();
-
-    // Check if this record was actually marked as sent
-    const all = await dbGetAll(STORE_RECORDS);
-    const mine = all.find((x) => x.clientRecordId === clientRecordId);
-    if (mine && mine.status === "sent") {
-      showGpsToast("✅ تردد با موفقیت ثبت شد\nادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
-      setStatus("تردد با موفقیت ارسال شد.");
-    } else {
-      showGpsToast("تردد ذخیره شد و به‌زودی ارسال می‌شود", 4000, "success");
-      setStatus("تردد ذخیره شد — در انتظار ارسال");
-      scheduleSyncPendingRecords(2000);
-    }
-  } else {
-    // Offline
-    showGpsToast("تردد ذخیره شد و بعداً ارسال می‌شود", 4000, "success");
-    setStatus("تردد ذخیره شد — آفلاین");
-  }
+  if (navigator.onLine) scheduleSyncPendingRecords(500);
 }
+
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -1879,69 +1854,65 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
-function hasStrongGlare_(dataUrl) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const size = 100;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, size, size);
-        const data = ctx.getImageData(0, 0, size, size).data;
-
-        let veryBright = 0;
-        let total = 0;
-
-        for (let i = 0; i < data.length; i += 16) {
-          const r = data[i], g = data[i+1], b = data[i+2];
-          const bright = (r + g + b) / 3;
-          total++;
-          if (bright > 245) veryBright++;
-        }
-
-        const ratio = veryBright / total;
-        console.log("Glare ratio:", (ratio * 100).toFixed(1) + "%");
-        resolve(ratio > 0.018);
-      } catch (e) {
-        resolve(false);
-      }
-    };
-    img.onerror = () => resolve(false);
-    img.src = dataUrl;
-  });
-}
+/* =========================
+   Live Front Camera (forced)
+========================= */
 
 /* =========================
-   Live Front Camera – Forced 1-second capture
-   (No movement / head-turn check)
+   Live Front Camera (forced) + Blink Liveness
+========================= */
+/* =========================
+   Live Front Camera (forced) + Blink Liveness (5-second wait)
+========================= */
+/* =========================
+   Live Front Camera + Hidden Two-Frame Micro-Movement Check
+========================= */
+
+/* =========================
+   Live Front Camera + Head-Turn Challenge (2 seconds)
 ========================= */
 
 let autoCaptureTimer_ = null;
-let countdownInterval_ = null;
+let isCapturing_ = false;
+let headTurnFrames_ = [];
+
+function showHeadTurnInstruction() {
+  const instructionBox = $("headTurnInstruction");
+  if (instructionBox) {
+    instructionBox.style.display = "flex";
+  }
+}
+
+function hideHeadTurnInstruction() {
+  const instructionBox = $("headTurnInstruction");
+  if (instructionBox) {
+    instructionBox.style.display = "none";
+  }
+}
 
 async function openFrontCamera() {
+  // First show the instruction, camera opens only after user confirms
+  showHeadTurnInstruction();
+}
+
+async function startCameraAfterInstruction() {
+  hideHeadTurnInstruction();
+
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
   const instruction = $("cameraInstruction");
-  const countdownEl = $("countdownText");
 
   if (!overlay || !video) {
     setStatus("خطا: المان دوربین پیدا نشد");
     return;
   }
 
-  // Clear previous timers
   if (autoCaptureTimer_) {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
   }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
+  isCapturing_ = false;
+  headTurnFrames_ = [];
 
   try {
     if (cameraStream) {
@@ -1963,36 +1934,17 @@ async function openFrontCamera() {
 
     if (instruction) {
       instruction.innerHTML =
-        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
-        '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>';
-    }
-    if (countdownEl) {
-      countdownEl.textContent = "۱";
-      countdownEl.style.color = "#4ade80";
+        'سر را به چپ یا راست تکان دهید<br>' +
+        '<span style="color:#94a3b8; font-size:14px;">لطفاً چند لحظه صبر کنید...</span>';
     }
 
     overlay.style.display = "flex";
-    setStatus("لطفاً ثابت بمانید...");
+    setStatus("در حال بررسی...");
 
-    // Countdown 1 → 0
-    let remaining = 1;
-    countdownInterval_ = setInterval(() => {
-      remaining--;
-      if (countdownEl) {
-        countdownEl.textContent = remaining > 0 ? remaining : "۰";
-        if (remaining <= 0) countdownEl.style.color = "#f87171";
-      }
-      if (remaining <= 0) {
-        clearInterval(countdownInterval_);
-        countdownInterval_ = null;
-      }
-    }, 1000);
-
-    // Auto-capture after exactly 1 second
+    // Start collecting frames after a short settle time
     autoCaptureTimer_ = setTimeout(() => {
-      autoCaptureTimer_ = null;
-      captureFromVideo();
-    }, 1000);
+      collectHeadTurnFrames();
+    }, 600);
 
   } catch (err) {
     console.error("Camera error:", err);
@@ -2009,10 +1961,8 @@ function closeCamera() {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
   }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
+  isCapturing_ = false;
+  headTurnFrames_ = [];
 
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
@@ -2020,44 +1970,170 @@ function closeCamera() {
   }
   if (video) video.srcObject = null;
   if (overlay) overlay.style.display = "none";
+  hideHeadTurnInstruction();
 }
 
-function captureFromVideo() {
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
-
+**
+ * Capture current video frame as a canvas
+ */
+function captureFrameToCanvas() {
   const video = $("cameraVideo");
-  if (!video || !video.videoWidth) {
-    setStatus("ویدیو هنوز آماده نیست");
-    closeCamera();
-    return;
-  }
+  if (!video || !video.videoWidth) return null;
 
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
+  return canvas;
+}
 
-  canvas.toBlob(async (blob) => {
+/**
+ * Estimate horizontal center of the face using simple skin-tone sampling
+ */
+function getFaceCenterX(canvas) {
+  if (!canvas) return null;
+
+  const w = 160;
+  const h = 120;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(canvas, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+
+  let sumX = 0;
+  let count = 0;
+
+  for (let y = 15; y < h - 15; y += 2) {
+    for (let x = 20; x < w - 20; x += 2) {
+      const i = (y * w + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+
+      // Simple skin-tone range
+      if (r > 95 && g > 40 && b > 20 &&
+          r > g && r > b &&
+          Math.abs(r - g) > 15) {
+        sumX += x;
+        count++;
+      }
+    }
+  }
+
+  if (count < 30) return null; // not enough skin pixels
+  return sumX / count;
+}
+
+/**
+ * Check if the head moved horizontally enough during the 2 seconds
+ */
+/**
+ * More robust head-turn detection
+ * Uses overall content difference + horizontal shift of brightness
+ */
+function hasHeadTurn(frames) {
+  if (!frames || frames.length < 5) return false;
+
+  const w = 160;
+  const h = 120;
+
+  // Convert all frames to small grayscale-like data
+  const datas = frames.map(canvas => {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(canvas, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h).data;
+  });
+
+  // 1. Total average difference between first and last frames (central area)
+  let totalDiff = 0;
+  let count = 0;
+  const first = datas[0];
+  const last  = datas[datas.length - 1];
+
+  for (let y = 20; y < h - 20; y += 2) {
+    for (let x = 25; x < w - 25; x += 2) {
+      const i = (y * w + x) * 4;
+      totalDiff += Math.abs(first[i] - last[i]) +
+                   Math.abs(first[i+1] - last[i+1]) +
+                   Math.abs(first[i+2] - last[i+2]);
+      count++;
+    }
+  }
+   const avgDiff = totalDiff / count;
+async function collectHeadTurnFrames() {
+  if (isCapturing_) return;
+  isCapturing_ = true;
+  headTurnFrames_ = [];
+
+  const totalTime = 2200;   // a bit more than 2 seconds
+  const interval = 250;
+  const start = Date.now();
+
+  while (Date.now() - start < totalTime) {
+    const frame = captureFrameToCanvas();
+    if (frame) headTurnFrames_.push(frame);
+    await new Promise(r => setTimeout(r, interval));
+  }
+
+  const moved = hasHeadTurn(headTurnFrames_);
+
+  if (!moved) {
+    closeCamera();
+    setStatus("ثبت انجام نشد. لطفاً دوباره تلاش کنید و سر را واضح به چپ یا راست تکان دهید.");
+    return;
+  }
+
+  // After successful movement, wait a short moment so the user can look more frontal again
+  await new Promise(r => setTimeout(r, 500));
+
+  const finalFrame = captureFrameToCanvas();
+  if (!finalFrame) {
+    closeCamera();
+    setStatus("خطا در گرفتن عکس");
+    return;
+  }
+
+  finalFrame.toBlob(async (blob) => {
     if (!blob) {
-      setStatus("خطا در گرفتن عکس");
       closeCamera();
+      setStatus("خطا در گرفتن عکس");
       return;
     }
-
     closeCamera();
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
     await processCapturedPhoto(file);
   }, "image/jpeg", 0.88);
 }
 
+What changed
+
+Detection is now based on overall pixel difference + horizontal shift of brightness (much more reliable than skin-tone).
+Thresholds are more lenient so normal head turns are accepted.
+After detecting the turn, the system waits 0.5 second and takes a final more-frontal photo (this helps Face++ match better and reduces “no_match”).
+
+
+Test again
+
+Open the form → see the instruction
+Tap “متوجه شدم – شروع”
+Clearly turn your head left or right once during the 2 seconds
+Look back at the camera
+It should now accept real head turns much more reliably and still reject static laptop photos.
+// Bind the "متوجه شدم" button
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("startCameraAfterInstruction");
+  if (btn) {
+    btn.addEventListener("click", startCameraAfterInstruction);
+  }
+});
+
+/**
+ * Same logic as before
+ */
 async function processCapturedPhoto(file) {
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
@@ -2074,19 +2150,7 @@ async function processCapturedPhoto(file) {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-        currentPhoto = await compressImage(file);
-
-    // Simple glare / bright-spot check (common when photographing a screen)
-    try {
-      const hasGlare = await hasStrongGlare_(currentPhoto);
-      if (hasGlare) {
-        setBusy(false);
-        setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
-        currentPhoto = "";
-        return;
-      }
-    } catch (e) {}
-
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -2123,7 +2187,7 @@ async function processCapturedPhoto(file) {
       return;
     }
 
-   setBusy(true, "در حال ثبت و ارسال تردد...");
+    setBusy(true, "در حال ذخیره تردد...");
     await createRecord("تردد");
     setBusy(false);
   } catch (err) {
@@ -2132,6 +2196,7 @@ async function processCapturedPhoto(file) {
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
+
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

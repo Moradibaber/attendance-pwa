@@ -404,46 +404,64 @@ function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");
   if (oldToast) oldToast.remove();
 
+  // Inject styles once
+  if (!document.getElementById("gps-toast-style")) {
+    const style = document.createElement("style");
+    style.id = "gps-toast-style";
+    style.textContent = `
+      @keyframes gpsToastIn {
+        0%   { opacity: 0; transform: translate(-50%, -46%) scale(0.85); }
+        100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      }
+      @keyframes gpsToastOut {
+        0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        100% { opacity: 0; transform: translate(-50%, -46%) scale(0.85); }
+      }
+      #gps-toast {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #fff;
+        padding: 22px 28px;
+        border-radius: 18px;
+        font-size: 18px;
+        font-weight: 700;
+        font-family: Tahoma, Vazirmatn, sans-serif;
+        z-index: 10000;
+        direction: rtl;
+        text-align: center;
+        width: 82%;
+        max-width: 380px;
+        border: 2px solid rgba(255,255,255,0.85);
+        line-height: 1.7;
+        white-space: pre-line;
+        animation: gpsToastIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      }
+      #gps-toast.success {
+        background: rgba(22, 163, 74, 0.96);
+        box-shadow: 0 14px 40px rgba(22, 163, 74, 0.4);
+      }
+      #gps-toast.error {
+        background: rgba(220, 38, 38, 0.95);
+        box-shadow: 0 14px 40px rgba(220, 38, 38, 0.35);
+      }
+      #gps-toast.hiding {
+        animation: gpsToastOut 0.3s ease forwards;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   const toast = document.createElement("div");
   toast.id = "gps-toast";
+  toast.className = type === "success" ? "success" : "error";
   toast.textContent = message;
-
-  const isSuccess = type === "success";
-
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%) scale(0.8)",
-    backgroundColor: isSuccess ? "rgba(22, 163, 74, 0.96)" : "rgba(220, 38, 38, 0.95)",
-    color: "#ffffff",
-    padding: "25px 40px",
-    borderRadius: "20px",
-    fontSize: "22px",
-    fontWeight: "bold",
-    fontFamily: "Tahoma, sans-serif",
-    boxShadow: isSuccess ? "0 15px 50px rgba(22, 163, 74, 0.45)" : "0 15px 50px rgba(0, 0, 0, 0.5)",
-    zIndex: "10000",
-    opacity: "0",
-    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
-    direction: "rtl",
-    textAlign: "center",
-    width: "80%",
-    maxWidth: "400px",
-    border: "3px solid #ffffff",
-  });
-
   document.body.appendChild(toast);
 
   setTimeout(() => {
-    toast.style.opacity = "1";
-    toast.style.transform = "translate(-50%, -50%) scale(1)";
-  }, 100);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translate(-50%, -50%) scale(0.8)";
-    setTimeout(() => toast.remove(), 400);
+    toast.classList.add("hiding");
+    setTimeout(() => toast.remove(), 320);
   }, duration);
 }
 

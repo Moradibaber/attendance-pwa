@@ -1005,19 +1005,7 @@ async function handlePhotoSelected() {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-        currentPhoto = await compressImage(file);
-
-    // Simple glare / bright-spot check (common when photographing a screen)
-    try {
-      const hasGlare = await hasStrongGlare_(currentPhoto);
-      if (hasGlare) {
-        setBusy(false);
-        setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
-        currentPhoto = "";
-        return;
-      }
-    } catch (e) {}
-
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -1032,7 +1020,7 @@ async function handlePhotoSelected() {
       return;
     }
 
-    setBusy(true, "در حال دریافت ...");
+    setBusy(true, "در حال دریافت GPS...");
     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
     pendingLocation = await getLocationIOSFriendly();
 
@@ -1072,38 +1060,49 @@ async function handlePhotoSelected() {
 
 async function createRecord(type) {
   const profile = await getProfile();
+
   const { policyInfo, gate } = await getCurrentAttendanceGate();
   if (!gate.ok) {
     setStatus(gate.message);
     return;
   }
+
   const attendancePolicy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
+
   if (GPS_REQUIRED && !hasValidLocation(pendingLocation)) {
     setStatus("GPS معتبر نیست. تردد ذخیره نشد.");
     return;
   }
+
   const loc = hasValidLocation(pendingLocation)
     ? pendingLocation
     : emptyLocation("not_received", "GPS دریافت نشد");
+
   const now = new Date();
   const nowMs = now.getTime();
+
   const clickMs = captureStartedAtMs || nowMs;
   const photoMs = photoSelectedAtMs || "";
   const photoCompressedMs = photoCompressedAtMs || "";
   const gpsMs = loc.timestamp && !isNaN(loc.timestamp) ? Number(loc.timestamp) : null;
+
   const deviceTime = now.toISOString();
   const deviceTimeAtClick = new Date(clickMs).toISOString();
   const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
   const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
   const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
   const gpsTimestamp = deviceTimeAtGps;
+
   const gpsWaitMs = gpsMs ? Math.max(0, gpsMs - clickMs) : "";
   const photoDelayMs = photoMs ? Math.max(0, photoMs - clickMs) : "";
   const submitDelayMs = Math.max(0, nowMs - clickMs);
+
   const offlineCreated = !navigator.onLine;
   const createdOnline = navigator.onLine;
+
   const sessionClockDriftMs = getSessionClockDriftMs();
   const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+
   const risk = calculateClockRisk({
     clickMs,
     gpsMs,
@@ -1111,9 +1110,12 @@ async function createRecord(type) {
     locationStatus: loc.status,
     sessionClockDriftMs,
   });
+
   const clientRecordId = createClientRecordId(profile.personnelCode, clickMs);
+
   const jalaliDateStr = getJalaliIsoDate(now);
   const hourStr = getTime(now);
+
   const record = {
     clientRecordId,
     personnelCode: profile.personnelCode,
@@ -1125,37 +1127,46 @@ async function createRecord(type) {
     recordHour: hourStr,
     recordTime: hourStr,
     workLocation: (document.getElementById("workLocationInput")?.value || "").trim(),
+
     latitude: loc.latitude || "",
     longitude: loc.longitude || "",
     accuracy: loc.accuracy || "",
     locationStatus: loc.status || "",
     locationError: loc.error || "",
+
     deviceTime,
     deviceTimeAtClick,
     deviceTimeAtPhoto,
     deviceTimeAtPhotoCompressed,
     deviceTimeAtGps,
     gpsTimestamp,
+
     gpsWaitMs,
     photoDelayMs,
     submitDelayMs,
+
     offlineCreated,
     createdOnline,
     connectionStatus: offlineCreated ? "offline" : "online",
     connectionStatusFa: offlineCreated ? "آفلاین" : "آنلاین",
+
     firstConnectionAfterOfflineRecord: "",
     lastConnectionBeforeUpload: "",
     uploadedAt: "",
     delayAfterFirstConnectionMs: "",
+
     clockRisk: risk.clockRisk,
     clockRiskReason: risk.clockRiskReason,
     sessionClockDriftMs,
     networkClockDriftMs: networkClockDriftMs ?? "",
+
     attendancePolicy,
     policyVersion: Number(policyInfo.policyVersion || 0),
     policyFetchedAt: policyInfo.policyFetchedAt || "",
     policySource: policyInfo.policySource || "",
+
     photo: currentPhoto || "",
+
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
@@ -1165,33 +1176,19 @@ async function createRecord(type) {
   };
 
   await dbPut(STORE_RECORDS, record);
+
+  showGpsToast("✅ تردد با موفقیت ثبت شد", 3000, "success");
+  setStatus("تردد با GPS ذخیره شد.");
   await refreshUi();
 
-  // Online: wait until send finishes, then show success
-  if (navigator.onLine) {
-    setBusy(true, "در حال ارسال تردد...");
-    setStatus("در حال ارسال تردد، لطفاً صبر کنید...");
-    setSyncStatus("در حال ارسال...");
-
-    await syncPendingRecords();
-
-    // Check if this record was actually marked as sent
-    const all = await dbGetAll(STORE_RECORDS);
-    const mine = all.find((x) => x.clientRecordId === clientRecordId);
-    if (mine && mine.status === "sent") {
-      showGpsToast("✅ تردد با موفقیت ثبت شد\nادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
-      setStatus("تردد با موفقیت ارسال شد.");
-    } else {
-      showGpsToast("تردد ذخیره شد و به‌زودی ارسال می‌شود", 4000, "success");
-      setStatus("تردد ذخیره شد — در انتظار ارسال");
-      scheduleSyncPendingRecords(2000);
-    }
-  } else {
-    // Offline
-    showGpsToast("تردد ذخیره شد و بعداً ارسال می‌شود", 4000, "success");
-    setStatus("تردد ذخیره شد — آفلاین");
-  }
+  if (navigator.onLine) scheduleSyncPendingRecords(500);
 }
+
+function createClientRecordId(personnelCode, baseMs) {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `${personnelCode}-${baseMs}-${randomPart}`;
+}
+
 /* =========================
    Sync (CORS-SAFE)
 ========================= */
@@ -1814,10 +1811,9 @@ function compressImage(file) {
     reader.onload = (e) => {
       const img = new Image();
 
-      img.onload = () => { 
-        // Slightly larger canvas + higher JPEG quality → better Face++ results
-        const OUT_W = 360;
-        const OUT_H = 480;
+      img.onload = () => {
+        const OUT_W = 300;
+        const OUT_H = 450;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
@@ -1845,7 +1841,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.72          // was 0.5 – higher quality for Face++
+          0.5
         );
       };
 
@@ -1857,71 +1853,21 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
-function hasStrongGlare_(dataUrl) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        const size = 100;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, size, size);
-        const data = ctx.getImageData(0, 0, size, size).data;
-
-        let veryBright = 0;
-        let total = 0;
-
-        for (let i = 0; i < data.length; i += 16) {
-          const r = data[i], g = data[i+1], b = data[i+2];
-          const bright = (r + g + b) / 3;
-          total++;
-          if (bright > 245) veryBright++;
-        }
-
-        const ratio = veryBright / total;
-        console.log("Glare ratio:", (ratio * 100).toFixed(1) + "%");
-        resolve(ratio > 0.018);
-      } catch (e) {
-        resolve(false);
-      }
-    };
-    img.onerror = () => resolve(false);
-    img.src = dataUrl;
-  });
-}
-
 /* =========================
-   Live Front Camera – Forced 1-second capture
-   (No movement / head-turn check)
+   Live Front Camera (forced)
 ========================= */
-
-let autoCaptureTimer_ = null;
-let countdownInterval_ = null;
 
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
-  const instruction = $("cameraInstruction");
-  const countdownEl = $("countdownText");
 
   if (!overlay || !video) {
     setStatus("خطا: المان دوربین پیدا نشد");
     return;
   }
 
-  // Clear previous timers
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
-
   try {
+    // Stop any previous stream
     if (cameraStream) {
       cameraStream.getTracks().forEach(t => t.stop());
       cameraStream = null;
@@ -1930,7 +1876,7 @@ async function openFrontCamera() {
     const constraints = {
       audio: false,
       video: {
-        facingMode: { exact: "user" },
+        facingMode: { exact: "user" },   // FORCE front camera only
         width:  { ideal: 640 },
         height: { ideal: 480 }
       }
@@ -1939,39 +1885,8 @@ async function openFrontCamera() {
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
-    if (instruction) {
-      instruction.innerHTML =
-        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
-        '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>';
-    }
-    if (countdownEl) {
-      countdownEl.textContent = "۱";
-      countdownEl.style.color = "#4ade80";
-    }
-
     overlay.style.display = "flex";
-    setStatus("لطفاً ثابت بمانید...");
-
-    // Countdown 1 → 0
-    let remaining = 1;
-    countdownInterval_ = setInterval(() => {
-      remaining--;
-      if (countdownEl) {
-        countdownEl.textContent = remaining > 0 ? remaining : "۰";
-        if (remaining <= 0) countdownEl.style.color = "#f87171";
-      }
-      if (remaining <= 0) {
-        clearInterval(countdownInterval_);
-        countdownInterval_ = null;
-      }
-    }, 1000);
-
-    // Auto-capture after exactly 1 second
-    autoCaptureTimer_ = setTimeout(() => {
-      autoCaptureTimer_ = null;
-      captureFromVideo();
-    }, 1000);
-
+    setStatus("دوربین سلفی آماده است. عکس بگیرید.");
   } catch (err) {
     console.error("Camera error:", err);
     setStatus("نمی‌توان دوربین سلفی را باز کرد. لطفاً دسترسی دوربین را مجاز کنید.");
@@ -1983,15 +1898,6 @@ function closeCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
 
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
-
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;
@@ -2001,41 +1907,40 @@ function closeCamera() {
 }
 
 function captureFromVideo() {
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
-
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");
-    closeCamera();
     return;
   }
 
+  // Create a canvas and draw the current video frame
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
 
+  // Convert to blob → File (so we can reuse the existing compressImage function)
   canvas.toBlob(async (blob) => {
     if (!blob) {
       setStatus("خطا در گرفتن عکس");
-      closeCamera();
       return;
     }
 
     closeCamera();
+
+    // Create a fake File object so the rest of your code works unchanged
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+
+    // From here we continue exactly like the old handlePhotoSelected
     await processCapturedPhoto(file);
-  }, "image/jpeg", 0.88);
+  }, "image/jpeg", 0.85);
 }
 
+/**
+ * This function contains the same logic that was previously in handlePhotoSelected
+ * after the file was selected. We reuse it so nothing else breaks.
+ */
 async function processCapturedPhoto(file) {
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
@@ -2052,19 +1957,7 @@ async function processCapturedPhoto(file) {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-        currentPhoto = await compressImage(file);
-
-    // Simple glare / bright-spot check (common when photographing a screen)
-    try {
-      const hasGlare = await hasStrongGlare_(currentPhoto);
-      if (hasGlare) {
-        setBusy(false);
-        setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
-        currentPhoto = "";
-        return;
-      }
-    } catch (e) {}
-
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -2101,7 +1994,7 @@ async function processCapturedPhoto(file) {
       return;
     }
 
-   setBusy(true, "در حال ثبت و ارسال تردد...");
+    setBusy(true, "در حال ذخیره تردد...");
     await createRecord("تردد");
     setBusy(false);
   } catch (err) {

@@ -2101,7 +2101,7 @@ async function processCapturedPhoto(file) {
       return;
     }
 
-    setBusy(true, "در حال ذخیره تردد...");
+   setBusy(true, "در حال ثبت و ارسال تردد...");
     await createRecord("تردد");
     setBusy(false);
   } catch (err) {

@@ -11,7 +11,7 @@ const STORE_CONFIG = "config";
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
 
-const GPS_RETRY_MS = 30000;
+const GPS_RETRY_MS = 8000;
 const GOOD_ACCURACY_METERS = 1000;
 const GPS_REQUIRED = true;
 
@@ -1943,15 +1943,13 @@ function compressImage(file) {
     reader.onload = (e) => {
       const img = new Image();
 
-      img.onload = () => { 
-        // Slightly larger canvas + higher JPEG quality → better Face++ results
+           img.onload = () => {
         const OUT_W = 240;
         const OUT_H = 320;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
         canvas.height = OUT_H;
-
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, OUT_W, OUT_H);
@@ -1961,23 +1959,15 @@ function compressImage(file) {
         const drawH = Math.round(img.height * scale);
         const dx = Math.round((OUT_W - drawW) / 2);
         const dy = Math.round((OUT_H - drawH) / 2);
-
         ctx.drawImage(img, dx, dy, drawW, drawH);
 
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) return reject(new Error("خطا در ساخت تصویر فشرده"));
-
-            const r = new FileReader();
-            r.onloadend = () => resolve(r.result);
-            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.55          // was 0.5 – higher quality for Face++
-        );
+        // toDataURL is often faster than toBlob+FileReader on mobile
+        try {
+          resolve(canvas.toDataURL("image/jpeg", 0.5));
+        } catch (e) {
+          reject(e);
+        }
       };
-
       img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
       img.src = e.target.result;
     };
@@ -2056,12 +2046,12 @@ async function openFrontCamera() {
       cameraStream = null;
     }
 
-    const constraints = {
+       const constraints = {
       audio: false,
       video: {
-        facingMode: { exact: "user" },
-        width:  { ideal: 640 },
-        height: { ideal: 480 }
+        facingMode: { ideal: "user" },
+        width:  { ideal: 320, max: 640 },
+        height: { ideal: 240, max: 480 }
       }
     };
 
@@ -2167,21 +2157,13 @@ function captureFromVideo() {
 async function processCapturedPhoto(file) {
   if (isProcessingPhoto_) return;
   isProcessingPhoto_ = true;
+
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
+    setStatus("در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
-    await saveProfileSilent();
-
-    const { gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setBusy(false);
-      setStatus(gate.message);
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
+    // 1) Compress FIRST — no network
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
@@ -2191,9 +2173,38 @@ async function processCapturedPhoto(file) {
       preview.style.display = "block";
     }
 
+    // 2) Local profile only (no server)
+    try {
+      const profile = getProfileFromInputs();
+      const saved = await dbGet(STORE_PROFILE, "main");
+      if (!profile.password && saved && saved.password) {
+        profile.password = saved.password;
+      }
+      if (profile.personnelCode && profile.firstName && profile.lastName) {
+        await dbPut(STORE_PROFILE, { id: "main", ...profile });
+        cachedProfile_ = { id: "main", ...profile };
+      }
+    } catch (_) {}
+
+    // 3) Policy from cache only (no await network)
+    const policyInfo = cachedPolicyInfo_ || { attendancePolicy: DEFAULT_ATTENDANCE_POLICY };
+    const gate = evaluateAttendancePolicy(
+      policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+      navigator.onLine
+    );
+    if (!gate.ok) {
+      setBusy(false);
+      setStatus(gate.message);
+      currentPhoto = "";
+      return;
+    }
+
+    // 4) GPS
     if (!isGeolocationUsable()) {
       setBusy(false);
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      setStatus(
+        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
+      );
       return;
     }
 
@@ -2204,7 +2215,9 @@ async function processCapturedPhoto(file) {
     if (!hasValidLocation(pendingLocation)) {
       setBusy(false);
       if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        setStatus(
+          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
+        );
         return;
       }
       if (pendingLocation?.status === "unavailable") {
@@ -2212,13 +2225,16 @@ async function processCapturedPhoto(file) {
         return;
       }
       if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        setStatus(
+          "زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید."
+        );
         return;
       }
       setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
       return;
     }
 
+    // 5) Save once
     setBusy(true, "در حال ذخیره تردد...");
     setStatus("در حال ذخیره تردد...");
     await createRecord("تردد");
@@ -2227,7 +2243,7 @@ async function processCapturedPhoto(file) {
     console.error(err);
     setBusy(false);
     setStatus("خطا در پردازش عکس یا ثبت تردد");
-    } finally {
+  } finally {
     isProcessingPhoto_ = false;
   }
 }

@@ -1258,25 +1258,25 @@ async function createRecord(type) {
 
    await dbPut(STORE_RECORDS, record);
 
-  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
+    showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success"); 
   setStatus("تردد ذخیره شد.");
-  setSyncStatus("در صف ارسال...");   // optional short message
+  setSyncStatus("در صف ارسال...");
   await refreshUi();
 
   if (navigator.onLine) {
-    // Wait for upload, then clear “sending”
     try {
       await syncPendingRecords();
     } catch (e) {}
-    setSyncStatus(""); // clear “در حال ارسال”
+    setSyncStatus("");
   } else {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
+}   // ← this closes createRecord — was missing
+
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
 }
-
 /* =========================
    Sync (CORS-SAFE)
 ========================= */
@@ -2125,9 +2125,7 @@ function captureFromVideo() {
 
 async function processCapturedPhoto(file) {
   try {
-setBusy(true, "در حال ذخیره تردد...");
-    await createRecord("تردد");
-    setBusy(false);   // must always run
+    setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
     await saveProfileSilent();

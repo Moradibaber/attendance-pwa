@@ -700,8 +700,8 @@ async function loadProfile() {
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
   if ($("firstName")) $("firstName").value = p.firstName || "";
   if ($("lastName")) $("lastName").value = p.lastName || "";
-  // Do not fill password field (security)
-  if ($("userPassword")) $("userPassword").value = "";
+  // Restore masked password if saved
+  if ($("userPassword")) $("userPassword").value = p.password || "";
 }
 
 async function verifyPasswordWithServer_(personnelCode, password) {
@@ -733,13 +733,17 @@ async function saveProfileSilent() {
     }
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
-    await refreshPolicyIfPossible();
-    await fetchMessages();
+
+    // Show masked password again (••••) so user sees it is saved
+    if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
+    if ($("firstName")) $("firstName").value = profile.firstName || "";
+    if ($("lastName")) $("lastName").value = profile.lastName || "";
+    if ($("userPassword")) $("userPassword").value = profile.password || "";
+
+    // Optional: lock fields until user focuses them (still editable)
+    // if ($("userPassword")) $("userPassword").readOnly = true;
+
     registerForPushNotifications();
-  } catch (err) {
-    console.error("Silent profile save failed:", err);
-  }
-}
 
 async function getProfile() {
   const saved = await dbGet(STORE_PROFILE, "main");
@@ -1254,15 +1258,22 @@ async function createRecord(type) {
     serverResponse: "",
   };
 
-  await dbPut(STORE_RECORDS, record);
+   await dbPut(STORE_RECORDS, record);
 
   showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
   setStatus("تردد ذخیره شد.");
+  setSyncStatus("در صف ارسال...");   // optional short message
   await refreshUi();
 
-  if (navigator.onLine) scheduleSyncPendingRecords(500);
-}
-
+  if (navigator.onLine) {
+    // Wait for upload, then clear “sending”
+    try {
+      await syncPendingRecords();
+    } catch (e) {}
+    setSyncStatus(""); // clear “در حال ارسال”
+  } else {
+    setSyncStatus("آفلاین — بعداً ارسال می‌شود");
+  }
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -1301,7 +1312,7 @@ async function syncPendingRecords() {
   try {
     const refreshed = await refreshPolicyIfPossible();
     const policyInfo = refreshed || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
+    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true); 
 
     if (!syncGate.ok) {
       setSyncStatus(syncGate.message);
@@ -1319,6 +1330,7 @@ async function syncPendingRecords() {
     }
 
     setSyncStatus("در حال ارسال...");
+    setTimeout(() => setSyncStatus(""), 3000);
 
     for (const r of list) {
       if (r.status === "sent" || r.status === "syncing") continue;
@@ -2115,7 +2127,9 @@ function captureFromVideo() {
 
 async function processCapturedPhoto(file) {
   try {
-    setBusy(true, "در حال آماده‌سازی عکس...");
+setBusy(true, "در حال ذخیره تردد...");
+    await createRecord("تردد");
+    setBusy(false);   // must always run
     photoSelectedAtMs = Date.now();
 
     await saveProfileSilent();

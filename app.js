@@ -702,6 +702,7 @@ async function loadProfile() {
   if ($("lastName")) $("lastName").value = p.lastName || "";
   // Restore masked password if saved
   if ($("userPassword")) $("userPassword").value = p.password || "";
+  
 }
 
 async function verifyPasswordWithServer_(personnelCode, password) {
@@ -739,11 +740,6 @@ async function saveProfileSilent() {
     if ($("firstName")) $("firstName").value = profile.firstName || "";
     if ($("lastName")) $("lastName").value = profile.lastName || "";
     if ($("userPassword")) $("userPassword").value = profile.password || "";
-
-    // Optional: lock fields until user focuses them (still editable)
-    // if ($("userPassword")) $("userPassword").readOnly = true;
-
-    registerForPushNotifications();
 
 async function getProfile() {
   const saved = await dbGet(STORE_PROFILE, "main");
@@ -811,11 +807,13 @@ async function saveProfile() {
     }
 
     // Save profile + password (needed later for attendance)
-    await dbPut(STORE_PROFILE, { id: "main", ...profile });
+        await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
-    await loadProfile();
-    // restore password in memory only via cachedProfile_; input stays empty
-    cachedProfile_.password = profile.password;
+
+    if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
+    if ($("firstName")) $("firstName").value = profile.firstName || "";
+    if ($("lastName")) $("lastName").value = profile.lastName || "";
+    if ($("userPassword")) $("userPassword").value = profile.password || "";
 
     registerForPushNotifications();
     setTimeout(() => {

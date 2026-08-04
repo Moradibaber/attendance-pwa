@@ -1278,11 +1278,10 @@ async function createRecord(type) {
     serverResponse: "",
   };
 
-   await dbPut(STORE_RECORDS, record);
+     await dbPut(STORE_RECORDS, record);
 
-        showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
+  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
   setStatus("تردد ذخیره شد.");
-  setSyncStatus("در صف ارسال...");
   await refreshUi();
 
   if (navigator.onLine) {
@@ -1293,7 +1292,10 @@ async function createRecord(type) {
   } else {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
-  // Soft reset for next attendance — no full page reload
+
+  setBusy(false);
+
+  // Soft reset only after real success
   setTimeout(() => {
     currentPhoto = "";
     pendingLocation = null;
@@ -1314,9 +1316,7 @@ async function createRecord(type) {
     setSyncStatus("");
     setBusy(false);
   }, 2000);
-  // Refresh form 2 seconds after success
-  }
-
+}
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -2166,7 +2166,6 @@ function captureFromVideo() {
     await processCapturedPhoto(file);
   }, "image/jpeg", 0.88);
 }
-
 async function processCapturedPhoto(file) {
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
@@ -2183,8 +2182,7 @@ async function processCapturedPhoto(file) {
     }
 
     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-        currentPhoto = await compressImage(file);
-    
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -2222,7 +2220,8 @@ async function processCapturedPhoto(file) {
     }
 
     setBusy(true, "در حال ذخیره تردد...");
-    await ("تردد");
+    setStatus("در حال ذخیره تردد...");
+    await createRecord("تردد");
     setBusy(false);
   } catch (err) {
     console.error(err);
@@ -2230,6 +2229,7 @@ async function processCapturedPhoto(file) {
     setStatus("خطا در پردازش عکس یا ثبت تردد");
   }
 }
+
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

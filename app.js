@@ -687,6 +687,7 @@ function getProfileFromInputs() {
     personnelCode: $("personnelCode")?.value.trim() || "",
     firstName: $("firstName")?.value.trim() || "",
     lastName: $("lastName")?.value.trim() || "",
+    password: $("userPassword")?.value || "",
   };
 }
 
@@ -699,12 +700,37 @@ async function loadProfile() {
   if ($("personnelCode")) $("personnelCode").value = p.personnelCode || "";
   if ($("firstName")) $("firstName").value = p.firstName || "";
   if ($("lastName")) $("lastName").value = p.lastName || "";
+  // Do not fill password field (security)
+  if ($("userPassword")) $("userPassword").value = "";
+}
+
+async function verifyPasswordWithServer_(personnelCode, password) {
+  if (!navigator.onLine) {
+    return { ok: false, error: "برای تایید رمز به اینترنت نیاز است." };
+  }
+  const url =
+    APPS_SCRIPT_URL +
+    "?action=verifyPassword" +
+    "&personnelCode=" + encodeURIComponent(personnelCode) +
+    "&password=" + encodeURIComponent(password) +
+    "&_=" + Date.now();
+
+  const res = await fetch(url, { method: "GET", cache: "no-store" });
+  const data = await res.json();
+  return data;
 }
 
 async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();
-    if (!profile.personnelCode || !profile.firstName || !profile.lastName) throw new Error("مشخصات پرسنلی کامل نیست.");
+    const saved = await dbGet(STORE_PROFILE, "main");
+    // Keep previous password if input is empty
+    if (!profile.password && saved && saved.password) {
+      profile.password = saved.password;
+    }
+    if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
+      throw new Error("مشخصات پرسنلی کامل نیست.");
+    }
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
     await refreshPolicyIfPossible();
@@ -723,6 +749,7 @@ async function getProfile() {
     personnelCode: inputProfile.personnelCode || saved?.personnelCode || "",
     firstName: inputProfile.firstName || saved?.firstName || "",
     lastName: inputProfile.lastName || saved?.lastName || "",
+    password: inputProfile.password || saved?.password || "",
   };
 
   if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
@@ -752,18 +779,40 @@ async function saveProfile() {
     if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
       btn.classList.add("shake");
       setTimeout(() => btn.classList.remove("shake"), 500);
-
       setStatus("اطلاعات پرسنلی کامل نیست.");
-
       btn.disabled = false;
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
       return;
     }
 
+    if (!profile.password) {
+      setStatus("رمز عبور را وارد کنید.");
+      showGpsToast("رمز عبور الزامی است", 3000, "error");
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
+    // Server password check
+    const check = await verifyPasswordWithServer_(profile.personnelCode, profile.password);
+    if (!check || !check.ok) {
+      setStatus((check && check.error) || "رمز عبور اشتباه است.");
+      showGpsToast((check && check.error) || "رمز عبور اشتباه است", 3500, "error");
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
+    // Save profile + password (needed later for attendance)
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
     await loadProfile();
+    // restore password in memory only via cachedProfile_; input stays empty
+    cachedProfile_.password = profile.password;
+
     registerForPushNotifications();
     setTimeout(() => {
       refreshPolicyIfPossible();
@@ -786,7 +835,6 @@ async function saveProfile() {
     setStatus("خطا در ذخیره مشخصات");
   }
 }
-
 /* =========================
    Policy
 ========================= */
@@ -1151,6 +1199,7 @@ async function createRecord(type) {
     personnelCode: profile.personnelCode,
     firstName: profile.firstName,
     lastName: profile.lastName,
+    password: profile.password || "",
     type,
     recordType: type,
     recordDate: jalaliDateStr,
@@ -1339,6 +1388,7 @@ function buildServerPayload(record) {
     personnelCode: record.personnelCode || "",
     firstName: record.firstName || "",
     lastName: record.lastName || "",
+    password: record.password || "",
     type: record.type || record.recordType || "",
     recordType: record.recordType || record.type || "",
     recordDate: record.recordDate || "",

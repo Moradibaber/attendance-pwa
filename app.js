@@ -1945,8 +1945,8 @@ function compressImage(file) {
 
       img.onload = () => { 
         // Slightly larger canvas + higher JPEG quality → better Face++ results
-        const OUT_W = 360;
-        const OUT_H = 480;
+        const OUT_W = 240;
+        const OUT_H = 320;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
@@ -1974,7 +1974,7 @@ function compressImage(file) {
             r.readAsDataURL(blob);
           },
           "image/jpeg",
-          0.72          // was 0.5 – higher quality for Face++
+          0.55          // was 0.5 – higher quality for Face++
         );
       };
 

@@ -720,12 +720,10 @@ async function verifyPasswordWithServer_(personnelCode, password) {
   const data = await res.json();
   return data;
 }
-
 async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();
     const saved = await dbGet(STORE_PROFILE, "main");
-    // Keep previous password if input is empty
     if (!profile.password && saved && saved.password) {
       profile.password = saved.password;
     }
@@ -735,11 +733,18 @@ async function saveProfileSilent() {
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
 
-    // Show masked password again (••••) so user sees it is saved
     if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
     if ($("firstName")) $("firstName").value = profile.firstName || "";
     if ($("lastName")) $("lastName").value = profile.lastName || "";
     if ($("userPassword")) $("userPassword").value = profile.password || "";
+
+    await refreshPolicyIfPossible();
+    await fetchMessages();
+    registerForPushNotifications();
+  } catch (err) {
+    console.error("Silent profile save failed:", err);
+  }
+}
 
 async function getProfile() {
   const saved = await dbGet(STORE_PROFILE, "main");
@@ -795,8 +800,18 @@ async function saveProfile() {
       return;
     }
 
-    // Server password check
-    const check = await verifyPasswordWithServer_(profile.personnelCode, profile.password);
+    let check;
+    try {
+      check = await verifyPasswordWithServer_(profile.personnelCode, profile.password);
+    } catch (e) {
+      console.error(e);
+      showGpsToast("خطا در ارتباط با سرور برای تایید رمز", 3500, "error");
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
     if (!check || !check.ok) {
       setStatus((check && check.error) || "رمز عبور اشتباه است.");
       showGpsToast((check && check.error) || "رمز عبور اشتباه است", 3500, "error");
@@ -806,8 +821,7 @@ async function saveProfile() {
       return;
     }
 
-    // Save profile + password (needed later for attendance)
-        await dbPut(STORE_PROFILE, { id: "main", ...profile });
+    await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
 
     if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
@@ -830,13 +844,16 @@ async function saveProfile() {
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
     }, 2500);
-  } catch (_) {
+  } catch (err) {
+    console.error(err);
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;
     btn.textContent = originalText;
     setStatus("خطا در ذخیره مشخصات");
+    showGpsToast("خطا در ذخیره مشخصات", 3000, "error");
   }
 }
+
 /* =========================
    Policy
 ========================= */

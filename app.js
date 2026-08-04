@@ -1963,7 +1963,7 @@ function compressImage(file) {
 
         // toDataURL is often faster than toBlob+FileReader on mobile
         try {
-          resolve(canvas.toDataURL("image/jpeg", 0.5));
+          resolve(canvas.toDataURL("image/jpeg", 0.55));
         } catch (e) {
           reject(e);
         }

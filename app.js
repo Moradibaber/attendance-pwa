@@ -541,6 +541,14 @@ function bindEvents() {
   $("cancelCameraBtn")?.addEventListener("click", closeCamera);
 
   injectWorkLocationField();
+  ["personnelCode", "firstName", "lastName", "userPassword"].forEach((id) => {
+  $(id)?.addEventListener("input", () => {
+    const b = $("saveProfileBtn");
+    if (!b) return;
+    b.style.backgroundColor = "#ff9800";
+    b.textContent = "ذخیره مشخصات";
+  });
+});
 }
 /* =========================
    Auto Sync
@@ -835,15 +843,12 @@ async function saveProfile() {
       fetchMessages();
     }, 500);
 
-    btn.style.backgroundColor = "#28a745";
-    btn.textContent = "ذخیره شد";
+        btn.style.backgroundColor = "#28a745";
+    btn.textContent = "ذخیره شد ✓";
+    btn.disabled = false;
     showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
-
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-    }, 2500);
+    
+    // stays green — does not go back to orange
   } catch (err) {
     console.error(err);
     btn.disabled = false;

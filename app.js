@@ -1293,12 +1293,30 @@ async function createRecord(type) {
   } else {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
-
-  // Refresh form 2 seconds after success
+  // Soft reset for next attendance — no full page reload
   setTimeout(() => {
-    location.reload();
+    currentPhoto = "";
+    pendingLocation = null;
+    photoSelectedAtMs = 0;
+    photoCompressedAtMs = 0;
+    captureStartedAtMs = 0;
+
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = "";
+      preview.style.display = "none";
+    }
+
+    const work = $("workLocationInput");
+    if (work) work.value = "";
+
+    setStatus("");
+    setSyncStatus("");
+    setBusy(false);
   }, 2000);
-}
+  // Refresh form 2 seconds after success
+  }
+
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
@@ -2204,7 +2222,7 @@ async function processCapturedPhoto(file) {
     }
 
     setBusy(true, "در حال ذخیره تردد...");
-    await createRecord("تردد");
+    await ("تردد");
     setBusy(false);
   } catch (err) {
     console.error(err);

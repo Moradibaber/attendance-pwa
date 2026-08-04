@@ -35,6 +35,7 @@ let syncRunning = false;
 let syncTimer = null;
 let lastAdminMessage = null;
 let cameraStream = null;
+let isProcessingPhoto_ = false;
 // کش حافظه‌ای پروفایل و سیاست تردد - هدف این است که در لحظه کلیک روی دکمه
 // دوربین، هیچ await ای قبل از فراخوانی photoInput.click() وجود نداشته باشد.
 // در iOS Safari حتی چند await سریع IndexedDB هم می‌تواند «فعال‌سازی کاربر»
@@ -1280,22 +1281,21 @@ async function createRecord(type) {
 
      await dbPut(STORE_RECORDS, record);
 
+    await dbPut(STORE_RECORDS, record);
+
   showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
   setStatus("تردد ذخیره شد.");
+  setBusy(false);
   await refreshUi();
 
+  // Upload in background — do NOT wait (avoids “second save” feeling)
   if (navigator.onLine) {
-    try {
-      await syncPendingRecords();
-    } catch (e) {}
-    setSyncStatus("");
+    scheduleSyncPendingRecords(300);
   } else {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
 
-  setBusy(false);
-
-  // Soft reset only after real success
+  // Soft reset after 2 seconds
   setTimeout(() => {
     currentPhoto = "";
     pendingLocation = null;
@@ -2167,6 +2167,8 @@ function captureFromVideo() {
   }, "image/jpeg", 0.88);
 }
 async function processCapturedPhoto(file) {
+  if (isProcessingPhoto_) return;
+  isProcessingPhoto_ = true;
   try {
     setBusy(true, "در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
@@ -2227,9 +2229,10 @@ async function processCapturedPhoto(file) {
     console.error(err);
     setBusy(false);
     setStatus("خطا در پردازش عکس یا ثبت تردد");
+    } finally {
+    isProcessingPhoto_ = false;
   }
 }
-
 /* =========================
    Jalali -> Gregorian (helpers)
 ========================= */

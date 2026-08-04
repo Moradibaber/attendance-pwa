@@ -1944,8 +1944,8 @@ function compressImage(file) {
       const img = new Image();
 
            img.onload = () => {
-        const OUT_W = 240;
-        const OUT_H = 320;
+        const OUT_W = 300;
+        const OUT_H = 400;
 
         const canvas = document.createElement("canvas");
         canvas.width = OUT_W;
@@ -1963,7 +1963,7 @@ function compressImage(file) {
 
         // toDataURL is often faster than toBlob+FileReader on mobile
         try {
-          resolve(canvas.toDataURL("image/jpeg", 0.5));
+          resolve(canvas.toDataURL("image/jpeg", 0.65));
         } catch (e) {
           reject(e);
         }

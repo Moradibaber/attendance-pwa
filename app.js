@@ -1,4 +1,4 @@
-/* FILE: /app.js */ 
+/* FILE: /app.js */
 /* REPLACE FULL FILE */  
 
 const DB_NAME = "attendance-pwa-db";
@@ -11,7 +11,7 @@ const STORE_CONFIG = "config";
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
 
-const GPS_RETRY_MS = 30000;
+const GPS_RETRY_MS = 8000;
 const GOOD_ACCURACY_METERS = 1000;
 const GPS_REQUIRED = true;
 
@@ -35,6 +35,7 @@ let syncRunning = false;
 let syncTimer = null;
 let lastAdminMessage = null;
 let cameraStream = null;
+let isProcessingPhoto_ = false;
 // کش حافظه‌ای پروفایل و سیاست تردد - هدف این است که در لحظه کلیک روی دکمه
 // دوربین، هیچ await ای قبل از فراخوانی photoInput.click() وجود نداشته باشد.
 // در iOS Safari حتی چند await سریع IndexedDB هم می‌تواند «فعال‌سازی کاربر»
@@ -541,6 +542,14 @@ function bindEvents() {
   $("cancelCameraBtn")?.addEventListener("click", closeCamera);
 
   injectWorkLocationField();
+  ["personnelCode", "firstName", "lastName", "userPassword"].forEach((id) => {
+  $(id)?.addEventListener("input", () => {
+    const b = $("saveProfileBtn");
+    if (!b) return;
+    b.style.backgroundColor = "#ff9800";
+    b.textContent = "ذخیره مشخصات";
+  });
+});
 }
 /* =========================
    Auto Sync
@@ -702,6 +711,7 @@ async function loadProfile() {
   if ($("lastName")) $("lastName").value = p.lastName || "";
   // Restore masked password if saved
   if ($("userPassword")) $("userPassword").value = p.password || "";
+  
 }
 
 async function verifyPasswordWithServer_(personnelCode, password) {
@@ -719,12 +729,10 @@ async function verifyPasswordWithServer_(personnelCode, password) {
   const data = await res.json();
   return data;
 }
-
 async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();
     const saved = await dbGet(STORE_PROFILE, "main");
-    // Keep previous password if input is empty
     if (!profile.password && saved && saved.password) {
       profile.password = saved.password;
     }
@@ -734,16 +742,18 @@ async function saveProfileSilent() {
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
 
-    // Show masked password again (••••) so user sees it is saved
     if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
     if ($("firstName")) $("firstName").value = profile.firstName || "";
     if ($("lastName")) $("lastName").value = profile.lastName || "";
     if ($("userPassword")) $("userPassword").value = profile.password || "";
 
-    // Optional: lock fields until user focuses them (still editable)
-    // if ($("userPassword")) $("userPassword").readOnly = true;
-
+    await refreshPolicyIfPossible();
+    await fetchMessages();
     registerForPushNotifications();
+  } catch (err) {
+    console.error("Silent profile save failed:", err);
+  }
+}
 
 async function getProfile() {
   const saved = await dbGet(STORE_PROFILE, "main");
@@ -799,8 +809,18 @@ async function saveProfile() {
       return;
     }
 
-    // Server password check
-    const check = await verifyPasswordWithServer_(profile.personnelCode, profile.password);
+    let check;
+    try {
+      check = await verifyPasswordWithServer_(profile.personnelCode, profile.password);
+    } catch (e) {
+      console.error(e);
+      showGpsToast("خطا در ارتباط با سرور برای تایید رمز", 3500, "error");
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
     if (!check || !check.ok) {
       setStatus((check && check.error) || "رمز عبور اشتباه است.");
       showGpsToast((check && check.error) || "رمز عبور اشتباه است", 3500, "error");
@@ -810,12 +830,13 @@ async function saveProfile() {
       return;
     }
 
-    // Save profile + password (needed later for attendance)
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
-    await loadProfile();
-    // restore password in memory only via cachedProfile_; input stays empty
-    cachedProfile_.password = profile.password;
+
+    if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
+    if ($("firstName")) $("firstName").value = profile.firstName || "";
+    if ($("lastName")) $("lastName").value = profile.lastName || "";
+    if ($("userPassword")) $("userPassword").value = profile.password || "";
 
     registerForPushNotifications();
     setTimeout(() => {
@@ -823,22 +844,22 @@ async function saveProfile() {
       fetchMessages();
     }, 500);
 
-    btn.style.backgroundColor = "#28a745";
-    btn.textContent = "ذخیره شد";
+        btn.style.backgroundColor = "#28a745";
+    btn.textContent = "ذخیره شد ✓";
+    btn.disabled = false;
     showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
-
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.style.backgroundColor = originalBg;
-      btn.textContent = originalText;
-    }, 2500);
-  } catch (_) {
+    
+    // stays green — does not go back to orange
+  } catch (err) {
+    console.error(err);
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;
     btn.textContent = originalText;
     setStatus("خطا در ذخیره مشخصات");
+    showGpsToast("خطا در ذخیره مشخصات", 3000, "error");
   }
 }
+
 /* =========================
    Policy
 ========================= */
@@ -1258,27 +1279,46 @@ async function createRecord(type) {
     serverResponse: "",
   };
 
-   await dbPut(STORE_RECORDS, record);
+     await dbPut(STORE_RECORDS, record); 
 
   showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
   setStatus("تردد ذخیره شد.");
-  setSyncStatus("در صف ارسال...");   // optional short message
+  setBusy(false);
   await refreshUi();
 
+  // Upload in background — do NOT wait (avoids “second save” feeling)
   if (navigator.onLine) {
-    // Wait for upload, then clear “sending”
-    try {
-      await syncPendingRecords();
-    } catch (e) {}
-    setSyncStatus(""); // clear “در حال ارسال”
+    scheduleSyncPendingRecords(300);
   } else {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
+
+  // Soft reset after 2 seconds
+  setTimeout(() => {
+    currentPhoto = "";
+    pendingLocation = null;
+    photoSelectedAtMs = 0;
+    photoCompressedAtMs = 0;
+    captureStartedAtMs = 0;
+
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = "";
+      preview.style.display = "none";
+    }
+
+    const work = $("workLocationInput");
+    if (work) work.value = "";
+
+    setStatus("");
+    setSyncStatus("");
+    setBusy(false);
+  }, 2000);
+}
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
 }
-
 /* =========================
    Sync (CORS-SAFE)
 ========================= */
@@ -1902,42 +1942,40 @@ function compressImage(file) {
 
     reader.onload = (e) => {
       const img = new Image();
+     img.onload = () => {
+  // Higher resolution for better Face++ matching
+  const MAX_SIDE = 900;           // was 400
+  let OUT_W, OUT_H;
 
-      img.onload = () => { 
-        // Slightly larger canvas + higher JPEG quality → better Face++ results
-        const OUT_W = 360;
-        const OUT_H = 480;
+  if (img.width >= img.height) {
+    OUT_W = Math.min(img.width, MAX_SIDE);
+    OUT_H = Math.round(OUT_W * (img.height / img.width));
+  } else {
+    OUT_H = Math.min(img.height, MAX_SIDE);
+    OUT_W = Math.round(OUT_H * (img.width / img.height));
+  }
 
-        const canvas = document.createElement("canvas");
-        canvas.width = OUT_W;
-        canvas.height = OUT_H;
+  // Keep minimum size so Face++ still works well
+  if (OUT_W < 480) { OUT_W = 480; OUT_H = Math.round(480 * (img.height / img.width)); }
+  if (OUT_H < 640) { OUT_H = 640; OUT_W = Math.round(640 * (img.width / img.height)); }
 
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, OUT_W, OUT_H);
+  const canvas = document.createElement("canvas");
+  canvas.width = OUT_W;
+  canvas.height = OUT_H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, OUT_W, OUT_H);
 
-        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
-        const drawW = Math.round(img.width * scale);
-        const drawH = Math.round(img.height * scale);
-        const dx = Math.round((OUT_W - drawW) / 2);
-        const dy = Math.round((OUT_H - drawH) / 2);
+  ctx.drawImage(img, 0, 0, OUT_W, OUT_H);
 
-        ctx.drawImage(img, dx, dy, drawW, drawH);
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) return reject(new Error("خطا در ساخت تصویر فشرده"));
-
-            const r = new FileReader();
-            r.onloadend = () => resolve(r.result);
-            r.onerror = () => reject(new Error("خطا در خواندن تصویر فشرده"));
-            r.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.72          // was 0.5 – higher quality for Face++
-        );
-      };
-
+  try {
+    // Higher JPEG quality (0.82 instead of 0.65)
+    resolve(canvas.toDataURL("image/jpeg", 0.82));
+  } catch (e) {
+    reject(e);
+  }
+};
+           
       img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
       img.src = e.target.result;
     };
@@ -2016,14 +2054,14 @@ async function openFrontCamera() {
       cameraStream = null;
     }
 
-    const constraints = {
-      audio: false,
-      video: {
-        facingMode: { exact: "user" },
-        width:  { ideal: 640 },
-        height: { ideal: 480 }
-      }
-    };
+       const constraints = {
+  audio: false,
+  video: {
+    facingMode: { ideal: "user" },
+    width:  { ideal: 1280, min: 640, max: 1920 },
+    height: { ideal: 720,  min: 480, max: 1080 }
+  }
+};
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
@@ -2122,29 +2160,19 @@ function captureFromVideo() {
     closeCamera();
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
     await processCapturedPhoto(file);
-  }, "image/jpeg", 0.88);
+  }, "image/jpeg", 0.92);
 }
-
 async function processCapturedPhoto(file) {
+  if (isProcessingPhoto_) return;
+  isProcessingPhoto_ = true;
+
   try {
-setBusy(true, "در حال ذخیره تردد...");
-    await createRecord("تردد");
-    setBusy(false);   // must always run
+    setBusy(true, "در حال آماده‌سازی عکس...");
+    setStatus("در حال آماده‌سازی عکس...");
     photoSelectedAtMs = Date.now();
 
-    await saveProfileSilent();
-
-    const { gate } = await getCurrentAttendanceGate();
-    if (!gate.ok) {
-      setBusy(false);
-      setStatus(gate.message);
-      currentPhoto = "";
-      return;
-    }
-
-    setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-        currentPhoto = await compressImage(file);
-    
+    // 1) Compress FIRST — no network
+    currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
 
     const preview = $("photoPreview");
@@ -2153,9 +2181,38 @@ setBusy(true, "در حال ذخیره تردد...");
       preview.style.display = "block";
     }
 
+    // 2) Local profile only (no server)
+    try {
+      const profile = getProfileFromInputs();
+      const saved = await dbGet(STORE_PROFILE, "main");
+      if (!profile.password && saved && saved.password) {
+        profile.password = saved.password;
+      }
+      if (profile.personnelCode && profile.firstName && profile.lastName) {
+        await dbPut(STORE_PROFILE, { id: "main", ...profile });
+        cachedProfile_ = { id: "main", ...profile };
+      }
+    } catch (_) {}
+
+    // 3) Policy from cache only (no await network)
+    const policyInfo = cachedPolicyInfo_ || { attendancePolicy: DEFAULT_ATTENDANCE_POLICY };
+    const gate = evaluateAttendancePolicy(
+      policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
+      navigator.onLine
+    );
+    if (!gate.ok) {
+      setBusy(false);
+      setStatus(gate.message);
+      currentPhoto = "";
+      return;
+    }
+
+    // 4) GPS
     if (!isGeolocationUsable()) {
       setBusy(false);
-      setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
+      setStatus(
+        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
+      );
       return;
     }
 
@@ -2166,7 +2223,9 @@ setBusy(true, "در حال ذخیره تردد...");
     if (!hasValidLocation(pendingLocation)) {
       setBusy(false);
       if (pendingLocation?.status === "denied") {
-        setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
+        setStatus(
+          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
+        );
         return;
       }
       if (pendingLocation?.status === "unavailable") {
@@ -2174,20 +2233,26 @@ setBusy(true, "در حال ذخیره تردد...");
         return;
       }
       if (pendingLocation?.status === "timeout") {
-        setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
+        setStatus(
+          "زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید."
+        );
         return;
       }
       setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
       return;
     }
 
+    // 5) Save once
     setBusy(true, "در حال ذخیره تردد...");
+    setStatus("در حال ذخیره تردد...");
     await createRecord("تردد");
     setBusy(false);
   } catch (err) {
     console.error(err);
     setBusy(false);
     setStatus("خطا در پردازش عکس یا ثبت تردد");
+  } finally {
+    isProcessingPhoto_ = false;
   }
 }
 /* =========================

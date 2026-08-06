@@ -1,4 +1,4 @@
-const DB_NAME = "attendance-pwa-db";
+const DB_NAME = "attendance-pwa-db"; 
 const DB_VERSION = 3; 
 
 const STORE_RECORDS = "records";

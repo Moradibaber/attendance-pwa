@@ -263,15 +263,25 @@ records {
   <p id="profileStatus" class="status"></p>
 </section>
 
-    <section class="card">
+        <section class="card">
       <h2>ثبت تردد</h2>
 
-      <!-- Keep the old input (hidden) just in case -->
       <input type="file" id="photoInput" accept="image/*" capture="user" style="display:none;">
+
+      <input
+        type="text"
+        id="workLocationInput"
+        placeholder="محل عملیات"
+        maxlength="20"
+        autocomplete="off"
+        style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;
+        border:1.5px solid #64b5f6;font-size:15px;text-align:center;direction:rtl;
+        font-family:inherit;background:#fff;margin-bottom:10px;"
+      />
 
       <div class="camera-row">
         <button type="button" id="recordBtn" class="camera-btn">
-          عکس چهره خود را بگیرید
+          عکس سلفی خود را بگیرید
         </button>
       </div>
 
@@ -320,7 +330,7 @@ records {
   
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
-  <script src="app.js"></script>
+ <script src="app.js?v=20260807"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => {

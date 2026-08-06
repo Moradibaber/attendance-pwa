@@ -1942,32 +1942,40 @@ function compressImage(file) {
 
     reader.onload = (e) => {
       const img = new Image();
+     img.onload = () => {
+  // Higher resolution for better Face++ matching
+  const MAX_SIDE = 900;           // was 400
+  let OUT_W, OUT_H;
 
-           img.onload = () => {
-        const OUT_W = 300;
-        const OUT_H = 400;
+  if (img.width >= img.height) {
+    OUT_W = Math.min(img.width, MAX_SIDE);
+    OUT_H = Math.round(OUT_W * (img.height / img.width));
+  } else {
+    OUT_H = Math.min(img.height, MAX_SIDE);
+    OUT_W = Math.round(OUT_H * (img.width / img.height));
+  }
 
-        const canvas = document.createElement("canvas");
-        canvas.width = OUT_W;
-        canvas.height = OUT_H;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, OUT_W, OUT_H);
+  // Keep minimum size so Face++ still works well
+  if (OUT_W < 480) { OUT_W = 480; OUT_H = Math.round(480 * (img.height / img.width)); }
+  if (OUT_H < 640) { OUT_H = 640; OUT_W = Math.round(640 * (img.width / img.height)); }
 
-        const scale = Math.min(OUT_W / img.width, OUT_H / img.height);
-        const drawW = Math.round(img.width * scale);
-        const drawH = Math.round(img.height * scale);
-        const dx = Math.round((OUT_W - drawW) / 2);
-        const dy = Math.round((OUT_H - drawH) / 2);
-        ctx.drawImage(img, dx, dy, drawW, drawH);
+  const canvas = document.createElement("canvas");
+  canvas.width = OUT_W;
+  canvas.height = OUT_H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, OUT_W, OUT_H);
 
-        // toDataURL is often faster than toBlob+FileReader on mobile
-        try {
-          resolve(canvas.toDataURL("image/jpeg", 0.65));
-        } catch (e) {
-          reject(e);
-        }
-      };
+  ctx.drawImage(img, 0, 0, OUT_W, OUT_H);
+
+  try {
+    // Higher JPEG quality (0.82 instead of 0.65)
+    resolve(canvas.toDataURL("image/jpeg", 0.82));
+  } catch (e) {
+    reject(e);
+  }
+};
+           
       img.onerror = () => reject(new Error("خطا در بارگذاری تصویر"));
       img.src = e.target.result;
     };
@@ -2152,7 +2160,7 @@ function captureFromVideo() {
     closeCamera();
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
     await processCapturedPhoto(file);
-  }, "image/jpeg", 0.88);
+  }, "image/jpeg", 0.92);
 }
 async function processCapturedPhoto(file) {
   if (isProcessingPhoto_) return;

@@ -2047,13 +2047,13 @@ async function openFrontCamera() {
     }
 
        const constraints = {
-      audio: false,
-      video: {
-        facingMode: { ideal: "user" },
-        width:  { ideal: 320, max: 640 },
-        height: { ideal: 240, max: 480 }
-      }
-    };
+  audio: false,
+  video: {
+    facingMode: { ideal: "user" },
+    width:  { ideal: 1280, min: 640, max: 1920 },
+    height: { ideal: 720,  min: 480, max: 1080 }
+  }
+};
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;

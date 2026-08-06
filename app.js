@@ -44,15 +44,7 @@ let cachedPolicyInfo_ = null;
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
-let faceMesh_ = null;
-let faceMeshReady_ = false;
-let faceMeshRaf_ = null;
-let faceOkStreak_ = 0;
-let captureArmed_ = false; // true = 1s timer already started
 
-const FACE_RATIO_MIN = 0.22; // too far if smaller
-const FACE_RATIO_MAX = 0.42; // too close if larger
-const FACE_OK_FRAMES = 8;    // ~stable for a short moment
 
 const $ = (id) => document.getElementById(id);
 
@@ -1075,7 +1067,12 @@ function startAttendanceCapture() {
 
      // ===== Open forced front camera =====
   setStatus("در حال باز کردن دوربین سلفی...");
-  openFrontCamera();
+    showGpsToast(
+    "دوربین را در فاصله ۲۰ تا ۲۵ سانتی‌متر و دقیقاً روبه‌روی صورت قرار دهید.",
+    2500,
+    "error"
+  );
+  setTimeout(() => openFrontCamera(), 2500);
 }
 
 async function handlePhotoSelected() {
@@ -2032,7 +2029,140 @@ function hasStrongGlare_(dataUrl) {
 
 let autoCaptureTimer_ = null;
 let countdownInterval_ = null;
+let faceMesh_ = null;
+let faceMeshReady_ = false;
+let faceMeshRaf_ = null;
+let faceOkStreak_ = 0;
+let captureArmed_ = false; // true = 1s timer already started
 
+const FACE_RATIO_MIN = 0.22; // too far if smaller
+const FACE_RATIO_MAX = 0.42; // too close if larger
+const FACE_OK_FRAMES = 8;    // ~stable for a short moment
+async function ensureFaceMesh_() {
+  if (faceMesh_) return faceMesh_;
+  if (typeof FaceMesh === "undefined") {
+    console.warn("FaceMesh SDK not loaded");
+    return null;
+  }
+
+  faceMesh_ = new FaceMesh({
+    locateFile: (file) =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
+
+  faceMesh_.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: false,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
+  });
+
+  faceMesh_.onResults(onFaceMeshResults_);
+  faceMeshReady_ = true;
+  return faceMesh_;
+}
+
+function onFaceMeshResults_(results) {
+  const instruction = $("cameraInstruction");
+  if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+    faceOkStreak_ = 0;
+    if (instruction) {
+      instruction.innerHTML =
+        'صورت در کادر دیده نشد<br><span style="color:#fbbf24;">کمی نزدیک‌تر و روبه‌رو بایستید</span>';
+    }
+    return;
+  }
+
+  const lm = results.multiFaceLandmarks[0];
+  // Rough face height from landmarks (chin ~152, forehead ~10)
+  const top = lm[10];
+  const bottom = lm[152];
+  const faceRatio = Math.abs(bottom.y - top.y); // 0–1 relative to frame
+
+  if (faceRatio < FACE_RATIO_MIN) {
+    faceOkStreak_ = 0;
+    if (instruction) {
+      instruction.innerHTML =
+        'فاصله زیاد است<br><span style="color:#fbbf24;">موبایل را به حدود ۲۰–۲۵ سانتی‌متر نزدیک کنید</span>';
+    }
+    return;
+  }
+
+  if (faceRatio > FACE_RATIO_MAX) {
+    faceOkStreak_ = 0;
+    if (instruction) {
+      instruction.innerHTML =
+        'خیلی نزدیک است<br><span style="color:#fbbf24;">کمی عقب‌تر بروید (۲۰–۲۵ سانتی‌متر)</span>';
+    }
+    return;
+  }
+
+  faceOkStreak_++;
+  if (instruction) {
+    instruction.innerHTML =
+      'فاصله مناسب است<br><span style="color:#4ade80;">ثابت بمانید...</span>';
+  }
+
+  if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
+    captureArmed_ = true;
+    startOneSecondCapture_();
+  }
+}
+async function tickFaceMesh_() {
+  const video = $("cameraVideo");
+  if (!video || !faceMesh_ || video.readyState < 2) {
+    faceMeshRaf_ = requestAnimationFrame(tickFaceMesh_);
+    return;
+  }
+  try {
+    await faceMesh_.send({ image: video });
+  } catch (e) {}
+  faceMeshRaf_ = requestAnimationFrame(tickFaceMesh_);
+}
+
+function stopFaceMeshLoop_() {
+  if (faceMeshRaf_) {
+    cancelAnimationFrame(faceMeshRaf_);
+    faceMeshRaf_ = null;
+  }
+  faceOkStreak_ = 0;
+  captureArmed_ = false;
+}
+function startOneSecondCapture_() {
+  const countdownEl = $("countdownText");
+  const instruction = $("cameraInstruction");
+
+  if (instruction) {
+    instruction.innerHTML =
+      'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
+      '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>';
+  }
+  if (countdownEl) {
+    countdownEl.textContent = "۱";
+    countdownEl.style.color = "#4ade80";
+  }
+
+  let remaining = 1;
+  if (countdownInterval_) clearInterval(countdownInterval_);
+  countdownInterval_ = setInterval(() => {
+    remaining--;
+    if (countdownEl) {
+      countdownEl.textContent = remaining > 0 ? String(remaining) : "۰";
+      if (remaining <= 0) countdownEl.style.color = "#f87171";
+    }
+    if (remaining <= 0) {
+      clearInterval(countdownInterval_);
+      countdownInterval_ = null;
+    }
+  }, 1000);
+
+  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+  autoCaptureTimer_ = setTimeout(() => {
+    autoCaptureTimer_ = null;
+    stopFaceMeshLoop_();
+    captureFromVideo();
+  }, 1000);
+}
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
@@ -2099,11 +2229,24 @@ async function openFrontCamera() {
       }
     }, 1000);
 
-    // Auto-capture after exactly 1 second
-    autoCaptureTimer_ = setTimeout(() => {
-      autoCaptureTimer_ = null;
-      captureFromVideo();
-    }, 1000);
+       captureArmed_ = false;
+    faceOkStreak_ = 0;
+    if (countdownEl) countdownEl.textContent = "—";
+
+    if (instruction) {
+      instruction.innerHTML =
+        'صورت را در کادر قرار دهید<br>' +
+        '<span style="color:#fbbf24;">فاصله حدود ۲۰–۲۵ سانتی‌متر</span>';
+    }
+
+    await ensureFaceMesh_();
+    if (faceMesh_) {
+      stopFaceMeshLoop_();
+      tickFaceMesh_();
+    } else {
+      // SDK missing → fallback old behavior
+      startOneSecondCapture_();
+    }
 
   } catch (err) {
     console.error("Camera error:", err);
@@ -2124,7 +2267,7 @@ function closeCamera() {
     clearInterval(countdownInterval_);
     countdownInterval_ = null;
   }
-
+  stopFaceMeshLoop_();
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;

@@ -776,6 +776,7 @@ async function saveProfile() {
   if (!db) db = await openDb();
 
   const btn = $("saveProfileBtn");
+  const st = $("profileStatus");
   if (!btn) return;
 
   const originalText = "ذخیره مشخصات";
@@ -783,15 +784,15 @@ async function saveProfile() {
 
   btn.disabled = true;
   btn.style.backgroundColor = "#6c757d";
-  btn.innerHTML = 'در حال ذخیره <span class="dots"></span>';
+  btn.textContent = "در حال ذخیره...";
+  if (st) st.textContent = "در حال بررسی...";
 
   try {
     const profile = getProfileFromInputs();
 
     if (!profile.personnelCode || !profile.firstName || !profile.lastName) {
-      btn.classList.add("shake");
-      setTimeout(() => btn.classList.remove("shake"), 500);
-      setStatus("اطلاعات پرسنلی کامل نیست.");
+      if (st) st.textContent = "کد، نام و نام خانوادگی الزامی است";
+      showGpsToast("اطلاعات پرسنلی کامل نیست", 3000, "error");
       btn.disabled = false;
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
@@ -799,8 +800,17 @@ async function saveProfile() {
     }
 
     if (!profile.password) {
-      setStatus("رمز عبور را وارد کنید.");
+      if (st) st.textContent = "رمز عبور را وارد کنید";
       showGpsToast("رمز عبور الزامی است", 3000, "error");
+      btn.disabled = false;
+      btn.style.backgroundColor = originalBg;
+      btn.textContent = originalText;
+      return;
+    }
+
+    if (!navigator.onLine) {
+      if (st) st.textContent = "برای ذخیره مشخصات اینترنت لازم است";
+      showGpsToast("اینترنت را روشن کنید", 3000, "error");
       btn.disabled = false;
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
@@ -812,6 +822,7 @@ async function saveProfile() {
       check = await verifyPasswordWithServer_(profile.personnelCode, profile.password);
     } catch (e) {
       console.error(e);
+      if (st) st.textContent = "خطا در ارتباط با سرور";
       showGpsToast("خطا در ارتباط با سرور برای تایید رمز", 3500, "error");
       btn.disabled = false;
       btn.style.backgroundColor = originalBg;
@@ -820,8 +831,9 @@ async function saveProfile() {
     }
 
     if (!check || !check.ok) {
-      setStatus((check && check.error) || "رمز عبور اشتباه است.");
-      showGpsToast((check && check.error) || "رمز عبور اشتباه است", 3500, "error");
+      const msg = (check && check.error) || "رمز عبور اشتباه است";
+      if (st) st.textContent = msg;
+      showGpsToast(msg, 3500, "error");
       btn.disabled = false;
       btn.style.backgroundColor = originalBg;
       btn.textContent = originalText;
@@ -831,30 +843,29 @@ async function saveProfile() {
     await dbPut(STORE_PROFILE, { id: "main", ...profile });
     cachedProfile_ = { id: "main", ...profile };
 
-    if ($("personnelCode")) $("personnelCode").value = profile.personnelCode || "";
-    if ($("firstName")) $("firstName").value = profile.firstName || "";
-    if ($("lastName")) $("lastName").value = profile.lastName || "";
-    if ($("userPassword")) $("userPassword").value = profile.password || "";
+    if ($("personnelCode")) $("personnelCode").value = profile.personnelCode;
+    if ($("firstName")) $("firstName").value = profile.firstName;
+    if ($("lastName")) $("lastName").value = profile.lastName;
+    if ($("userPassword")) $("userPassword").value = profile.password;
+
+    btn.style.backgroundColor = "#28a745";
+    btn.textContent = "ذخیره شد ✓";
+    btn.disabled = false;
+    if (st) st.textContent = "ذخیره شد";
+    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
 
     registerForPushNotifications();
     setTimeout(() => {
       refreshPolicyIfPossible();
       fetchMessages();
     }, 500);
-
-        btn.style.backgroundColor = "#28a745";
-    btn.textContent = "ذخیره شد ✓";
-    btn.disabled = false;
-    showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
-    
-    // stays green — does not go back to orange
   } catch (err) {
     console.error(err);
+    if (st) st.textContent = "خطا: " + (err.message || String(err));
+    showGpsToast("خطا در ذخیره مشخصات", 3000, "error");
     btn.disabled = false;
     btn.style.backgroundColor = originalBg;
     btn.textContent = originalText;
-    setStatus("خطا در ذخیره مشخصات");
-    showGpsToast("خطا در ذخیره مشخصات", 3000, "error");
   }
 }
 

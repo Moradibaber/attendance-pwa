@@ -1333,8 +1333,8 @@ async function createRecord(type) {
       preview.style.display = "none";
     }
 
-    const work = $("workLocationInput");
-    if (work) work.value = "";
+    // const work = $("workLocationInput");
+    // if (work) work.value = "";
 
     setStatus("");
     setSyncStatus("");

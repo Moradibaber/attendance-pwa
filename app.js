@@ -44,6 +44,15 @@ let cachedPolicyInfo_ = null;
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
+let faceMesh_ = null;
+let faceMeshReady_ = false;
+let faceMeshRaf_ = null;
+let faceOkStreak_ = 0;
+let captureArmed_ = false; // true = 1s timer already started
+
+const FACE_RATIO_MIN = 0.22; // too far if smaller
+const FACE_RATIO_MAX = 0.42; // too close if larger
+const FACE_OK_FRAMES = 8;    // ~stable for a short moment
 
 const $ = (id) => document.getElementById(id);
 

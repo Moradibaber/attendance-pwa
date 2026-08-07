@@ -1307,7 +1307,11 @@ async function createRecord(type) {
 
      await dbPut(STORE_RECORDS, record); 
 
-  showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
+    showGpsToast(
+    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...",
+    4000,
+    "success"
+  );
   setStatus("تردد ذخیره شد.");
   setBusy(false);
   await refreshUi();
@@ -1344,6 +1348,20 @@ async function createRecord(type) {
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
+  //   setStatus("تردد ذخیره شد — در حال ارسال...");
+  // setBusy(false);
+  // await refreshUi();
+
+  // if (navigator.onLine) {
+  //   try {
+  //     await syncPendingRecords();
+  //     showGpsToast("✅ تردد با موفقیت ارسال شد", 4000, "success");
+  //   } catch (e) {
+  //     showGpsToast("ذخیره شد؛ ارسال بعداً انجام می‌شود", 4000, "error");
+  //   }
+  // } else {
+  //   showGpsToast("ذخیره شد (آفلاین) — بعداً ارسال می‌شود", 4000, "error");
+  // }
 }
 /* =========================
    Sync (CORS-SAFE)
@@ -2060,7 +2078,7 @@ let captureArmed_ = false; // true = 1s timer already started
 
 const FACE_RATIO_MIN = 0.22; // too far if smaller
 const FACE_RATIO_MAX = 0.42; // too close if larger
-const FACE_OK_FRAMES = 5;    // ~stable for a short moment
+const FACE_OK_FRAMES = 3;    // ~stable for a short moment
 async function ensureFaceMesh_() {
   if (faceMesh_) return faceMesh_;
   if (typeof FaceMesh === "undefined") {
@@ -2140,6 +2158,12 @@ function onFaceMeshResults_(results) {
 
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
     captureArmed_ = true;
+    if (faceMeshRaf_) {
+      cancelAnimationFrame(faceMeshRaf_);
+      faceMeshRaf_ = null;
+    }
+    startOneSecondCapture_(); // must be this — exactly ~1s then captureFromVideo
+  }
     stopFaceMeshLoop_();
     if (video) {
       video.style.opacity = "1";

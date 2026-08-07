@@ -2063,8 +2063,8 @@ let faceMeshRaf_ = null;
 let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
 let motionSamples_ = [];
-const MOTION_SAMPLES_NEEDED = 6;
-const MIN_NOSE_SHIFT = 0.012; // relative micro head move
+const MOTION_SAMPLES_NEEDED = 10;
+const MIN_NOSE_SHIFT = 0.035; // relative micro head move
 
 const FACE_RATIO_MIN = 0.22; // too far if smaller
 const FACE_RATIO_MAX = 0.42; // too close if larger
@@ -2153,30 +2153,34 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  // Distance OK — collect micro head motion (nose vs face center)
+   // Distance OK — collect nose offset samples
   motionSamples_.push(noseOffsetX);
   if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
     motionSamples_.shift();
   }
 
-  let maxShift = 0;
+  // Real move = max - min over the window (not single-frame noise)
+  let minO = motionSamples_[0];
+  let maxO = motionSamples_[0];
   for (let i = 1; i < motionSamples_.length; i++) {
-    const d = Math.abs(motionSamples_[i] - motionSamples_[i - 1]);
-    if (d > maxShift) maxShift = d;
+    if (motionSamples_[i] < minO) minO = motionSamples_[i];
+    if (motionSamples_[i] > maxO) maxO = motionSamples_[i];
   }
+  const noseRange = maxO - minO;
   const hasMicroMotion =
-    motionSamples_.length >= MOTION_SAMPLES_NEEDED && maxShift >= MIN_NOSE_SHIFT;
-
-  faceOkStreak_++;
+    motionSamples_.length >= MOTION_SAMPLES_NEEDED && noseRange >= MIN_NOSE_SHIFT;
 
   if (!hasMicroMotion) {
+    faceOkStreak_ = 0;
     if (instruction) {
       instruction.innerHTML =
-        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را خیلی کم به چپ یا راست تکان دهید</span>";
+        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را کمی به چپ یا راست بچرخانید و نگه دارید</span>";
     }
     return;
   }
 
+  // Only after real motion, count stable frames
+  faceOkStreak_++;
   if (instruction) {
     instruction.innerHTML =
       "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه دیگر...</span>";

@@ -2062,6 +2062,9 @@ let faceMeshReady_ = false;
 let faceMeshRaf_ = null;
 let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
+let motionSamples_ = [];
+const MOTION_SAMPLES_NEEDED = 6;
+const MIN_NOSE_SHIFT = 0.012; // relative micro head move
 
 const FACE_RATIO_MIN = 0.22; // too far if smaller
 const FACE_RATIO_MAX = 0.42; // too close if larger
@@ -2102,6 +2105,7 @@ function onFaceMeshResults_(results) {
 
   if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
     faceOkStreak_ = 0;
+    motionSamples_ = [];
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2116,10 +2120,14 @@ function onFaceMeshResults_(results) {
   const lm = results.multiFaceLandmarks[0];
   const top = lm[10];
   const bottom = lm[152];
+  const nose = lm[1];
   const faceRatio = Math.abs(bottom.y - top.y);
+  const faceCenterX = (lm[234].x + lm[454].x) / 2;
+  const noseOffsetX = nose.x - faceCenterX; // head yaw proxy
 
   if (faceRatio < FACE_RATIO_MIN) {
     faceOkStreak_ = 0;
+    motionSamples_ = [];
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2133,6 +2141,7 @@ function onFaceMeshResults_(results) {
 
   if (faceRatio > FACE_RATIO_MAX) {
     faceOkStreak_ = 0;
+    motionSamples_ = [];
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2144,10 +2153,33 @@ function onFaceMeshResults_(results) {
     return;
   }
 
+  // Distance OK — collect micro head motion (nose vs face center)
+  motionSamples_.push(noseOffsetX);
+  if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
+    motionSamples_.shift();
+  }
+
+  let maxShift = 0;
+  for (let i = 1; i < motionSamples_.length; i++) {
+    const d = Math.abs(motionSamples_[i] - motionSamples_[i - 1]);
+    if (d > maxShift) maxShift = d;
+  }
+  const hasMicroMotion =
+    motionSamples_.length >= MOTION_SAMPLES_NEEDED && maxShift >= MIN_NOSE_SHIFT;
+
   faceOkStreak_++;
+
+  if (!hasMicroMotion) {
+    if (instruction) {
+      instruction.innerHTML =
+        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را خیلی کم به چپ یا راست تکان دهید</span>";
+    }
+    return;
+  }
+
   if (instruction) {
     instruction.innerHTML =
-      "فاصله مناسب است<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه دیگر...</span>";
+      "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه دیگر...</span>";
   }
 
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
@@ -2159,6 +2191,7 @@ function onFaceMeshResults_(results) {
     startOneSecondCapture_();
   }
 }
+
 async function tickFaceMesh_() {
   const video = $("cameraVideo");
   if (!video || !faceMesh_ || video.readyState < 2) {
@@ -2178,6 +2211,7 @@ function stopFaceMeshLoop_() {
   }
   faceOkStreak_ = 0;
   captureArmed_ = false;
+  motionSamples_ = [];
 }
 function startOneSecondCapture_() {
   const countdownEl = $("countdownText");

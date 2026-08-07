@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v209"; 
+const CACHE_NAME = "attendance-pwa-v210"; 
 const FILES = [
   "./",
   "index.html", 
@@ -46,9 +46,18 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // خارج کردن کامل درخواست‌های ساعت جهانی از حیطه مدیریت سرویس‌ورکر
-  if (event.request.url.includes('worldtimeapi.org')) {
-    return; 
+  const url = event.request.url;
+
+  // Never intercept Google Apps Script / Google / Firebase – let the browser talk to the network directly
+  if (
+    url.includes('script.google.com') ||
+    url.includes('googleapis.com') ||
+    url.includes('gstatic.com') ||
+    url.includes('google.com') ||
+    url.includes('firebase') ||
+    url.includes('worldtimeapi.org')
+  ) {
+    return; // critical: do NOT call event.respondWith
   }
 
   event.respondWith(

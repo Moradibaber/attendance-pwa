@@ -178,7 +178,14 @@
   .app-hidden {
     display: none;
   }
-
+@keyframes pendingPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.85; }
+}
+.pending-pulse {
+  display: inline-block;
+  animation: pendingPulse 1.1s ease-in-out infinite;
+}
   #splashScreen {
     position: fixed;
     inset: 0;
@@ -216,14 +223,7 @@ records {
     max-width: 220px;
     border-radius: 14px;
   }
-    @keyframes pendingPulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.12); opacity: 0.85; }
-}
-.pending-pulse {
-  display: inline-block;
-  animation: pendingPulse 1.1s ease-in-out infinite;
-}
+    
 
   /* Camera overlay already has inline styles – keep them */
 </style>

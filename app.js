@@ -771,26 +771,26 @@ async function loadProfile() {
   if ($("userPassword")) $("userPassword").value = p.password || "";
   
 }
-
 async function verifyPasswordWithServer_(personnelCode, password) {
   if (!navigator.onLine) {
     return { ok: false, error: "برای تایید رمز به اینترنت نیاز است." };
   }
 
-  const url =
-    APPS_SCRIPT_URL +
-    "?action=verifyPassword" +
-    "&personnelCode=" + encodeURIComponent(String(personnelCode || "").trim()) +
-    "&password=" + encodeURIComponent(String(password || "")) +
-    "&_=" + Date.now();
+  const payload = {
+    type: "VerifyPassword",
+    personnelCode: String(personnelCode || "").trim(),
+    password: String(password || ""),
+  };
 
   try {
-    const res = await fetch(url, {
-      method: "GET",
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
       mode: "cors",
       redirect: "follow",
       cache: "no-store",
       credentials: "omit",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
     });
 
     const text = await res.text();
@@ -798,7 +798,6 @@ async function verifyPasswordWithServer_(personnelCode, password) {
       return { ok: false, error: "پاسخ خالی از سرور (آیفون)" };
     }
 
-    // iPhone sometimes gets HTML around JSON — extract first { ... }
     let data = null;
     try {
       data = JSON.parse(text);
@@ -812,10 +811,10 @@ async function verifyPasswordWithServer_(personnelCode, password) {
     }
 
     if (!data || typeof data !== "object") {
-      console.error("verifyPassword raw (first 300):", String(text).slice(0, 300));
+      console.error("verifyPassword raw:", String(text).slice(0, 300));
       return {
         ok: false,
-        error: "پاسخ سرور معتبر نیست. Deploy را با دسترسی Anyone بررسی کنید.",
+        error: "پاسخ سرور معتبر نیست. نسخه جدید Deploy و دسترسی Anyone لازم است.",
       };
     }
 
@@ -824,10 +823,10 @@ async function verifyPasswordWithServer_(personnelCode, password) {
     console.error("verifyPassword iOS error:", err);
     return {
       ok: false,
-      error: "ارتباط با سرور برقرار نشد. اینترنت و VPN را بررسی کنید.",
+      error: "ارتباط با سرور برقرار نشد. اینترنت آیفون را بررسی کنید.",
     };
   }
-}  
+}
 async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();

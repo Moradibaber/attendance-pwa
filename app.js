@@ -144,7 +144,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     bindEvents();
   } catch (_) {}
-
+  try {
+    const work = $("workLocationInput");
+    if (work) work.setAttribute("list", "workLocationHistoryList");
+    await refreshWorkLocationDatalist_();
+  } catch (_) {}
   try {
     await loadProfile();
   } catch (_) {}
@@ -474,7 +478,23 @@ function setStatus(m) {
 
 function setSyncStatus(m) {
   const el = $("syncStatus");
-  if (el) el.textContent = m;
+  if (!el) return;
+  el.textContent = m || "";
+
+  const t = String(m || "");
+  if (t.indexOf("در حال ارسال") !== -1) {
+    el.style.color = "#dc2626";
+    el.style.fontWeight = "800";
+    el.style.fontSize = "1.05rem";
+  } else if (t.indexOf("ارسال انجام شد") !== -1 || t.indexOf("ارسال شد") !== -1) {
+    el.style.color = "#16a34a";
+    el.style.fontWeight = "700";
+    el.style.fontSize = "0.95rem";
+  } else {
+    el.style.color = "";
+    el.style.fontWeight = "";
+    el.style.fontSize = "";
+  }
 }
 
 function updateOnlineBadge() {
@@ -503,7 +523,42 @@ function escapeHtml(v) {
 /* =========================
    Events
 ========================= */
+const WORK_LOC_KEY = "workLocationHistory";
+const WORK_LOC_MAX = 3;
 
+async function getWorkLocationHistory_() {
+  try {
+    const row = await dbGet(STORE_CONFIG, WORK_LOC_KEY);
+    const list = row && Array.isArray(row.items) ? row.items : [];
+    return list.map((x) => String(x || "").trim()).filter(Boolean).slice(0, WORK_LOC_MAX);
+  } catch (_) {
+    return [];
+  }
+}
+
+async function pushWorkLocationHistory_(place) {
+  const p = String(place || "").trim();
+  if (!p) return;
+  let list = await getWorkLocationHistory_();
+  list = [p].concat(list.filter((x) => x !== p)).slice(0, WORK_LOC_MAX);
+  await dbPut(STORE_CONFIG, { id: WORK_LOC_KEY, items: list });
+}
+
+async function refreshWorkLocationDatalist_() {
+  const list = await getWorkLocationHistory_();
+  let dl = document.getElementById("workLocationHistoryList");
+  if (!dl) {
+    dl = document.createElement("datalist");
+    dl.id = "workLocationHistoryList";
+    document.body.appendChild(dl);
+  }
+  dl.innerHTML = list
+    .map((x) => '<option value="' + escapeHtml(x) + '"></option>')
+    .join("");
+
+  const input = $("workLocationInput");
+  if (input) input.setAttribute("list", "workLocationHistoryList");
+}
 function injectWorkLocationField() {
   const recordBtn = $("recordBtn");
   if (!recordBtn || document.getElementById("workLocationInput")) return;
@@ -1338,7 +1393,7 @@ async function createRecord(type) {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
 
-  setTimeout(() => {
+    setTimeout(() => {
     currentPhoto = "";
     pendingLocation = null;
     photoSelectedAtMs = 0;
@@ -1350,6 +1405,9 @@ async function createRecord(type) {
       preview.src = "";
       preview.style.display = "none";
     }
+
+    const work = $("workLocationInput");
+    if (work) work.value = "";
 
     setStatus("");
     setBusy(false);
@@ -1584,7 +1642,22 @@ function buildServerPayload(record) {
 async function refreshUi() {
   const rec = await dbGetAll(STORE_RECORDS);
 
-  if ($("pendingCount")) $("pendingCount").textContent = rec.filter((r) => r.status === "pending").length;
+   const pendingEl = $("pendingCount");
+  if (pendingEl) {
+    const pendingN = rec.filter((r) => r.status === "pending").length;
+    pendingEl.textContent = pendingN;
+    if (pendingN >= 1) {
+      pendingEl.style.color = "#dc2626";
+      pendingEl.style.fontWeight = "800";
+      pendingEl.style.fontSize = "1.45rem";
+      pendingEl.classList.add("pending-pulse");
+    } else {
+      pendingEl.style.color = "";
+      pendingEl.style.fontWeight = "";
+      pendingEl.style.fontSize = "";
+      pendingEl.classList.remove("pending-pulse");
+    }
+  }
   if ($("sentCount")) $("sentCount").textContent = rec.filter((r) => r.status === "sent").length;
   if ($("failedCount")) $("failedCount").textContent = rec.filter((r) => r.status === "failed").length;
 

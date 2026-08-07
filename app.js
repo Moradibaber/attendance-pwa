@@ -2297,7 +2297,7 @@ function onFaceMeshResults_(results) {
   const nose = lm[1];
   const faceRatio = Math.abs(bottom.y - top.y);
   const faceCenterX = (lm[234].x + lm[454].x) / 2;
-  const noseOffsetX = nose.x - faceCenterX; // head yaw proxy
+  const noseOffsetX = nose.x - faceCenterX;
 
   if (faceRatio < FACE_RATIO_MIN) {
     faceOkStreak_ = 0;
@@ -2327,13 +2327,11 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-   // Distance OK — collect nose offset samples
   motionSamples_.push(noseOffsetX);
   if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
     motionSamples_.shift();
   }
 
-  // Real move = max - min over the window (not single-frame noise)
   let minO = motionSamples_[0];
   let maxO = motionSamples_[0];
   for (let i = 1; i < motionSamples_.length; i++) {
@@ -2348,12 +2346,11 @@ function onFaceMeshResults_(results) {
     faceOkStreak_ = 0;
     if (instruction) {
       instruction.innerHTML =
-        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را به آرامی تکان دهید</span>";
+        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را کمی به چپ یا راست بچرخانید و نگه دارید</span>";
     }
     return;
   }
 
-  // Only after real motion, count stable frames
   faceOkStreak_++;
   if (instruction) {
     instruction.innerHTML =
@@ -2369,7 +2366,6 @@ function onFaceMeshResults_(results) {
     startOneSecondCapture_();
   }
 }
-
 async function tickFaceMesh_() {
   const video = $("cameraVideo");
   if (!video || !faceMesh_ || video.readyState < 2) {

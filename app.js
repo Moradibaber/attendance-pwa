@@ -1375,15 +1375,14 @@ async function markFirstConnectionForOfflineRecords() {
     if (list.length) await refreshUi();
   } catch (_) {}
 }
-
-async function syncPendingRecords() {
+   async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
   syncRunning = true;
 
   try {
     const refreshed = await refreshPolicyIfPossible();
     const policyInfo = refreshed || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true); 
+    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
 
     if (!syncGate.ok) {
       setSyncStatus(syncGate.message);
@@ -1401,7 +1400,6 @@ async function syncPendingRecords() {
     }
 
     setSyncStatus("در حال ارسال...");
-    setTimeout(() => setSyncStatus(""), 3000);
 
     for (const r of list) {
       if (r.status === "sent" || r.status === "syncing") continue;
@@ -1436,26 +1434,96 @@ async function syncPendingRecords() {
 
       try {
         const payload = buildServerPayload(r);
+        let confirmed = false;
+        let serverMsg = "";
 
-        await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload),
-        });
+        // 1) Prefer CORS so we can read ok: true / false
+        try {
+          const res = await fetch(APPS_SCRIPT_URL, {
+            method: "POST",
+            mode: "cors",
+            redirect: "follow",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(payload),
+          });
 
-        const sentIso = new Date().toISOString();
-        r.status = "sent";
-        r.syncedAt = sentIso;
-        r.uploadedAt = sentIso;
-        r.serverResponse = "opaque_no_cors";
-        await dbPut(STORE_RECORDS, r);
+          const text = await res.text();
+          serverMsg = (text || "").slice(0, 500);
+
+          let data = null;
+          try {
+            data = JSON.parse(text);
+          } catch (_) {}
+
+          if (data && data.ok === true) {
+            confirmed = true;
+          } else if (data && data.ok === false) {
+            r.status = "failed";
+            r.serverResponse = serverMsg || JSON.stringify(data);
+            await dbPut(STORE_RECORDS, r);
+            continue;
+          } else if (res.ok && !data) {
+            // HTTP OK but non-JSON — treat as unconfirmed failure (safer)
+            r.status = "failed";
+            r.serverResponse = "non_json_response:" + serverMsg;
+            await dbPut(STORE_RECORDS, r);
+            continue;
+          } else {
+            r.status = "failed";
+            r.serverResponse = "http_" + res.status + ":" + serverMsg;
+            await dbPut(STORE_RECORDS, r);
+            continue;
+          }
+        } catch (corsErr) {
+          // 2) CORS blocked — last resort no-cors (cannot confirm sheet write)
+          try {
+            await fetch(APPS_SCRIPT_URL, {
+              method: "POST",
+              mode: "no-cors",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify(payload),
+            });
+            // Opaque: do NOT mark sent (this was the old bug)
+            r.status = "pending";
+            r.serverResponse = "cors_blocked_opaque_retry";
+            await dbPut(STORE_RECORDS, r);
+            continue;
+          } catch (e2) {
+            r.status = "failed";
+            r.serverResponse = JSON.stringify({
+              ok: false,
+              error: e2?.message || corsErr?.message || "network_error",
+            });
+            await dbPut(STORE_RECORDS, r);
+            continue;
+          }
+        }
+
+        if (confirmed) {
+          const sentIso = new Date().toISOString();
+          r.status = "sent";
+          r.syncedAt = sentIso;
+          r.uploadedAt = sentIso;
+          r.serverResponse = serverMsg || "ok";
+          await dbPut(STORE_RECORDS, r);
+        }
       } catch (err) {
         r.status = "failed";
-        r.serverResponse = JSON.stringify({ ok: false, error: err?.message || "network_error" });
+        r.serverResponse = JSON.stringify({
+          ok: false,
+          error: err?.message || "network_error",
+        });
         await dbPut(STORE_RECORDS, r);
       }
     }
+
+    setSyncStatus("ارسال انجام شد");
+    await refreshUi();
+    await fetchMessages();
+  } finally {
+    syncRunning = false;
+  }
+}
 
     setSyncStatus("ارسال انجام شد");
     await refreshUi();
@@ -1528,7 +1596,6 @@ async function refreshUi() {
 
   renderRecords(rec);
 }
-
 function renderRecords(records) {
   const el = $("recordsList");
   if (!el) return;
@@ -1538,11 +1605,16 @@ function renderRecords(records) {
     return;
   }
 
-  const sorted = [...records].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const sorted = [...records].sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  );
 
   el.innerHTML = sorted
     .slice(0, 20)
     .map((r) => {
+      const st = r.status || "";
+      const icon =
+        st === "sent" ? "✅" : st === "failed" ? "❌" : st === "syncing" ? "⏳" : "▪️";
       const riskText = r.clockRisk ? ` - ${escapeHtml(r.clockRisk)}` : "";
       const connectionText = r.connectionStatusFa
         ? ` - ${escapeHtml(r.connectionStatusFa)}`
@@ -1552,7 +1624,7 @@ function renderRecords(records) {
 
       return `
         <div class="record-item compact-record">
-          <span>${escapeHtml(r.recordDate || "")}</span>
+          <span>${icon} ${escapeHtml(r.recordDate || "")}</span>
           <span>${escapeHtml(r.recordHour || r.recordTime || "")}${connectionText}${riskText}</span>
         </div>
       `;

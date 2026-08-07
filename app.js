@@ -124,6 +124,9 @@ function getJalaliIsoDate(d = new Date()) {
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
+    const work = $("workLocationInput");
+  if (work) work.setAttribute("list", "workLocationHistoryList");
+  await refreshWorkLocationDatalist_();
   try {
     setTimeout(() => {
       try {
@@ -520,7 +523,9 @@ function injectWorkLocationField() {
     "font-family:inherit;background:#fff;";
 
   wrapper.appendChild(input);
+       input.setAttribute("list", "workLocationHistoryList");
   recordBtn.parentNode.insertBefore(wrapper, recordBtn);
+    refreshWorkLocationDatalist_();
 }
 
 function bindEvents() {
@@ -1309,7 +1314,13 @@ async function createRecord(type) {
   };
 
   await dbPut(STORE_RECORDS, record);
-
+  const place = (document.getElementById("workLocationInput")?.value || "").trim();
+  if (place) {
+    try {
+      await pushWorkLocationHistory_(place);
+      await refreshWorkLocationDatalist_();
+    } catch (_) {}
+  }
   // Option 1 — honest toast (local save; upload may still be pending)
   showGpsToast(
     "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد",

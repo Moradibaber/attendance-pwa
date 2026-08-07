@@ -775,10 +775,64 @@ async function verifyPasswordWithServer_(personnelCode, password) {
     return { ok: false, error: "برای تایید رمز به اینترنت نیاز است." };
   }
 
-  const code = String(personnelCode || "").trim();
-  const pass = String(password || "");
+  // normalize Persian/Arabic digits → Latin
+  const normalize = (s) =>
+    String(s || "")
+      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+      .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+      .trim();
 
-  // ---------- 1) POST (normal path) ----------
+  const code = normalize(personnelCode);
+  const pass = String(password || "").trim();
+
+  if (!code) {
+    return { ok: false, error: "کد پرسنلی وارد نشده است." };
+  }
+  if (!pass) {
+    return { ok: false, error: "رمز عبور وارد نشده است." };
+  }
+
+  // ---------- Prefer GET (most reliable on iPhone) ----------
+  try {
+    const url =
+      APPS_SCRIPT_URL +
+      "?action=verifyPassword" +
+      "&personnelCode=" + encodeURIComponent(code) +
+      "&password=" + encodeURIComponent(pass) +
+      "&_=" + Date.now();
+
+    const res = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      redirect: "follow",
+      cache: "no-store",
+      credentials: "omit",
+    });
+
+    const text = await res.text();
+    console.log("verifyPassword GET:", res.status, text.slice(0, 200));
+
+    if (text && text.trim()) {
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        const m = text.match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            data = JSON.parse(m[0]);
+          } catch (_) {}
+        }
+      }
+      if (data && typeof data === "object") {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn("verifyPassword GET failed, trying POST", err);
+  }
+
+  // ---------- Fallback POST ----------
   try {
     const payload = {
       type: "VerifyPassword",
@@ -797,81 +851,40 @@ async function verifyPasswordWithServer_(personnelCode, password) {
     });
 
     const text = await res.text();
+    console.log("verifyPassword POST:", res.status, text.slice(0, 200));
 
-    if (text && String(text).trim()) {
-      let data = null;
-      try {
-        data = JSON.parse(text);
-      } catch (_) {
-        const m = String(text).match(/\{[\s\S]*\}/);
-        if (m) {
-          try {
-            data = JSON.parse(m[0]);
-          } catch (_) {}
-        }
-      }
-      if (data && typeof data === "object") {
-        return data;
-      }
-    }
-    // empty or unparseable → fall through to GET (iPhone fix)
-    console.warn("verifyPassword POST empty/unparseable → trying GET");
-  } catch (err) {
-    console.warn("verifyPassword POST failed → trying GET", err);
-  }
-
-  // ---------- 2) GET fallback (works on iPhone) ----------
-  try {
-    const url =
-      APPS_SCRIPT_URL +
-      "?action=verifyPassword" +
-      "&personnelCode=" + encodeURIComponent(code) +
-      "&password=" + encodeURIComponent(pass) +
-      "&_=" + Date.now();
-
-    const res2 = await fetch(url, {
-      method: "GET",
-      mode: "cors",
-      redirect: "follow",
-      cache: "no-store",
-      credentials: "omit",
-    });
-
-    const text2 = await res2.text();
-    if (!text2 || !String(text2).trim()) {
+    if (!text || !text.trim()) {
       return { ok: false, error: "پاسخ خالی از سرور (آیفون)" };
     }
 
-    let data2 = null;
+    let data = null;
     try {
-      data2 = JSON.parse(text2);
+      data = JSON.parse(text);
     } catch (_) {
-      const m = String(text2).match(/\{[\s\S]*\}/);
+      const m = text.match(/\{[\s\S]*\}/);
       if (m) {
         try {
-          data2 = JSON.parse(m[0]);
+          data = JSON.parse(m[0]);
         } catch (_) {}
       }
     }
 
-    if (data2 && typeof data2 === "object") {
-      return data2;
+    if (data && typeof data === "object") {
+      return data;
     }
 
-    console.error("verifyPassword GET raw:", String(text2).slice(0, 300));
     return {
       ok: false,
-      error: "پاسخ سرور معتبر نیست. نسخه جدید Deploy و دسترسی Anyone لازم است.",
+      error: "پاسخ سرور معتبر نیست: " + String(text).replace(/\s+/g, " ").slice(0, 80),
     };
   } catch (err) {
-    console.error("verifyPassword iOS error:", err);
+    console.error("verifyPassword error:", err);
     return {
       ok: false,
       error: "ارتباط با سرور برقرار نشد. اینترنت آیفون را بررسی کنید.",
     };
   }
 }
-
 async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();

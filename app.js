@@ -1375,7 +1375,7 @@ async function markFirstConnectionForOfflineRecords() {
     if (list.length) await refreshUi();
   } catch (_) {}
 }
-   async function syncPendingRecords() {
+ async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
   syncRunning = true;
 
@@ -1437,7 +1437,6 @@ async function markFirstConnectionForOfflineRecords() {
         let confirmed = false;
         let serverMsg = "";
 
-        // 1) Prefer CORS so we can read ok: true / false
         try {
           const res = await fetch(APPS_SCRIPT_URL, {
             method: "POST",
@@ -1462,12 +1461,6 @@ async function markFirstConnectionForOfflineRecords() {
             r.serverResponse = serverMsg || JSON.stringify(data);
             await dbPut(STORE_RECORDS, r);
             continue;
-          } else if (res.ok && !data) {
-            // HTTP OK but non-JSON — treat as unconfirmed failure (safer)
-            r.status = "failed";
-            r.serverResponse = "non_json_response:" + serverMsg;
-            await dbPut(STORE_RECORDS, r);
-            continue;
           } else {
             r.status = "failed";
             r.serverResponse = "http_" + res.status + ":" + serverMsg;
@@ -1475,7 +1468,6 @@ async function markFirstConnectionForOfflineRecords() {
             continue;
           }
         } catch (corsErr) {
-          // 2) CORS blocked — last resort no-cors (cannot confirm sheet write)
           try {
             await fetch(APPS_SCRIPT_URL, {
               method: "POST",
@@ -1483,7 +1475,6 @@ async function markFirstConnectionForOfflineRecords() {
               headers: { "Content-Type": "text/plain;charset=utf-8" },
               body: JSON.stringify(payload),
             });
-            // Opaque: do NOT mark sent (this was the old bug)
             r.status = "pending";
             r.serverResponse = "cors_blocked_opaque_retry";
             await dbPut(STORE_RECORDS, r);
@@ -1492,7 +1483,7 @@ async function markFirstConnectionForOfflineRecords() {
             r.status = "failed";
             r.serverResponse = JSON.stringify({
               ok: false,
-              error: e2?.message || corsErr?.message || "network_error",
+              error: (e2 && e2.message) || (corsErr && corsErr.message) || "network_error",
             });
             await dbPut(STORE_RECORDS, r);
             continue;
@@ -1511,7 +1502,7 @@ async function markFirstConnectionForOfflineRecords() {
         r.status = "failed";
         r.serverResponse = JSON.stringify({
           ok: false,
-          error: err?.message || "network_error",
+          error: (err && err.message) || "network_error",
         });
         await dbPut(STORE_RECORDS, r);
       }
@@ -1523,15 +1514,7 @@ async function markFirstConnectionForOfflineRecords() {
   } finally {
     syncRunning = false;
   }
-}
-
-    setSyncStatus("ارسال انجام شد");
-    await refreshUi();
-    await fetchMessages();
-  } finally {
-    syncRunning = false;
-  }
-}
+}  
 
 function buildServerPayload(record) {
   return {

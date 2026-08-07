@@ -798,18 +798,25 @@ async function verifyPasswordWithServer_(personnelCode, password) {
       return { ok: false, error: "پاسخ خالی از سرور (آیفون)" };
     }
 
+    // iPhone sometimes gets HTML around JSON — extract first { ... }
     let data = null;
     try {
       data = JSON.parse(text);
     } catch (_) {
-      return {
-        ok: false,
-        error: "پاسخ سرور معتبر نیست. دوباره Deploy کنید.",
-      };
+      const m = String(text).match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          data = JSON.parse(m[0]);
+        } catch (_) {}
+      }
     }
 
     if (!data || typeof data !== "object") {
-      return { ok: false, error: "پاسخ نامعتبر از سرور" };
+      console.error("verifyPassword raw (first 300):", String(text).slice(0, 300));
+      return {
+        ok: false,
+        error: "پاسخ سرور معتبر نیست. Deploy را با دسترسی Anyone بررسی کنید.",
+      };
     }
 
     return data;
@@ -820,8 +827,7 @@ async function verifyPasswordWithServer_(personnelCode, password) {
       error: "ارتباط با سرور برقرار نشد. اینترنت و VPN را بررسی کنید.",
     };
   }
-}
-  
+}  
 async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();

@@ -822,7 +822,7 @@ async function verifyPasswordWithServer_(personnelCode, password) {
   }
 }
   
-}async function saveProfileSilent() {
+async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();
     const saved = await dbGet(STORE_PROFILE, "main");

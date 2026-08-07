@@ -2093,6 +2093,13 @@ function onFaceMeshResults_(results) {
   const instruction = $("cameraInstruction");
   const video = $("cameraVideo");
 
+  if (instruction) {
+    instruction.style.cssText =
+      "color:#fff;font-size:18px;font-weight:700;line-height:1.7;margin:0;" +
+      "background:rgba(0,0,0,0.75);padding:14px 16px;border-radius:12px;" +
+      "max-width:340px;text-align:center;";
+  }
+
   if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
     faceOkStreak_ = 0;
     if (video) {
@@ -2101,7 +2108,7 @@ function onFaceMeshResults_(results) {
     }
     if (instruction) {
       instruction.innerHTML =
-        'صورت در کادر دیده نشد<br><span style="color:#fbbf24;">کمی نزدیک‌تر و روبه‌رو بایستید</span>';
+        "صورت در کادر دیده نشد<br><span style=\"color:#fbbf24;\">کمی نزدیک‌تر و روبه‌رو بایستید</span>";
     }
     return;
   }
@@ -2119,7 +2126,7 @@ function onFaceMeshResults_(results) {
     }
     if (instruction) {
       instruction.innerHTML =
-        'فاصله زیاد است<br><span style="color:#fbbf24;">موبایل را به حدود ۲۰–۲۵ سانتی‌متر نزدیک کنید</span>';
+        "فاصله زیاد است<br><span style=\"color:#fbbf24;\">موبایل را به حدود ۲۰–۲۵ سانتی‌متر نزدیک کنید</span>";
     }
     return;
   }
@@ -2132,7 +2139,7 @@ function onFaceMeshResults_(results) {
     }
     if (instruction) {
       instruction.innerHTML =
-        'خیلی نزدیک است<br><span style="color:#fbbf24;">کمی عقب‌تر بروید (۲۰–۲۵ سانتی‌متر)</span>';
+        "خیلی نزدیک است<br><span style=\"color:#fbbf24;\">کمی عقب‌تر بروید (۲۰–۲۵ سانتی‌متر)</span>";
     }
     return;
   }
@@ -2140,7 +2147,7 @@ function onFaceMeshResults_(results) {
   faceOkStreak_++;
   if (instruction) {
     instruction.innerHTML =
-      'فاصله مناسب است<br><span style="color:#4ade80;">در حال ثبت...</span>';
+      "فاصله مناسب است<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه دیگر...</span>";
   }
 
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
@@ -2149,17 +2156,9 @@ function onFaceMeshResults_(results) {
       cancelAnimationFrame(faceMeshRaf_);
       faceMeshRaf_ = null;
     }
-    startOneSecondCapture_(); // must be this — exactly ~1s then captureFromVideo
-  }
-    stopFaceMeshLoop_();
-    if (video) {
-      video.style.opacity = "1";
-      video.style.filter = "none";
-    }
-    captureFromVideo();
+    startOneSecondCapture_();
   }
 }
-
 async function tickFaceMesh_() {
   const video = $("cameraVideo");
   if (!video || !faceMesh_ || video.readyState < 2) {

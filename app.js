@@ -2084,12 +2084,12 @@ async function ensureFaceMesh_() {
   faceMeshReady_ = true;
   return faceMesh_;
 }
-
 function onFaceMeshResults_(results) {
   const instruction = $("cameraInstruction");
-   if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+  const video = $("cameraVideo");
+
+  if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
     faceOkStreak_ = 0;
-    const video = $("cameraVideo");
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2102,28 +2102,25 @@ function onFaceMeshResults_(results) {
   }
 
   const lm = results.multiFaceLandmarks[0];
-  // Rough face height from landmarks (chin ~152, forehead ~10)
   const top = lm[10];
   const bottom = lm[152];
-  const faceRatio = Math.abs(bottom.y - top.y); // 0–1 relative to frame
+  const faceRatio = Math.abs(bottom.y - top.y);
 
-    if (faceRatio < FACE_RATIO_MIN) {
+  if (faceRatio < FACE_RATIO_MIN) {
     faceOkStreak_ = 0;
-    const video = $("cameraVideo");
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
     }
     if (instruction) {
-  instruction.innerHTML =
+      instruction.innerHTML =
         'فاصله زیاد است<br><span style="color:#fbbf24;">موبایل را به حدود ۲۰–۲۵ سانتی‌متر نزدیک کنید</span>';
     }
     return;
   }
 
-    if (faceRatio > FACE_RATIO_MAX) {
+  if (faceRatio > FACE_RATIO_MAX) {
     faceOkStreak_ = 0;
-    const video = $("cameraVideo");
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2138,11 +2135,20 @@ function onFaceMeshResults_(results) {
   faceOkStreak_++;
   if (instruction) {
     instruction.innerHTML =
-      'فاصله مناسب است<br><span style="color:#4ade80;">ثابت بمانید...</span>';
+      'فاصله مناسب است<br><span style="color:#4ade80;">در حال ثبت...</span>';
   }
 
-  if (!captureArmed_ && faceOkStreak_ >=
+  if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
+    captureArmed_ = true;
+    stopFaceMeshLoop_();
+    if (video) {
+      video.style.opacity = "1";
+      video.style.filter = "none";
+    }
+    captureFromVideo();
+  }
 }
+
 async function tickFaceMesh_() {
   const video = $("cameraVideo");
   if (!video || !faceMesh_ || video.readyState < 2) {

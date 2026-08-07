@@ -769,20 +769,23 @@ async function loadProfile() {
   if ($("lastName")) $("lastName").value = p.lastName || "";
   // Restore masked password if saved
   if ($("userPassword")) $("userPassword").value = p.password || "";
-  
-}
+  }
 async function verifyPasswordWithServer_(personnelCode, password) {
   if (!navigator.onLine) {
     return { ok: false, error: "برای تایید رمز به اینترنت نیاز است." };
   }
 
-  const payload = {
-    type: "VerifyPassword",
-    personnelCode: String(personnelCode || "").trim(),
-    password: String(password || ""),
-  };
+  const code = String(personnelCode || "").trim();
+  const pass = String(password || "");
 
+  // ---------- 1) POST (normal path) ----------
   try {
+    const payload = {
+      type: "VerifyPassword",
+      personnelCode: code,
+      password: pass,
+    };
+
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       mode: "cors",
@@ -794,31 +797,72 @@ async function verifyPasswordWithServer_(personnelCode, password) {
     });
 
     const text = await res.text();
-    if (!text || !String(text).trim()) {
+
+    if (text && String(text).trim()) {
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        const m = String(text).match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            data = JSON.parse(m[0]);
+          } catch (_) {}
+        }
+      }
+      if (data && typeof data === "object") {
+        return data;
+      }
+    }
+    // empty or unparseable → fall through to GET (iPhone fix)
+    console.warn("verifyPassword POST empty/unparseable → trying GET");
+  } catch (err) {
+    console.warn("verifyPassword POST failed → trying GET", err);
+  }
+
+  // ---------- 2) GET fallback (works on iPhone) ----------
+  try {
+    const url =
+      APPS_SCRIPT_URL +
+      "?action=verifyPassword" +
+      "&personnelCode=" + encodeURIComponent(code) +
+      "&password=" + encodeURIComponent(pass) +
+      "&_=" + Date.now();
+
+    const res2 = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      redirect: "follow",
+      cache: "no-store",
+      credentials: "omit",
+    });
+
+    const text2 = await res2.text();
+    if (!text2 || !String(text2).trim()) {
       return { ok: false, error: "پاسخ خالی از سرور (آیفون)" };
     }
 
-    let data = null;
+    let data2 = null;
     try {
-      data = JSON.parse(text);
+      data2 = JSON.parse(text2);
     } catch (_) {
-      const m = String(text).match(/\{[\s\S]*\}/);
+      const m = String(text2).match(/\{[\s\S]*\}/);
       if (m) {
         try {
-          data = JSON.parse(m[0]);
+          data2 = JSON.parse(m[0]);
         } catch (_) {}
       }
     }
 
-    if (!data || typeof data !== "object") {
-      console.error("verifyPassword raw:", String(text).slice(0, 300));
-      return {
-        ok: false,
-        error: "پاسخ سرور معتبر نیست. نسخه جدید Deploy و دسترسی Anyone لازم است.",
-      };
+    if (data2 && typeof data2 === "object") {
+      return data2;
     }
 
-    return data;
+    console.error("verifyPassword GET raw:", String(text2).slice(0, 300));
+    return {
+      ok: false,
+      error: "پاسخ سرور معتبر نیست. نسخه جدید Deploy و دسترسی Anyone لازم است.",
+    };
   } catch (err) {
     console.error("verifyPassword iOS error:", err);
     return {
@@ -827,6 +871,7 @@ async function verifyPasswordWithServer_(personnelCode, password) {
     };
   }
 }
+
 async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();

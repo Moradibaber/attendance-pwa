@@ -1312,7 +1312,7 @@ async function createRecord(type) {
 
   // Option 1 — honest toast (local save; upload may still be pending)
   showGpsToast(
-    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم عکس را بررسی خواهد کرد",
+    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد",
     5000,
     "success"
   );
@@ -2174,7 +2174,7 @@ function onFaceMeshResults_(results) {
     faceOkStreak_ = 0;
     if (instruction) {
       instruction.innerHTML =
-        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را کمی به چپ یا راست بچرخانید و نگه دارید</span>";
+        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را به آرامی تکان دهید</span>";
     }
     return;
   }

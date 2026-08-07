@@ -1307,11 +1307,7 @@ async function createRecord(type) {
 
      await dbPut(STORE_RECORDS, record); 
 
-    showGpsToast(
-    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...",
-    4000,
-    "success"
-  );
+    showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
   setStatus("تردد ذخیره شد.");
   setBusy(false);
   await refreshUi();

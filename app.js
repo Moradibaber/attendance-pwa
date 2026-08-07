@@ -776,18 +776,53 @@ async function verifyPasswordWithServer_(personnelCode, password) {
   if (!navigator.onLine) {
     return { ok: false, error: "برای تایید رمز به اینترنت نیاز است." };
   }
+
   const url =
     APPS_SCRIPT_URL +
     "?action=verifyPassword" +
-    "&personnelCode=" + encodeURIComponent(personnelCode) +
-    "&password=" + encodeURIComponent(password) +
+    "&personnelCode=" + encodeURIComponent(String(personnelCode || "").trim()) +
+    "&password=" + encodeURIComponent(String(password || "")) +
     "&_=" + Date.now();
 
-  const res = await fetch(url, { method: "GET", cache: "no-store" });
-  const data = await res.json();
-  return data;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      mode: "cors",
+      redirect: "follow",
+      cache: "no-store",
+      credentials: "omit",
+    });
+
+    const text = await res.text();
+    if (!text || !String(text).trim()) {
+      return { ok: false, error: "پاسخ خالی از سرور (آیفون)" };
+    }
+
+    let data = null;
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      return {
+        ok: false,
+        error: "پاسخ سرور معتبر نیست. دوباره Deploy کنید.",
+      };
+    }
+
+    if (!data || typeof data !== "object") {
+      return { ok: false, error: "پاسخ نامعتبر از سرور" };
+    }
+
+    return data;
+  } catch (err) {
+    console.error("verifyPassword iOS error:", err);
+    return {
+      ok: false,
+      error: "ارتباط با سرور برقرار نشد. اینترنت و VPN را بررسی کنید.",
+    };
+  }
 }
-async function saveProfileSilent() {
+  
+}async function saveProfileSilent() {
   try {
     const profile = getProfileFromInputs();
     const saved = await dbGet(STORE_PROFILE, "main");

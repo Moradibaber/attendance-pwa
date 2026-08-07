@@ -807,6 +807,10 @@ async function verifyPasswordWithServer_(personnelCode, password) {
       redirect: "follow",
       cache: "no-store",
       credentials: "omit",
+      headers: {
+  "Cache-Control": "no-cache, no-store, must-revalidate",
+  "Pragma": "no-cache"
+}
     });
 
     const text = await res.text();

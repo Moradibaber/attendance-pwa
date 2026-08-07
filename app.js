@@ -1186,7 +1186,6 @@ async function handlePhotoSelected() {
 /* =========================
    Record Creation
 ========================= */
-
 async function createRecord(type) {
   const profile = await getProfile();
 
@@ -1218,7 +1217,9 @@ async function createRecord(type) {
   const deviceTime = now.toISOString();
   const deviceTimeAtClick = new Date(clickMs).toISOString();
   const deviceTimeAtPhoto = photoMs ? new Date(photoMs).toISOString() : "";
-  const deviceTimeAtPhotoCompressed = photoCompressedMs ? new Date(photoCompressedMs).toISOString() : "";
+  const deviceTimeAtPhotoCompressed = photoCompressedMs
+    ? new Date(photoCompressedMs).toISOString()
+    : "";
   const deviceTimeAtGps = gpsMs ? new Date(gpsMs).toISOString() : "";
   const gpsTimestamp = deviceTimeAtGps;
 
@@ -1230,7 +1231,9 @@ async function createRecord(type) {
   const createdOnline = navigator.onLine;
 
   const sessionClockDriftMs = getSessionClockDriftMs();
-  const networkClockDriftMs = navigator.onLine ? await getNetworkTimeDriftMs(nowMs) : null;
+  const networkClockDriftMs = navigator.onLine
+    ? await getNetworkTimeDriftMs(nowMs)
+    : null;
 
   const risk = calculateClockRisk({
     clickMs,
@@ -1305,21 +1308,25 @@ async function createRecord(type) {
     serverResponse: "",
   };
 
-     await dbPut(STORE_RECORDS, record); 
+  await dbPut(STORE_RECORDS, record);
 
-    showGpsToast("✅ تردد با موفقیت ثبت شد ادمین سیستم عکس را بررسی خواهد کرد", 5000, "success");
-  setStatus("تردد ذخیره شد.");
+  // Option 1 — honest toast (local save; upload may still be pending)
+  showGpsToast(
+    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم عکس را بررسی خواهد کرد",
+    5000,
+    "success"
+  );
+  setStatus("تردد ذخیره شد — در حال ارسال...");
+  setSyncStatus("در حال ارسال...");
   setBusy(false);
   await refreshUi();
 
-  // Upload in background — do NOT wait (avoids “second save” feeling)
   if (navigator.onLine) {
     scheduleSyncPendingRecords(300);
   } else {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
 
-  // Soft reset after 2 seconds
   setTimeout(() => {
     currentPhoto = "";
     pendingLocation = null;
@@ -1333,32 +1340,16 @@ async function createRecord(type) {
       preview.style.display = "none";
     }
 
-    // const work = $("workLocationInput");
-    // if (work) work.value = "";
-
     setStatus("");
-    setSyncStatus("");
     setBusy(false);
   }, 2000);
 }
+
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;
-  //   setStatus("تردد ذخیره شد — در حال ارسال...");
-  // setBusy(false);
-  // await refreshUi();
-
-  // if (navigator.onLine) {
-  //   try {
-  //     await syncPendingRecords();
-  //     showGpsToast("✅ تردد با موفقیت ارسال شد", 4000, "success");
-  //   } catch (e) {
-  //     showGpsToast("ذخیره شد؛ ارسال بعداً انجام می‌شود", 4000, "error");
-  //   }
-  // } else {
-  //   showGpsToast("ذخیره شد (آفلاین) — بعداً ارسال می‌شود", 4000, "error");
-  // }
 }
+
 /* =========================
    Sync (CORS-SAFE)
 ========================= */

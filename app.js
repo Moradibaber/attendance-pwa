@@ -1555,12 +1555,14 @@ async function markFirstConnectionForOfflineRecords() {
   syncRunning = true;
 
   try {
-    const refreshed = await refreshPolicyIfPossible();
+        const refreshed = await refreshPolicyIfPossible();
     const policyInfo = refreshed || (await getAttendancePolicyInfo());
-    const syncGate = evaluateAttendancePolicy(policyInfo?.attendancePolicy, true);
 
-    if (!syncGate.ok) {
-      setSyncStatus(syncGate.message);
+    // Sync = upload of records already saved.
+    // OFFLINE_ONLY only blocks NEW attendance while online, not uploading old offline ones.
+    const syncPolicy = normalizeAttendancePolicy(policyInfo?.attendancePolicy);
+    if (syncPolicy === POLICY_NOT_ALLOWED) {
+      setSyncStatus("ثبت تردد برای شما مجاز نیست.");
       return;
     }
 

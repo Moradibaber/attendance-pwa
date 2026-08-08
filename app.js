@@ -2445,27 +2445,24 @@ function onFaceMeshResults_(results) {
   const noseRange = maxO - minO;
   const hasMicroMotion =
     motionSamples_.length >= MOTION_SAMPLES_NEEDED && noseRange >= MIN_NOSE_SHIFT;
-  if (!hasMicroMotion) {
-    // If we were in the 1s lock and face/motion breaks → cancel cheat turn-to-screen
+    if (!hasMicroMotion) {
+    // During 1s lock: do NOT cancel only because head stopped moving.
+    // Cancel only when face is lost / distance wrong (other branches).
     if (captureLocked_) {
-      if (autoCaptureTimer_) {
-        clearTimeout(autoCaptureTimer_);
-        autoCaptureTimer_ = null;
-      }
-      if (countdownInterval_) {
-        clearInterval(countdownInterval_);
-        countdownInterval_ = null;
-      }
-      captureLocked_ = false;
-      captureArmed_ = false;
-      faceOkStreak_ = 0;
-      motionSamples_ = [];
       if (instruction) {
         instruction.innerHTML =
-          "صورت از کادر خارج شد<br><span style=\"color:#f87171;\">دوباره با فاصله درست و حرکت سر تلاش کنید</span>";
+          "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
       }
       return;
     }
+
+    faceOkStreak_ = 0;
+    if (instruction) {
+      instruction.innerHTML =
+        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را کمی به چپ یا راست بچرخانید، بعد ثابت بمانید</span>";
+    }
+    return;
+  }
 
     faceOkStreak_ = 0;
     if (instruction) {

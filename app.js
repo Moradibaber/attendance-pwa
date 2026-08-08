@@ -2303,6 +2303,7 @@ let faceMeshReady_ = false;
 let faceMeshRaf_ = null;
 let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
+let captureLocked_ = false; // true only while 1s timer is running
 let motionSamples_ = [];
 const MOTION_SAMPLES_NEEDED = 10;
 const MIN_NOSE_SHIFT = 0.060; // relative micro head move
@@ -2344,9 +2345,21 @@ function onFaceMeshResults_(results) {
       "max-width:340px;text-align:center;";
   }
 
-  if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+   if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
+    if (captureLocked_) {
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      if (countdownInterval_) {
+        clearInterval(countdownInterval_);
+        countdownInterval_ = null;
+      }
+      captureLocked_ = false;
+      captureArmed_ = false;
+    }
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2366,9 +2379,21 @@ function onFaceMeshResults_(results) {
   const faceCenterX = (lm[234].x + lm[454].x) / 2;
   const noseOffsetX = nose.x - faceCenterX;
 
-  if (faceRatio < FACE_RATIO_MIN) {
+   if (faceRatio < FACE_RATIO_MIN) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
+    if (captureLocked_) {
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      if (countdownInterval_) {
+        clearInterval(countdownInterval_);
+        countdownInterval_ = null;
+      }
+      captureLocked_ = false;
+      captureArmed_ = false;
+    }
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2380,9 +2405,21 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  if (faceRatio > FACE_RATIO_MAX) {
+    if (faceRatio > FACE_RATIO_MAX) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
+    if (captureLocked_) {
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      if (countdownInterval_) {
+        clearInterval(countdownInterval_);
+        countdownInterval_ = null;
+      }
+      captureLocked_ = false;
+      captureArmed_ = false;
+    }
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2408,8 +2445,28 @@ function onFaceMeshResults_(results) {
   const noseRange = maxO - minO;
   const hasMicroMotion =
     motionSamples_.length >= MOTION_SAMPLES_NEEDED && noseRange >= MIN_NOSE_SHIFT;
-
   if (!hasMicroMotion) {
+    // If we were in the 1s lock and face/motion breaks → cancel cheat turn-to-screen
+    if (captureLocked_) {
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      if (countdownInterval_) {
+        clearInterval(countdownInterval_);
+        countdownInterval_ = null;
+      }
+      captureLocked_ = false;
+      captureArmed_ = false;
+      faceOkStreak_ = 0;
+      motionSamples_ = [];
+      if (instruction) {
+        instruction.innerHTML =
+          "صورت از کادر خارج شد<br><span style=\"color:#f87171;\">دوباره با فاصله درست و حرکت سر تلاش کنید</span>";
+      }
+      return;
+    }
+
     faceOkStreak_ = 0;
     if (instruction) {
       instruction.innerHTML =
@@ -2418,21 +2475,29 @@ function onFaceMeshResults_(results) {
     return;
   }
 
+  // Distance + motion OK — also cancel if face size jumps during lock (phone turned to screen)
+  if (captureLocked_) {
+    // still valid → let timer finish
+    if (instruction) {
+      instruction.innerHTML =
+        "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
+    }
+    return;
+  }
+
   faceOkStreak_++;
   if (instruction) {
     instruction.innerHTML =
-      "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه دیگر...</span>";
+      "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه دیگر — صورت را در کادر نگه دارید</span>";
   }
 
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
     captureArmed_ = true;
-    if (faceMeshRaf_) {
-      cancelAnimationFrame(faceMeshRaf_);
-      faceMeshRaf_ = null;
-    }
+    captureLocked_ = true;
     startOneSecondCapture_();
   }
 }
+  
 async function tickFaceMesh_() {
   const video = $("cameraVideo");
   if (!video || !faceMesh_ || video.readyState < 2) {
@@ -2450,8 +2515,9 @@ function stopFaceMeshLoop_() {
     cancelAnimationFrame(faceMeshRaf_);
     faceMeshRaf_ = null;
   }
-  faceOkStreak_ = 0;
+    faceOkStreak_ = 0;
   captureArmed_ = false;
+  captureLocked_ = false;
   motionSamples_ = [];
 }
 function startOneSecondCapture_() {
@@ -2483,8 +2549,17 @@ function startOneSecondCapture_() {
   }, 1000);
 
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
-  autoCaptureTimer_ = setTimeout(() => {
+    autoCaptureTimer_ = setTimeout(() => {
     autoCaptureTimer_ = null;
+    // Only capture if still locked (face never left during the 1s)
+    if (!captureLocked_) {
+      if (instruction) {
+        instruction.innerHTML =
+          "ثبت لغو شد<br><span style=\"color:#f87171;\">صورت را تا لحظه عکس در کادر نگه دارید</span>";
+      }
+      return;
+    }
+    captureLocked_ = false;
     stopFaceMeshLoop_();
     captureFromVideo();
   }, 1000);

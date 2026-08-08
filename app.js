@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   try {
-    await fetchMessages();
+    await fetchMessages(); 
   } catch (_) {}
 
   try {

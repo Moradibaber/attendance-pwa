@@ -124,15 +124,19 @@ function getJalaliIsoDate(d = new Date()) {
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
-    const work = $("workLocationInput");
-  if (work) work.setAttribute("list", "workLocationHistoryList");
-  await refreshWorkLocationDatalist_();
   try {
     setTimeout(() => {
-      try {
-        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند و حتما همه دسترسی ها را مجاز کنید در غیر اینصورت نمیتوانید تردد ثبت کنید", 8000, "error");
-      } catch (_) {}
-    }, 4200);
+      showGpsToast(
+        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
+        8000,
+        "error"
+      );
+    }, 800);
+  } catch (_) {}
+
+  try {
+    const work = $("workLocationInput");
+    if (work) work.setAttribute("list", "workLocationHistoryList");
   } catch (_) {}
 
   try {
@@ -2303,6 +2307,7 @@ let faceMeshReady_ = false;
 let faceMeshRaf_ = null;
 let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
+let captureLocked_ = false; // true while waiting 1s for photo
 let motionSamples_ = [];
 const MOTION_SAMPLES_NEEDED = 10;
 const MIN_NOSE_SHIFT = 0.045; // relative micro head move
@@ -2344,9 +2349,30 @@ function onFaceMeshResults_(results) {
       "max-width:340px;text-align:center;";
   }
 
+  function cancelDuringWait_() {
+    if (!captureLocked_) return;
+    if (autoCaptureTimer_) {
+      clearTimeout(autoCaptureTimer_);
+      autoCaptureTimer_ = null;
+    }
+    if (countdownInterval_) {
+      clearInterval(countdownInterval_);
+      countdownInterval_ = null;
+    }
+    captureLocked_ = false;
+    captureArmed_ = false;
+    faceOkStreak_ = 0;
+    motionSamples_ = [];
+    if (instruction) {
+      instruction.innerHTML =
+        "صورت از کادر خارج شد<br><span style=\"color:#f87171;\">دوباره تلاش کنید — تا لحظه عکس صورت در کادر بماند</span>";
+    }
+  }
+
   if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
+    cancelDuringWait_();
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2369,6 +2395,7 @@ function onFaceMeshResults_(results) {
   if (faceRatio < FACE_RATIO_MIN) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
+    cancelDuringWait_();
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2383,6 +2410,7 @@ function onFaceMeshResults_(results) {
   if (faceRatio > FACE_RATIO_MAX) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
+    cancelDuringWait_();
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2390,6 +2418,15 @@ function onFaceMeshResults_(results) {
     if (instruction) {
       instruction.innerHTML =
         "خیلی نزدیک است<br><span style=\"color:#fbbf24;\">کمی عقب‌تر بروید (۲۰–۲۵ سانتی‌متر)</span>";
+    }
+    return;
+  }
+
+  // Face still OK during the 1s wait → do not require more head movement
+  if (captureLocked_) {
+    if (instruction) {
+      instruction.innerHTML =
+        "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
     }
     return;
   }
@@ -2405,15 +2442,15 @@ function onFaceMeshResults_(results) {
     if (motionSamples_[i] < minO) minO = motionSamples_[i];
     if (motionSamples_[i] > maxO) maxO = motionSamples_[i];
   }
-  const noseRange = maxO - minO;
   const hasMicroMotion =
-    motionSamples_.length >= MOTION_SAMPLES_NEEDED && noseRange >= MIN_NOSE_SHIFT;
+    motionSamples_.length >= MOTION_SAMPLES_NEEDED &&
+    maxO - minO >= MIN_NOSE_SHIFT;
 
   if (!hasMicroMotion) {
     faceOkStreak_ = 0;
     if (instruction) {
       instruction.innerHTML =
-        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را کمی به چپ یا راست بچرخانید و نگه دارید</span>";
+        "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را کمی به چپ یا راست بچرخانید، بعد ثابت بمانید</span>";
     }
     return;
   }
@@ -2421,15 +2458,13 @@ function onFaceMeshResults_(results) {
   faceOkStreak_++;
   if (instruction) {
     instruction.innerHTML =
-      "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه دیگر...</span>";
+      "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه — صورت را در کادر نگه دارید</span>";
   }
 
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
     captureArmed_ = true;
-    if (faceMeshRaf_) {
-      cancelAnimationFrame(faceMeshRaf_);
-      faceMeshRaf_ = null;
-    }
+    captureLocked_ = true;
+    // Keep Face Mesh running during the 1s (do NOT stop the loop here)
     startOneSecondCapture_();
   }
 }
@@ -2452,6 +2487,7 @@ function stopFaceMeshLoop_() {
   }
   faceOkStreak_ = 0;
   captureArmed_ = false;
+  captureLocked_ = false;
   motionSamples_ = [];
 }
 function startOneSecondCapture_() {
@@ -2482,9 +2518,13 @@ function startOneSecondCapture_() {
     }
   }, 1000);
 
-  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+    if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
     autoCaptureTimer_ = null;
+    if (!captureLocked_) {
+      return;
+    }
+    captureLocked_ = false;
     stopFaceMeshLoop_();
     captureFromVideo();
   }, 1000);

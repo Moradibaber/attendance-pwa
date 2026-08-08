@@ -2521,28 +2521,7 @@ function startOneSecondCapture_() {
   }, 1000);
 }
 
-  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
-  autoCaptureTimer_ = setTimeout(() => {
-    autoCaptureTimer_ = null;
-    if (!captureLocked_) {
-      return;
-    }
-    captureLocked_ = false;
-    stopFaceMeshLoop_();
-    captureFromVideo();
-  }, 1000);
-}
-      if (instruction) {
-        instruction.innerHTML =
-          "ثبت لغو شد<br><span style=\"color:#f87171;\">صورت را تا لحظه عکس در کادر نگه دارید</span>";
-      }
-      return;
-    }
-    captureLocked_ = false;
-    stopFaceMeshLoop_();
-    captureFromVideo();
-  }, 1000);
-}
+async function openFrontCamera() {
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");

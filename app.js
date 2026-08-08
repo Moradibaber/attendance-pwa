@@ -122,17 +122,31 @@ function getJalaliIsoDate(d = new Date()) {
 /* =========================
    Boot
 ========================= */
-
 document.addEventListener("DOMContentLoaded", async () => {
-    const work = $("workLocationInput");
-  if (work) work.setAttribute("list", "workLocationHistoryList");
-  await refreshWorkLocationDatalist_();
+  // Toast first — must not depend on DB / work location
   try {
     setTimeout(() => {
-      try {
-        showGpsToast("★ حتما جی پی اس و اینترنت خود را روشن کنید تمامی مناطق تحت پوشش اینترنت هستند و حتما همه دسترسی ها را مجاز کنید در غیر اینصورت نمیتوانید تردد ثبت کنید", 8000, "error");
-      } catch (_) {}
-    }, 4200);
+      showGpsToast(
+        "★ حتماً GPS و اینترنت را روشن کنید.\nتمامی مناطق تحت پوشش هستند.\nدسترسی‌ها را مجاز کنید؛ در غیر این صورت تردد ثبت نمی‌شود.",
+        8000,
+        "error"
+      );
+    }, 800);
+  } catch (_) {}
+
+  try {
+    const work = $("workLocationInput");
+    if (work) work.setAttribute("list", "workLocationHistoryList");
+  } catch (_) {}
+
+  try {
+    db = await openDb();
+  } catch (e) {
+    console.error("DB init error", e);
+  }
+
+  try {
+    await refreshWorkLocationDatalist_();
   } catch (_) {}
 
   try {

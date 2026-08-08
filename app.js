@@ -2487,8 +2487,8 @@ function startOneSecondCapture_() {
 
   if (instruction) {
     instruction.innerHTML =
-      'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
-      '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>';
+      "صورت را در کادر نگه دارید<br>" +
+      '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه — ثابت بمانید</span>';
   }
   if (countdownEl) {
     countdownEl.textContent = "۱";
@@ -2510,14 +2510,28 @@ function startOneSecondCapture_() {
   }, 1000);
 
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = setTimeout(() => {
+  autoCaptureTimer_ = setTimeout(() => {
     autoCaptureTimer_ = null;
-    // Only capture if still locked (face never left during the 1s)
-    if (!captureLocked_) return;
-      captureLocked_ = false;
-      stopFaceMeshLoop_();
+    if (!captureLocked_) {
+      return;
+    }
+    captureLocked_ = false;
+    stopFaceMeshLoop_();
     captureFromVideo();
   }, 1000);
+}
+
+  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+  autoCaptureTimer_ = setTimeout(() => {
+    autoCaptureTimer_ = null;
+    if (!captureLocked_) {
+      return;
+    }
+    captureLocked_ = false;
+    stopFaceMeshLoop_();
+    captureFromVideo();
+  }, 1000);
+}
       if (instruction) {
         instruction.innerHTML =
           "ثبت لغو شد<br><span style=\"color:#f87171;\">صورت را تا لحظه عکس در کادر نگه دارید</span>";

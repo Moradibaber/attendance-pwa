@@ -2305,7 +2305,7 @@ let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
 let motionSamples_ = [];
 const MOTION_SAMPLES_NEEDED = 10;
-const MIN_NOSE_SHIFT = 0.045; // relative micro head move
+const MIN_NOSE_SHIFT = 0.060; // relative micro head move
 
 const FACE_RATIO_MIN = 0.22; // too far if smaller
 const FACE_RATIO_MAX = 0.42; // too close if larger

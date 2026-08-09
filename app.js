@@ -47,6 +47,23 @@ let photoCompressedAtMs = 0;
 
 
 const $ = (id) => document.getElementById(id);
+const DEVICE_ID_KEY = "attendance_device_id";
+
+function getOrCreateDeviceId_() {
+  try {
+    var id = localStorage.getItem(DEVICE_ID_KEY);
+    if (id && String(id).length > 8) return String(id);
+    id =
+      "dev_" +
+      Date.now().toString(36) +
+      "_" +
+      Math.random().toString(36).slice(2, 12);
+    localStorage.setItem(DEVICE_ID_KEY, id);
+    return id;
+  } catch (_) {
+    return "dev_fallback_" + Date.now();
+  }
+}
 
 /* =========================
    Busy Overlay (Loader)
@@ -281,10 +298,11 @@ async function registerForPushNotifications() {
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
+            body: JSON.stringify({
         type: "RegisterPushToken",
         personnelCode: profile.personnelCode,
-        token: token
+        token: token,
+        deviceId: getOrCreateDeviceId_()
       })
     });
   } catch (err) {
@@ -842,11 +860,12 @@ async function verifyPasswordWithServer_(personnelCode, password) {
 
   // ---------- Fallback POST ----------
   try {
-    const payload = {
-      type: "VerifyPassword",
-      personnelCode: code,
-      password: pass,
-    };
+      const payload = {
+    type: "VerifyPassword",
+    personnelCode: String(personnelCode || "").trim(),
+    password: String(password || ""),
+    deviceId: getOrCreateDeviceId_(),
+  };
 
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",

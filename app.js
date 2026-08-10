@@ -634,18 +634,7 @@ function bindEvents() {
 /* =========================
    Auto Sync
 ========================= */
-async function registerBackgroundSync() {
-  if (!("serviceWorker" in navigator) || !("SyncManager" in window)) {
-    return;
-  }
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    await reg.sync.register("sync-pending-attendance");
-    console.log("Background Sync registered");
-  } catch (err) {
-    console.warn("Background Sync registration failed:", err);
-  }
-}
+
 function setupAutoSync() {
   updateOnlineBadge();
 
@@ -654,7 +643,6 @@ function setupAutoSync() {
     await refreshPolicyIfPossible();
     await markFirstConnectionForOfflineRecords();
     scheduleSyncPendingRecords(500);
-    await registerBackgroundSync();          // ← add this line
     await fetchMessages();
   });
 

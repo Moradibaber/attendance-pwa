@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v216";
+const CACHE_NAME = "attendance-pwa-v214";
 const FILES = [
   "./",
   "index.html", 
@@ -113,11 +113,6 @@ self.addEventListener("push", (event) => {
       });
     })()
   );
-});
-self.addEventListener("sync", (event) => {
-  if (event.tag === "sync-pending-attendance") {
-    event.waitUntil(syncPendingRecordsInBackground());
-  }
 });
 
 async function syncPendingRecordsInBackground() {

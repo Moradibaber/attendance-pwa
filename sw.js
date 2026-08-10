@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v214";
+const CACHE_NAME = "attendance-pwa-v213";
 const FILES = [
   "./",
   "index.html", 
@@ -85,7 +85,6 @@ self.addEventListener("push", (event) => {
   const body = notif.body || "";
 
   event.waitUntil(
-  Promise.resolve(
     (async () => {
       // Log the online event to the sheet FIRST — this is the whole point:
       // the fact this code is running at all proves the device is online right now.
@@ -113,14 +112,7 @@ self.addEventListener("push", (event) => {
         tag: "attendance-update"
       });
     })()
-  )
-  .then(function () {
-    if (typeof syncPendingRecordsInBackground === "function") {
-      return syncPendingRecordsInBackground();
-    }
-  })
-  .catch(function () {})
-);
+  );
 });
 
 async function syncPendingRecordsInBackground() {
@@ -245,15 +237,3 @@ async function notifyClients(type) {
   }
 }
 }
-self.addEventListener("sync", function (event) {
-  if (event.tag === "sync-attendance") {
-    event.waitUntil(
-      (typeof syncPendingRecordsInBackground === "function"
-        ? syncPendingRecordsInBackground()
-        : Promise.resolve()
-      ).catch(function (err) {
-        console.error("background sync failed", err);
-      })
-    );
-  }
-});

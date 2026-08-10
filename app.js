@@ -1524,14 +1524,11 @@ async function createRecord(type) {
   setBusy(false);
   await refreshUi();
 
-   if (navigator.onLine) {
+  if (navigator.onLine) {
     scheduleSyncPendingRecords(300);
   } else {
     setSyncStatus("آفلاین — بعداً ارسال می‌شود");
   }
-    
-  // This is the critical line — must always run
-  await registerBackgroundSync();
 
     setTimeout(() => {
     currentPhoto = "";

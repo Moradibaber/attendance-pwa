@@ -135,12 +135,68 @@ async function syncPendingRecordsInBackground() {
 
   try {
 
+        // Prepare the same payload as the main app
+    if (record.offlineCreated === true && !record.firstConnectionAfterOfflineRecord) {
+      record.firstConnectionAfterOfflineRecord = new Date().toISOString();
+    }
+    record.lastConnectionBeforeUpload = new Date().toISOString();
+    record.lastSyncTryAt = record.lastConnectionBeforeUpload;
+    record.syncTryCount = Number(record.syncTryCount || 0) + 1;
+
+    const payload = {
+      clientRecordId: record.clientRecordId || "",
+      personnelCode: record.personnelCode || "",
+      firstName: record.firstName || "",
+      lastName: record.lastName || "",
+      password: record.password || "",
+      type: record.type || record.recordType || "",
+      recordType: record.recordType || record.type || "",
+      recordDate: record.recordDate || "",
+      recordHour: record.recordHour || record.recordTime || "",
+      recordTime: record.recordTime || record.recordHour || "",
+      latitude: record.latitude || "",
+      longitude: record.longitude || "",
+      accuracy: record.accuracy || "",
+      locationStatus: record.locationStatus || "",
+      locationError: record.locationError || "",
+      deviceTime: record.deviceTime || "",
+      deviceTimeAtClick: record.deviceTimeAtClick || "",
+      deviceTimeAtPhoto: record.deviceTimeAtPhoto || "",
+      deviceTimeAtPhotoCompressed: record.deviceTimeAtPhotoCompressed || "",
+      deviceTimeAtGps: record.deviceTimeAtGps || "",
+      gpsTimestamp: record.gpsTimestamp || "",
+      gpsWaitMs: record.gpsWaitMs ?? "",
+      photoDelayMs: record.photoDelayMs ?? "",
+      submitDelayMs: record.submitDelayMs ?? "",
+      offlineCreated: !!record.offlineCreated,
+      createdOnline: record.createdOnline === true,
+      connectionStatus: record.connectionStatus || (record.offlineCreated ? "offline" : "online"),
+      connectionStatusFa: record.connectionStatusFa || (record.offlineCreated ? "آفلاین" : "آنلاین"),
+      firstConnectionAfterOfflineRecord: record.firstConnectionAfterOfflineRecord || "",
+      lastConnectionBeforeUpload: record.lastConnectionBeforeUpload || "",
+      uploadedAt: record.uploadedAt || "",
+      delayAfterFirstConnectionMs: record.delayAfterFirstConnectionMs ?? "",
+      clockRisk: record.clockRisk || "",
+      clockRiskReason: record.clockRiskReason || "",
+      sessionClockDriftMs: record.sessionClockDriftMs ?? "",
+      networkClockDriftMs: record.networkClockDriftMs ?? "",
+      attendancePolicy: record.attendancePolicy || "ONLINE_OR_OFFLINE",
+      policyVersion: Number(record.policyVersion || 0),
+      policyFetchedAt: record.policyFetchedAt || "",
+      policySource: record.policySource || "",
+      photo: record.photo || "",
+      createdAt: record.createdAt || "",
+      lastSyncTryAt: record.lastSyncTryAt || "",
+      syncTryCount: Number(record.syncTryCount || 0),
+      workLocation: record.workLocation || ""
+    };
+
     const response = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: {
         "Content-Type": "text/plain;charset=utf-8"
       },
-      body: JSON.stringify(record)
+      body: JSON.stringify(payload)
     });
 
     const text = await response.text();

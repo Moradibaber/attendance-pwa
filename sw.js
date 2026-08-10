@@ -114,6 +114,11 @@ self.addEventListener("push", (event) => {
     })()
   );
 });
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-pending-attendance") {
+    event.waitUntil(syncPendingRecordsInBackground());
+  }
+});
 
 async function syncPendingRecordsInBackground() {
   try {

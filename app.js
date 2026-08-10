@@ -1505,6 +1505,13 @@ async function createRecord(type) {
   showGpsToast(
     "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد",
     5000,
+      // Ask service worker to sync later even if app goes to background (Android Chrome)
+  try {
+    if ("serviceWorker" in navigator && "SyncManager" in window) {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.sync.register("sync-attendance");
+    }
+  } catch (e) {}
     "success"
   );
   setStatus("تردد ذخیره شد — در حال ارسال...");

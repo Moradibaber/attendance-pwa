@@ -1271,90 +1271,7 @@ function startAttendanceCapture() {
   setTimeout(() => openFrontCamera(), 2500);
 }
 
-// async function handlePhotoSelected() {
-//   const file = $("photoInput")?.files?.[0];
 
-//   if (!file) {
-//     setStatus("عکسی انتخاب نشد.");
-//     return;
-//   }
-
-//   try {
-//     setBusy(true, "در حال آماده‌سازی عکس...");
-//     photoSelectedAtMs = Date.now();
-
-//     await saveProfileSilent();
-
-//     const { gate } = await getCurrentAttendanceGate();
-//     if (!gate.ok) {
-//       setBusy(false);
-//       setStatus(gate.message);
-//       $("photoInput").value = "";
-//       currentPhoto = "";
-//       return;
-//     }
-
-//     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-//         currentPhoto = await compressImage(file);
-
-//     // Simple glare / bright-spot check (common when photographing a screen)
-//     try {
-//       const hasGlare = await hasStrongGlare_(currentPhoto);
-//       if (hasGlare) {
-//         setBusy(false);
-//         setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
-//         currentPhoto = "";
-//         return;
-//       }
-//     } catch (e) {}
-
-//     photoCompressedAtMs = Date.now();
-
-//     const preview = $("photoPreview");
-//     if (preview) {
-//       preview.src = currentPhoto;
-//       preview.style.display = "block";
-//     }
-
-//     if (!isGeolocationUsable()) {
-//       setBusy(false);
-//       setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
-//       return;
-//     }
-
-//     setBusy(true, "در حال دریافت ...");
-//     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-//     pendingLocation = await getLocationIOSFriendly();
-
-//     if (!hasValidLocation(pendingLocation)) {
-//       setBusy(false);
-
-//       if (pendingLocation?.status === "denied") {
-//         setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
-//         return;
-//       }
-//       if (pendingLocation?.status === "unavailable") {
-//         setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-//         return;
-//       }
-//       if (pendingLocation?.status === "timeout") {
-//         setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-//         return;
-//       }
-
-//       setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-//       return;
-//     }
-
-//     setBusy(true, "در حال ذخیره تردد...");
-//     await createRecord("تردد");
-//     setBusy(false);
-//   } catch (err) {
-//     console.error(err);
-//     setBusy(false);
-//     setStatus("خطا در پردازش عکس یا ثبت تردد");
-//   }
-// }
 async function handlePhotoSelected() {
   const file = $("photoInput")?.files?.[0];
   if (!file) {
@@ -2715,7 +2632,52 @@ async function processCapturedPhoto(file) {
     // 1) Compress FIRST — no network
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
+        // 1) Compress FIRST — no network
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
 
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
+    }
+
+    // ========== FACE-API.JS CHECK ==========
+    setBusy(true, "در حال بررسی چهره...");
+    setStatus("در حال بررسی چهره...");
+
+    try {
+      // Load models if not loaded yet
+      if (typeof loadFaceModels === "function") {
+        await loadFaceModels();
+      }
+
+      const faceResult = await getFaceDescriptor(currentPhoto);
+
+      if (!faceResult) {
+        setBusy(false);
+        setStatus("چهره‌ای در عکس پیدا نشد. لطفاً فقط صورت خود را واضح عکس بگیرید.");
+        showGpsToast("چهره پیدا نشد", 3000, "error");
+        currentPhoto = "";
+        return;
+      }
+
+      // Optional: you can add more quality checks here later
+      console.log("Face detected successfully");
+
+    } catch (faceErr) {
+      console.error("Face check error:", faceErr);
+      setBusy(false);
+      setStatus("خطا در بررسی چهره. لطفاً دوباره تلاش کنید.");
+      currentPhoto = "";
+      return;
+    }
+    // ======================================
+
+    // 2) Local profile only (no server)
+    try {
+      const profile = getProfileFromInputs();
+      // ... rest of your original code continues here
     const preview = $("photoPreview");
     if (preview) {
       preview.src = currentPhoto;

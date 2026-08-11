@@ -2630,8 +2630,6 @@ async function processCapturedPhoto(file) {
     photoSelectedAtMs = Date.now();
 
     // 1) Compress FIRST — no network
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
         // 1) Compress FIRST — no network
     currentPhoto = await compressImage(file);
     photoCompressedAtMs = Date.now();
@@ -2642,6 +2640,34 @@ async function processCapturedPhoto(file) {
       preview.style.display = "block";
     }
 
+    // ========== FACE CHECK (face-api.js) ==========
+    setBusy(true, "در حال بررسی چهره...");
+    setStatus("در حال بررسی چهره...");
+
+    try {
+      await loadFaceModels();
+
+      const faceDescriptor = await getFaceDescriptor(currentPhoto);
+
+      if (!faceDescriptor) {
+        setBusy(false);
+        setStatus("چهره‌ای در عکس پیدا نشد.\nلطفاً فقط صورت خود را واضح و از فاصله مناسب عکس بگیرید.");
+        showGpsToast("چهره پیدا نشد", 3500, "error");
+        currentPhoto = "";
+        return;
+      }
+
+      console.log("Face detected successfully");
+
+    } catch (faceErr) {
+      console.error("Face check error:", faceErr);
+      setBusy(false);
+      setStatus("خطا در بررسی چهره. لطفاً دوباره تلاش کنید.");
+      showGpsToast("خطا در بررسی چهره", 3000, "error");
+      currentPhoto = "";
+      return;
+    }
+    // ==============================================
     // ========== FACE-API.JS CHECK ==========
     setBusy(true, "در حال بررسی چهره...");
     setStatus("در حال بررسی چهره...");

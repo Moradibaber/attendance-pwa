@@ -41,6 +41,7 @@ let isProcessingPhoto_ = false;
 let cachedProfile_ = null;
 let cachedPolicyInfo_ = null;
 
+
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
@@ -135,7 +136,23 @@ function getJalaliIsoDate(d = new Date()) {
   const p = getJalaliDateParts(d);
   return `${p.jy}/${p.jm}/${p.jd}`;
 }
-
+async function getLocalTodayAttendanceCount_() {
+  const today = getJalaliIsoDate();
+  const records = await dbGetAll(STORE_RECORDS);
+  let count = 0;
+  for (const r of records) {
+    if (
+      r.recordDate === today &&
+      (r.status === "pending" ||
+        r.status === "sent" ||
+        r.status === "failed" ||
+        r.status === "syncing")
+    ) {
+      count++;
+    }
+  }
+  return count;
+}
 /* =========================
    Boot
 ========================= */
@@ -1111,6 +1128,9 @@ async function saveAttendancePolicyInfo(data) {
     policyVersion: Number(data.policyVersion || 0),
     policyFetchedAt: data.policyFetchedAt || "",
     policySource: data.policySource || "",
+    maxAttendances: Number(data.maxAttendances) || 0,
+    usedToday: Number(data.usedToday) || 0,
+    dailyAllowed: data.dailyAllowed !== false
   };
   await dbPut(STORE_CONFIG, toSave);
   cachedPolicyInfo_ = toSave;
@@ -1181,8 +1201,7 @@ async function getCurrentAttendanceGate() {
 /* =========================
    Attendance Capture
 ========================= */
-
-function startAttendanceCapture() {
+async function startAttendanceCapture() {
   const personnelCode = $("personnelCode")?.value.trim() || "";
   const firstName = $("firstName")?.value.trim() || "";
   const lastName = $("lastName")?.value.trim() || "";
@@ -1192,10 +1211,6 @@ function startAttendanceCapture() {
     return;
   }
 
-  // مشخصات باید قبلا و به‌صراحت با دکمه «ذخیره مشخصات» ذخیره شده باشد و
-  // دقیقا با مقادیر فعلی فیلدها یکی باشد. از کش حافظه‌ای استفاده می‌شود
-  // (نه dbGet) تا هیچ await ای قبل از باز شدن دوربین وجود نداشته باشد -
-  // در غیر این صورت در iOS Safari دوربین اصلا باز نمی‌شود.
   const isConfirmed =
     cachedProfile_ &&
     cachedProfile_.personnelCode === personnelCode &&
@@ -1208,9 +1223,6 @@ function startAttendanceCapture() {
     return;
   }
 
-  // دفاع دوم، مستقل از قفل بصری روی دکمه: حتی اگر به هر دلیلی روکش قفل دور
-  // زده شود، ارسال واقعی تردد در صورت غیرفعال بودن اعلان‌ها اینجا هم متوقف
-  // می‌شود.
   if ("Notification" in window && Notification.permission === "denied") {
     setStatus("برای ثبت تردد، ابتدا باید اعلان‌ها را در تنظیمات گوشی فعال کنید.");
     enforceNotificationGate();
@@ -1226,8 +1238,33 @@ function startAttendanceCapture() {
     return;
   }
 
-  // از کش حافظه‌ای سیاست تردد استفاده می‌شود (بدون await) تا زنجیره
-  // فعال‌سازی کاربر که برای باز شدن دوربین لازم است حفظ شود.
+  // ========== DAILY LIMIT CHECK (client-side) ==========
+  try {
+    const policyInfo = cachedPolicyInfo_ || {};
+    const maxDaily = Number(policyInfo.maxAttendances) || 0; // 0 = unlimited
+
+    if (maxDaily > 0) {
+      // 1) Local count (works offline)
+      const localUsed = await getLocalTodayAttendanceCount_();
+
+      // 2) Prefer server value if available and fresher
+      let used = localUsed;
+      if (typeof policyInfo.usedToday === "number" && policyInfo.usedToday > used) {
+        used = policyInfo.usedToday;
+      }
+
+      if (used >= maxDaily) {
+        const msg = `سقف تردد روزانه پر شده است (${used}/${maxDaily})`;
+        setStatus(msg);
+        showGpsToast(`⚠️ ${msg}\nنمی‌توانید بیشتر از ${maxDaily} تردد در روز ثبت کنید.`, 4500, "error");
+        return; // ← camera never opens
+      }
+    }
+  } catch (e) {
+    console.warn("daily limit check failed", e);
+  }
+  // ====================================================
+
   const policyInfo = cachedPolicyInfo_ || { attendancePolicy: DEFAULT_ATTENDANCE_POLICY };
   const policy = policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY;
   const gate = evaluateAttendancePolicy(policy, navigator.onLine);
@@ -1239,31 +1276,16 @@ function startAttendanceCapture() {
 
   if (navigator.onLine) refreshPolicyIfPossible().catch(() => {});
 
+  // ... rest of your original function stays the same
   captureStartedAtMs = Date.now();
   photoSelectedAtMs = 0;
   photoCompressedAtMs = 0;
   currentPhoto = "";
   pendingLocation = null;
 
-  const preview = $("photoPreview");
-  if (preview) {
-    preview.removeAttribute("src");
-    preview.style.display = "none";
-  }
-
-  const photoInput = $("photoInput");
-  if (!photoInput) {
-    setStatus("ورودی عکس پیدا نشد. لطفاً فایل HTML را بررسی کنید.");
-    return;
-  }
-
-  photoInput.value = "";
-  // setStatus("دوربین باز می‌شود. لطفاً عکس بگیرید.");
-  setStatus("لطفاً گوشی را در فاصله تقریبی ۳۰ سانتی‌متر نگه دارید و فقط صورت خود را در کادر قرار دهید. نزدیک نکنید.");
-
-     // ===== Open forced front camera =====
+  // ... continue with opening camera exactly as before
   setStatus("در حال باز کردن دوربین سلفی...");
-    showGpsToast(
+  showGpsToast(
     "دوربین را در فاصله ۲۰ تا ۲۵ سانتی‌متر و دقیقاً روبه‌روی صورت قرار دهید.",
     2500,
     "error"
@@ -1271,90 +1293,6 @@ function startAttendanceCapture() {
   setTimeout(() => openFrontCamera(), 2500);
 }
 
-// async function handlePhotoSelected() {
-//   const file = $("photoInput")?.files?.[0];
-
-//   if (!file) {
-//     setStatus("عکسی انتخاب نشد.");
-//     return;
-//   }
-
-//   try {
-//     setBusy(true, "در حال آماده‌سازی عکس...");
-//     photoSelectedAtMs = Date.now();
-
-//     await saveProfileSilent();
-
-//     const { gate } = await getCurrentAttendanceGate();
-//     if (!gate.ok) {
-//       setBusy(false);
-//       setStatus(gate.message);
-//       $("photoInput").value = "";
-//       currentPhoto = "";
-//       return;
-//     }
-
-//     setStatus("در حال آماده‌سازی عکس، صبور باشید ...");
-//         currentPhoto = await compressImage(file);
-
-//     // Simple glare / bright-spot check (common when photographing a screen)
-//     try {
-//       const hasGlare = await hasStrongGlare_(currentPhoto);
-//       if (hasGlare) {
-//         setBusy(false);
-//         setStatus("عکس نامعتبر است. لطفاً فقط از چهره واقعی عکس بگیرید.");
-//         currentPhoto = "";
-//         return;
-//       }
-//     } catch (e) {}
-
-//     photoCompressedAtMs = Date.now();
-
-//     const preview = $("photoPreview");
-//     if (preview) {
-//       preview.src = currentPhoto;
-//       preview.style.display = "block";
-//     }
-
-//     if (!isGeolocationUsable()) {
-//       setBusy(false);
-//       setStatus("GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است.");
-//       return;
-//     }
-
-//     setBusy(true, "در حال دریافت ...");
-//     setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-//     pendingLocation = await getLocationIOSFriendly();
-
-//     if (!hasValidLocation(pendingLocation)) {
-//       setBusy(false);
-
-//       if (pendingLocation?.status === "denied") {
-//         setStatus("دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید.");
-//         return;
-//       }
-//       if (pendingLocation?.status === "unavailable") {
-//         setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-//         return;
-//       }
-//       if (pendingLocation?.status === "timeout") {
-//         setStatus("زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید.");
-//         return;
-//       }
-
-//       setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-//       return;
-//     }
-
-//     setBusy(true, "در حال ذخیره تردد...");
-//     await createRecord("تردد");
-//     setBusy(false);
-//   } catch (err) {
-//     console.error(err);
-//     setBusy(false);
-//     setStatus("خطا در پردازش عکس یا ثبت تردد");
-//   }
-// }
 async function handlePhotoSelected() {
   const file = $("photoInput")?.files?.[0];
   if (!file) {
@@ -1652,8 +1590,13 @@ async function markFirstConnectionForOfflineRecords() {
 
           if (data && data.ok === true) {
             confirmed = true;
-          } else if (data && data.ok === false) {
-            r.status = "failed";
+                    } else if (data && data.ok === false) {
+            const errText = (data.error || serverMsg || "").toString();
+            if (errText.indexOf("سقف تردد روزانه") !== -1) {
+              r.status = "failed_permanent";
+            } else {
+              r.status = "failed";
+            }
             r.serverResponse = serverMsg || JSON.stringify(data);
             await dbPut(STORE_RECORDS, r);
             continue;

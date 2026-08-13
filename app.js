@@ -1444,7 +1444,7 @@ async function createRecord(type, faceDescriptor) {
     policySource: policyInfo.policySource || "",
 
     photo: currentPhoto || "",
-    faceDescriptor: record.faceDescriptor || null,
+    faceDescriptor: Array.isArray(faceDescriptor) ? faceDescriptor : null,
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
@@ -1720,6 +1720,7 @@ function buildServerPayload(record) {
     policyFetchedAt: record.policyFetchedAt || "",
     policySource: record.policySource || "",
     photo: record.photo || "",
+    faceDescriptor: record.faceDescriptor || null,
     createdAt: record.createdAt || "",
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0),
@@ -2717,7 +2718,16 @@ async function processCapturedPhoto(file) {
     photoSelectedAtMs = Date.now();
 
     // 1) Compress FIRST — no network
-    // ===== face-api.js descriptor =====
+    currentPhoto = await compressImage(file);
+    photoCompressedAtMs = Date.now();
+
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.src = currentPhoto;
+      preview.style.display = "block";
+    }
+
+    // 1b) face-api.js descriptor
     let faceDescriptor = null;
     try {
       setBusy(true, "در حال بررسی چهره...");
@@ -2729,7 +2739,6 @@ async function processCapturedPhoto(file) {
     } catch (e) {
       console.warn("descriptor extract failed", e);
     }
-    // ==================================
 
     // 2) Local profile only (no server)
     try {
@@ -2795,7 +2804,7 @@ async function processCapturedPhoto(file) {
     // 5) Save once
     setBusy(true, "در حال ذخیره تردد...");
     setStatus("در حال ذخیره تردد...");
-  await createRecord("تردد", faceDescriptor);
+    await createRecord("تردد", faceDescriptor);
     setBusy(false);
   } catch (err) {
     console.error(err);

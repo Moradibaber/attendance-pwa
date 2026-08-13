@@ -40,7 +40,27 @@ let isProcessingPhoto_ = false;
 // دوربین اصلا باز نشود، بدون هیچ خطایی.
 let cachedProfile_ = null;
 let cachedPolicyInfo_ = null;
+let faceApiReady_ = false;
 
+async function ensureFaceApiReady_() {
+  if (faceApiReady_) return true;
+  if (typeof faceapi === "undefined") {
+    console.error("face-api.js not loaded");
+    return false;
+  }
+  try {
+    const MODEL_URL = "models";
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    faceApiReady_ = true;
+    console.log("face-api models ready");
+    return true;
+  } catch (e) {
+    console.error("face-api load failed", e);
+    return false;
+  }
+}
 
 let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
@@ -190,7 +210,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     await loadProfile();
   } catch (_) {}
-
+try {
+    ensureFaceApiReady_().catch(() => {});
+  } catch (_) {}
   try {
     await ensurePolicyLoadedAtStartup();
   } catch (_) {}
@@ -1309,7 +1331,7 @@ async function handlePhotoSelected() {
 /* =========================
    Record Creation
 ========================= */
-async function createRecord(type) {
+async function createRecord(type, faceDescriptor) {
   const profile = await getProfile();
 
   const { policyInfo, gate } = await getCurrentAttendanceGate();
@@ -1422,7 +1444,7 @@ async function createRecord(type) {
     policySource: policyInfo.policySource || "",
 
     photo: currentPhoto || "",
-
+    faceDescriptor: record.faceDescriptor || null,
     status: "pending",
     createdAt: now.toISOString(),
     lastSyncTryAt: "",
@@ -2224,6 +2246,45 @@ function compressImage(file) {
     reader.readAsDataURL(file);
   });
 }
+/**
+ * Input: dataURL (jpeg) or HTMLImageElement / canvas
+ * Output: { descriptor: number[128], box } or null
+ */
+async function extractFaceDescriptor_(dataUrl) {
+  const ok = await ensureFaceApiReady_();
+  if (!ok) return null;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = async () => {
+      try {
+        const detection = await faceapi
+          .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({
+            inputSize: 416,
+            scoreThreshold: 0.5
+          }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+        if (!detection || !detection.descriptor) {
+          resolve(null);
+          return;
+        }
+
+        resolve({
+          descriptor: Array.from(detection.descriptor), // 128 numbers
+          box: detection.detection.box
+        });
+      } catch (e) {
+        console.error("extractFaceDescriptor_ error", e);
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 function hasStrongGlare_(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -2656,14 +2717,19 @@ async function processCapturedPhoto(file) {
     photoSelectedAtMs = Date.now();
 
     // 1) Compress FIRST — no network
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
-
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = currentPhoto;
-      preview.style.display = "block";
+    // ===== face-api.js descriptor =====
+    let faceDescriptor = null;
+    try {
+      setBusy(true, "در حال بررسی چهره...");
+      setStatus("در حال بررسی چهره...");
+      const faceRes = await extractFaceDescriptor_(currentPhoto);
+      if (faceRes && faceRes.descriptor) {
+        faceDescriptor = faceRes.descriptor;
+      }
+    } catch (e) {
+      console.warn("descriptor extract failed", e);
     }
+    // ==================================
 
     // 2) Local profile only (no server)
     try {
@@ -2729,7 +2795,7 @@ async function processCapturedPhoto(file) {
     // 5) Save once
     setBusy(true, "در حال ذخیره تردد...");
     setStatus("در حال ذخیره تردد...");
-    await createRecord("تردد");
+  await createRecord("تردد", faceDescriptor);
     setBusy(false);
   } catch (err) {
     console.error(err);

@@ -2728,11 +2728,19 @@ async function processCapturedPhoto(file) {
     }
 
     // 1b) face-api.js descriptor
+       // 1b) face-api.js descriptor
     let faceDescriptor = null;
     try {
       setBusy(true, "در حال بررسی چهره...");
       setStatus("در حال بررسی چهره...");
-      const faceRes = await extractFaceDescriptor_(currentPhoto);
+      // make sure models are loaded
+      await ensureFaceApiReady_();
+      let faceRes = await extractFaceDescriptor_(currentPhoto);
+      // one retry if first try failed
+      if (!faceRes || !faceRes.descriptor) {
+        await new Promise((r) => setTimeout(r, 400));
+        faceRes = await extractFaceDescriptor_(currentPhoto);
+      }
       if (faceRes && faceRes.descriptor) {
         faceDescriptor = faceRes.descriptor;
       }
@@ -2740,7 +2748,24 @@ async function processCapturedPhoto(file) {
       console.warn("descriptor extract failed", e);
     }
 
-    // 2) Local profile only (no server)
+    // ★ block save if no face descriptor (avoids no_descriptor rows)
+    if (!faceDescriptor || !faceDescriptor.length) {
+      setBusy(false);
+      setStatus(
+        "چهره در عکس پیدا نشد.\n" +
+          "روبه‌روی دوربین، نور کافی، فاصله حدود ۲۰–۲۵ سانتی‌متر.\n" +
+          "دوباره عکس بگیرید."
+      );
+      showGpsToast(
+        "چهره پیدا نشد\nدوباره عکس بگیرید",
+        4000,
+        "error"
+      );
+      currentPhoto = "";
+      return;
+    }
+
+    // 2) Local profile only (no server)    // 2) Local profile only (no server)
     try {
       const profile = getProfileFromInputs();
       const saved = await dbGet(STORE_PROFILE, "main");

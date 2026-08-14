@@ -2206,8 +2206,7 @@ function compressImage(file) {
     reader.onload = (e) => {
       const img = new Image();
      img.onload = () => {
-  // Higher resolution for better Face++ matching
-  const MAX_SIDE = 900;           // was 400
+  const MAX_SIDE = 640;   // was 900 → smaller & faster
   let OUT_W, OUT_H;
 
   if (img.width >= img.height) {
@@ -2218,9 +2217,15 @@ function compressImage(file) {
     OUT_W = Math.round(OUT_H * (img.width / img.height));
   }
 
-  // Keep minimum size so Face++ still works well
-  if (OUT_W < 480) { OUT_W = 480; OUT_H = Math.round(480 * (img.height / img.width)); }
-  if (OUT_H < 640) { OUT_H = 640; OUT_W = Math.round(640 * (img.width / img.height)); }
+  // Optional: keep a reasonable minimum so face is never too tiny
+  if (OUT_W < 400) {
+    OUT_W = 400;
+    OUT_H = Math.round(400 * (img.height / img.width));
+  }
+  if (OUT_H < 480) {
+    OUT_H = 480;
+    OUT_W = Math.round(480 * (img.width / img.height));
+  }
 
   const canvas = document.createElement("canvas");
   canvas.width = OUT_W;
@@ -2228,12 +2233,11 @@ function compressImage(file) {
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, OUT_W, OUT_H);
-
   ctx.drawImage(img, 0, 0, OUT_W, OUT_H);
 
   try {
-    // Higher JPEG quality (0.82 instead of 0.65)
-    resolve(canvas.toDataURL("image/jpeg", 0.82));
+    // 0.78 = good quality + smaller file
+    resolve(canvas.toDataURL("image/jpeg", 0.78));
   } catch (e) {
     reject(e);
   }

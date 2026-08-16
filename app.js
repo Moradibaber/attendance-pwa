@@ -2343,9 +2343,9 @@ let motionSamples_ = [];
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
 
-const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.10 : 0.09; // stronger head turn needed
-const FACE_OK_FRAMES = 6;                          // more stable frames
-const MOTION_SAMPLES_NEEDED = 15;                  // longer sample window
+const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.12 : 0.09; // stronger head turn needed
+const FACE_OK_FRAMES = 8;                          // more stable frames
+const MOTION_SAMPLES_NEEDED = 18;                  // longer sample window
 const FACE_RATIO_MIN = 0.15;
 const FACE_RATIO_MAX = 0.50;
 async function ensureFaceMesh_() {

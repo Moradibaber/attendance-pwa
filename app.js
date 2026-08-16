@@ -2733,7 +2733,20 @@ async function processCapturedPhoto(file) {
       preview.src = currentPhoto;
       preview.style.display = "block";
     }
-
+    const printBtn = $("printPhotoBtn");
+    if (printBtn) {
+      printBtn.style.display = "inline-block";
+      printBtn.onclick = function () {
+        const w = window.open("");
+        if (!w) return;
+        w.document.write(
+          "<html><head><title>photo</title></head><body style='margin:0;text-align:center;'>" +
+            "<img src='" + currentPhoto + "' style='max-width:100%;'/>" +
+            "<script>window.onload=function(){window.print();}</script></body></html>"
+        );
+        w.document.close();
+      };
+    }
     // 1b) face-api.js descriptor
        // 1b) face-api.js descriptor
     let faceDescriptor = null;

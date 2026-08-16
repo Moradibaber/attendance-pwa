@@ -2383,16 +2383,6 @@ function onFaceMeshResults_(results) {
       "background:rgba(0,0,0,0.75);padding:14px 16px;border-radius:12px;" +
       "max-width:340px;text-align:center;";
   }
-function onFaceMeshResults_(results) {
-  const instruction = $("cameraInstruction");
-  const video = $("cameraVideo");
-
-  if (instruction) {
-    instruction.style.cssText =
-      "color:#fff;font-size:18px;font-weight:700;line-height:1.7;margin:0;" +
-      "background:rgba(0,0,0,0.75);padding:14px 16px;border-radius:12px;" +
-      "max-width:340px;text-align:center;";
-  }
 
   function cancelDuringWait_() {
     if (!captureLocked_) return;

@@ -2343,9 +2343,9 @@ let motionSamples_ = [];
 // Phone: softer. PC/webcam: stricter (harder with small move / hand)
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.12 : 0.09;
-const FACE_OK_FRAMES = isPcWebcam_ ? 8 : 5;
-const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 18 : 12;
+const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.16 : 0.12;
+const FACE_OK_FRAMES = isPcWebcam_ ? 10 : 7;
+const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 22 : 16;
 const FACE_RATIO_MIN = 0.15;
 const FACE_RATIO_MAX = 0.50;
 

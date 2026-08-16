@@ -2339,12 +2339,15 @@ let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
 let captureLocked_ = false; // true while waiting 1s for photo
 let motionSamples_ = [];
-const MOTION_SAMPLES_NEEDED = 10;
-const MIN_NOSE_SHIFT = 0.045; // relative micro head move
+// Phone: same as before. PC/webcam: stricter so a hand is less likely to trigger capture.
+const isPcWebcam_ =
+  !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.09 : 0.045;
+const FACE_OK_FRAMES = isPcWebcam_ ? 5 : 3;
+const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 14 : 10;
 
 const FACE_RATIO_MIN = 0.22; // too far if smaller
 const FACE_RATIO_MAX = 0.42; // too close if larger
-const FACE_OK_FRAMES = 3;    // ~stable for a short moment
 async function ensureFaceMesh_() {
   if (faceMesh_) return faceMesh_;
   if (typeof FaceMesh === "undefined") {

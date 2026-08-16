@@ -2466,21 +2466,32 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  motionSamples_.push(noseOffsetX);
+    // Horizontal = head turn; vertical = phone tilt up/down (ignore)
+  const noseOffsetY = nose.y - ((top.y + bottom.y) / 2);
+  motionSamples_.push({ x: noseOffsetX, y: noseOffsetY });
   if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
     motionSamples_.shift();
   }
 
-  let minO = motionSamples_[0];
-  let maxO = motionSamples_[0];
+  let minX = motionSamples_[0].x;
+  let maxX = motionSamples_[0].x;
+  let minY = motionSamples_[0].y;
+  let maxY = motionSamples_[0].y;
   for (let i = 1; i < motionSamples_.length; i++) {
-    if (motionSamples_[i] < minO) minO = motionSamples_[i];
-    if (motionSamples_[i] > maxO) maxO = motionSamples_[i];
+    const sx = motionSamples_[i].x;
+    const sy = motionSamples_[i].y;
+    if (sx < minX) minX = sx;
+    if (sx > maxX) maxX = sx;
+    if (sy < minY) minY = sy;
+    if (sy > maxY) maxY = sy;
   }
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  // Need clear left/right turn; up/down tilt alone must not pass
   const hasMicroMotion =
     motionSamples_.length >= MOTION_SAMPLES_NEEDED &&
-    maxO - minO >= MIN_NOSE_SHIFT;
-
+    spanX >= MIN_NOSE_SHIFT &&
+    spanX > spanY * 1.4;
   if (!hasMicroMotion) {
     faceOkStreak_ = 0;
     if (instruction) {

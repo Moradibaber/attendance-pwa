@@ -2342,11 +2342,13 @@ let motionSamples_ = [];
 // Phone: same as before. PC/webcam: stricter so a hand is less likely to trigger capture.
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.06 : 0.045;
-const FACE_OK_FRAMES = isPcWebcam_ ? 4 : 3;
-const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 12 : 10;
-const FACE_RATIO_MIN = 0.12;
-const FACE_RATIO_MAX = 0.55;
+
+// Need a clearer head turn; small shake should not count
+const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.08 : 0.07;
+const FACE_OK_FRAMES = isPcWebcam_ ? 5 : 5;
+const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 14 : 12;
+const FACE_RATIO_MIN = 0.15;
+const FACE_RATIO_MAX = 0.50;
 async function ensureFaceMesh_() {
   if (faceMesh_) return faceMesh_;
   if (typeof FaceMesh === "undefined") {
@@ -2732,20 +2734,7 @@ async function processCapturedPhoto(file) {
       preview.src = currentPhoto;
       preview.style.display = "block";
     }
-    const printBtn = $("printPhotoBtn");
-    if (printBtn) {
-      printBtn.style.display = "inline-block";
-      printBtn.onclick = function () {
-        const w = window.open("");
-        if (!w) return;
-        w.document.write(
-          "<html><head><title>photo</title></head><body style='margin:0;text-align:center;'>" +
-            "<img src='" + currentPhoto + "' style='max-width:100%;'/>" +
-            "<script>window.onload=function(){window.print();}</script></body></html>"
-        );
-        w.document.close();
-      };
-    }
+    
     // 1b) face-api.js descriptor
        // 1b) face-api.js descriptor
     let faceDescriptor = null;

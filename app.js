@@ -2758,10 +2758,10 @@ async function processCapturedPhoto(file) {
       console.warn("descriptor extract failed", e);
     }
 
-           if (!/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "")) {
+              if (await hasStrongGlare_(currentPhoto)) {
       setBusy(false);
-      setStatus("ثبت تردد فقط با موبایل مجاز است.");
-      showGpsToast("فقط با موبایل", 4000, "error");
+      setStatus("نور شدید یا بازتاب روی عکس است. دوباره با نور یکنواخت عکس بگیرید.");
+      showGpsToast("بازتاب نور زیاد است\nدوباره عکس بگیرید", 4000, "error");
       currentPhoto = "";
       return;
     }

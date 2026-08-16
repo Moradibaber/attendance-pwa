@@ -2342,9 +2342,9 @@ let motionSamples_ = [];
 // Phone: same as before. PC/webcam: stricter so a hand is less likely to trigger capture.
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.09 : 0.045;
-const FACE_RATIO_MIN = 0.22; // too far if smaller
-const FACE_RATIO_MAX = 0.42; // too close if larger
+const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.06 : 0.045;
+const FACE_OK_FRAMES = isPcWebcam_ ? 4 : 3;
+const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 12 : 10;
 async function ensureFaceMesh_() {
   if (faceMesh_) return faceMesh_;
   if (typeof FaceMesh === "undefined") {

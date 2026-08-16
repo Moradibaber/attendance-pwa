@@ -2339,15 +2339,16 @@ let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
 let captureLocked_ = false; // true while waiting 1s for photo
 let motionSamples_ = [];
-// Phone: same as before. PC/webcam: stricter so a hand is less likely to trigger capture.
+
+// Phone: softer. PC/webcam: stricter (harder with small move / hand)
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-
-const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.12 : 0.09; // stronger head turn needed
-const FACE_OK_FRAMES = 8;                          // more stable frames
-const MOTION_SAMPLES_NEEDED = 18;                  // longer sample window
+const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.12 : 0.09;
+const FACE_OK_FRAMES = isPcWebcam_ ? 8 : 5;
+const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 18 : 12;
 const FACE_RATIO_MIN = 0.15;
 const FACE_RATIO_MAX = 0.50;
+
 async function ensureFaceMesh_() {
   if (faceMesh_) return faceMesh_;
   if (typeof FaceMesh === "undefined") {
@@ -2371,6 +2372,17 @@ async function ensureFaceMesh_() {
   faceMeshReady_ = true;
   return faceMesh_;
 }
+
+function onFaceMeshResults_(results) {
+  const instruction = $("cameraInstruction");
+  const video = $("cameraVideo");
+
+  if (instruction) {
+    instruction.style.cssText =
+      "color:#fff;font-size:18px;font-weight:700;line-height:1.7;margin:0;" +
+      "background:rgba(0,0,0,0.75);padding:14px 16px;border-radius:12px;" +
+      "max-width:340px;text-align:center;";
+  }
 function onFaceMeshResults_(results) {
   const instruction = $("cameraInstruction");
   const video = $("cameraVideo");

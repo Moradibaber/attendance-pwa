@@ -2758,23 +2758,13 @@ async function processCapturedPhoto(file) {
       console.warn("descriptor extract failed", e);
     }
 
-    // ★ block save if no face descriptor (avoids no_descriptor rows)
-    if (!faceDescriptor || !faceDescriptor.length) {
+       if (await hasStrongGlare_(currentPhoto)) {
       setBusy(false);
-      setStatus(
-        "چهره در عکس پیدا نشد.\n" +
-          "روبه‌روی دوربین، نور کافی، فاصله حدود ۲۰–۲۵ سانتی‌متر.\n" +
-          "دوباره عکس بگیرید."
-      );
-      showGpsToast(
-        "چهره پیدا نشد\nدوباره عکس بگیرید",
-        4000,
-        "error"
-      );
+      setStatus("نور شدید یا بازتاب روی عکس است. دوباره با نور یکنواخت عکس بگیرید.");
+      showGpsToast("بازتاب نور زیاد است\nدوباره عکس بگیرید", 4000, "error");
       currentPhoto = "";
       return;
     }
-
     // 2) Local profile only (no server)    // 2) Local profile only (no server)
     try {
       const profile = getProfileFromInputs();

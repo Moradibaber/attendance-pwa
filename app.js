@@ -1463,8 +1463,8 @@ async function createRecord(type, faceDescriptor) {
   }
   // Option 1 — honest toast (local save; upload may still be pending)
   showGpsToast(
-    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد تا پایان ارسال صبر کنید",
-    5000,
+    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد و تا پایان ارسال صبر کنید",
+    6000,
     "success"
   );
   setStatus("تردد ذخیره شد — در حال ارسال...");

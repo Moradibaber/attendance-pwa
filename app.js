@@ -2194,54 +2194,7 @@ async function getLocationIOSFriendly() {
 
   return bestLocation;
 }
-function cropToFaceDataUrl_(dataUrl, box, marginRatio) {
-  return new Promise(function (resolve) {
-    if (!dataUrl || !box) {
-      resolve(dataUrl);
-      return;
-    }
-    var img = new Image();
-    img.onload = function () {
-      try {
-        var m = marginRatio != null ? marginRatio : 0.35;
-        var x = Number(box.x) || 0;
-        var y = Number(box.y) || 0;
-        var w = Number(box.width) || 0;
-        var h = Number(box.height) || 0;
-        if (w < 8 || h < 8) {
-          resolve(dataUrl);
-          return;
-        }
-        var padX = w * m;
-        var padY = h * m;
-        var sx = Math.max(0, x - padX);
-        var sy = Math.max(0, y - padY);
-        var sw = Math.min(img.width - sx, w + padX * 2);
-        var sh = Math.min(img.height - sy, h + padY * 2);
-        var MAX = 480;
-        var scale = Math.min(1, MAX / Math.max(sw, sh));
-        var dw = Math.max(1, Math.round(sw * scale));
-        var dh = Math.max(1, Math.round(sh * scale));
-        var canvas = document.createElement("canvas");
-        canvas.width = dw;
-        canvas.height = dh;
-        var ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, dw, dh);
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
-        resolve(canvas.toDataURL("image/jpeg", 0.8));
-      } catch (e) {
-        resolve(dataUrl);
-      }
-    };
-    img.onerror = function () {
-      resolve(dataUrl);
-    };
-    img.src = dataUrl;
-  });
-}
 
-function compressImage(file) {
 /* =========================
    Image
 ========================= */
@@ -2798,18 +2751,8 @@ async function processCapturedPhoto(file) {
         await new Promise((r) => setTimeout(r, 400));
         faceRes = await extractFaceDescriptor_(currentPhoto);
       }
-                  if (faceRes && faceRes.descriptor) {
+      if (faceRes && faceRes.descriptor) {
         faceDescriptor = faceRes.descriptor;
-        if (faceRes.box) {
-          try {
-            currentPhoto = await cropToFaceDataUrl_(currentPhoto, faceRes.box, 0.35);
-            var previewEl = $("photoPreview");
-            if (previewEl) {
-              previewEl.src = currentPhoto;
-              previewEl.style.display = "block";
-            }
-          } catch (cropErr) {}
-        }
       }
     } catch (e) {
       console.warn("descriptor extract failed", e);

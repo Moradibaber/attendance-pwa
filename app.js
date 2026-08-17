@@ -2194,7 +2194,6 @@ async function getLocationIOSFriendly() {
 
   return bestLocation;
 }
-/** Crop dataURL to face box (+ margin). box = { x, y, width, height } from face-api */
 function cropToFaceDataUrl_(dataUrl, box, marginRatio) {
   return new Promise(function (resolve) {
     if (!dataUrl || !box) {
@@ -2219,12 +2218,10 @@ function cropToFaceDataUrl_(dataUrl, box, marginRatio) {
         var sy = Math.max(0, y - padY);
         var sw = Math.min(img.width - sx, w + padX * 2);
         var sh = Math.min(img.height - sy, h + padY * 2);
-
         var MAX = 480;
         var scale = Math.min(1, MAX / Math.max(sw, sh));
         var dw = Math.max(1, Math.round(sw * scale));
         var dh = Math.max(1, Math.round(sh * scale));
-
         var canvas = document.createElement("canvas");
         canvas.width = dw;
         canvas.height = dh;
@@ -2243,6 +2240,8 @@ function cropToFaceDataUrl_(dataUrl, box, marginRatio) {
     img.src = dataUrl;
   });
 }
+
+function compressImage(file) {
 /* =========================
    Image
 ========================= */
@@ -2799,16 +2798,17 @@ async function processCapturedPhoto(file) {
         await new Promise((r) => setTimeout(r, 400));
         faceRes = await extractFaceDescriptor_(currentPhoto);
       }
-            if (faceRes && faceRes.descriptor) {
+                  if (faceRes && faceRes.descriptor) {
         faceDescriptor = faceRes.descriptor;
-        // Crop only the image that will be uploaded / shown in Records preview
         if (faceRes.box) {
-          currentPhoto = await cropToFaceDataUrl_(currentPhoto, faceRes.box, 0.35);
-          var preview = $("photoPreview");
-          if (preview) {
-            preview.src = currentPhoto;
-            preview.style.display = "block";
-          }
+          try {
+            currentPhoto = await cropToFaceDataUrl_(currentPhoto, faceRes.box, 0.35);
+            var previewEl = $("photoPreview");
+            if (previewEl) {
+              previewEl.src = currentPhoto;
+              previewEl.style.display = "block";
+            }
+          } catch (cropErr) {}
         }
       }
     } catch (e) {

@@ -2310,12 +2310,12 @@ function hasStrongGlare_(dataUrl) {
           const r = data[i], g = data[i+1], b = data[i+2];
           const bright = (r + g + b) / 3;
           total++;
-          if (bright > 245) veryBright++;
+         if (bright > 235) veryBright++;
         }
 
         const ratio = veryBright / total;
         console.log("Glare ratio:", (ratio * 100).toFixed(1) + "%");
-        resolve(ratio > 0.008);
+       resolve(ratio > 0.006);
       } catch (e) {
         resolve(false);
       }

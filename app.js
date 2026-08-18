@@ -2346,8 +2346,8 @@ const isPcWebcam_ =
 const MIN_NOSE_SHIFT = isPcWebcam_ ? 0.18 : 0.11;
 const FACE_OK_FRAMES = isPcWebcam_ ? 12 : 6;
 const MOTION_SAMPLES_NEEDED = isPcWebcam_ ? 25 : 14;
-const FACE_RATIO_MIN = 0.18;
-const FACE_RATIO_MAX = 0.32;
+const FACE_RATIO_MIN = 0.20;
+const FACE_RATIO_MAX = 0.28;
 
 async function ensureFaceMesh_() {
   if (faceMesh_) return faceMesh_;

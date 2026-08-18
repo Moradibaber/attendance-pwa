@@ -2751,8 +2751,44 @@ async function processCapturedPhoto(file) {
         await new Promise((r) => setTimeout(r, 400));
         faceRes = await extractFaceDescriptor_(currentPhoto);
       }
-      if (faceRes && faceRes.descriptor) {
+            if (faceRes && faceRes.descriptor) {
         faceDescriptor = faceRes.descriptor;
+
+        // Block small / off-center faces (e.g. face on a laptop screen)
+        if (faceRes.box) {
+          const img = await new Promise(function (resolve, reject) {
+            const im = new Image();
+            im.onload = function () {
+              resolve(im);
+            };
+            im.onerror = reject;
+            im.src = currentPhoto;
+          });
+          const w = img.width || 1;
+          const h = img.height || 1;
+          const box = faceRes.box;
+          const faceArea = (box.width * box.height) / (w * h);
+          const cx = box.x + box.width / 2;
+          const cy = box.y + box.height / 2;
+          const dist =
+            Math.sqrt(Math.pow(cx / w - 0.5, 2) + Math.pow(cy / h - 0.5, 2));
+
+          // face must cover enough of the photo and be near center
+          if (faceArea < 0.12 || dist > 0.22) {
+            setBusy(false);
+            setStatus(
+              "صورت باید بزرگ‌تر و نزدیک وسط کادر باشد.\nدوباره عکس بگیرید."
+            );
+            showGpsToast(
+              "صورت خیلی کوچک یا خارج از مرکز است",
+              4000,
+              "error"
+            );
+            currentPhoto = "";
+            faceDescriptor = null;
+            return;
+          }
+        }
       }
     } catch (e) {
       console.warn("descriptor extract failed", e);

@@ -2774,7 +2774,7 @@ async function processCapturedPhoto(file) {
             Math.sqrt(Math.pow(cx / w - 0.5, 2) + Math.pow(cy / h - 0.5, 2));
 
           // face must cover enough of the photo and be near center
-         if (faceArea < 0.14 || dist > 0.28) {
+         if (faceArea < 0.08 || dist > 0.28) {
             setBusy(false);
             setStatus(
               "صورت باید بزرگ‌تر و نزدیک وسط کادر باشد.\nدوباره عکس بگیرید."

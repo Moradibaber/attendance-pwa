@@ -2315,7 +2315,7 @@ function hasStrongGlare_(dataUrl) {
 
         const ratio = veryBright / total;
         console.log("Glare ratio:", (ratio * 100).toFixed(1) + "%");
-      resolve(ratio > 0.004);
+      resolve(ratio > 0.006);
       } catch (e) {
         resolve(false);
       }

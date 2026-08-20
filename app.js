@@ -2733,8 +2733,8 @@ async function processCapturedPhoto(file) {
 
     const preview = $("photoPreview");
     if (preview) {
-      preview.src = currentPhoto;
-      preview.style.display = "block";
+      preview.src = "";
+      preview.style.display = "none";
     }
     
     // 1b) face-api.js descriptor
@@ -2865,8 +2865,10 @@ async function processCapturedPhoto(file) {
     // 5) Save once
     setBusy(true, "در حال ذخیره تردد...");
     setStatus("در حال ذخیره تردد...");
-    await createRecord("تردد", faceDescriptor);
+        await createRecord("تردد", faceDescriptor);
     setBusy(false);
+    setStatus("عکس تأیید و ارسال می‌شود.");
+    showGpsToast("عکس تأیید شد\nدر حال ارسال", 2500, "success");
   } catch (err) {
     console.error(err);
     setBusy(false);

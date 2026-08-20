@@ -1399,6 +1399,7 @@ async function createRecord(type, faceDescriptor) {
     firstName: profile.firstName,
     lastName: profile.lastName,
     password: profile.password || "",
+    deviceId: getOrCreateDeviceId_(),
     type,
     recordType: type,
     recordDate: jalaliDateStr,
@@ -1725,6 +1726,7 @@ function buildServerPayload(record) {
     lastSyncTryAt: record.lastSyncTryAt || "",
     syncTryCount: Number(record.syncTryCount || 0),
     workLocation: record.workLocation || "",
+    deviceId: record.deviceId || getOrCreateDeviceId_(),
   };
 }
 

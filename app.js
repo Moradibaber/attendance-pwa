@@ -2868,7 +2868,7 @@ async function processCapturedPhoto(file) {
         await createRecord("تردد", faceDescriptor);
     setBusy(false);
     setStatus("عکس تأیید و ارسال می‌شود.");
-    showGpsToast("عکس تأیید شد\nدر حال ارسال", 2500, "success");
+    showGpsToast("عکس تأیید شد\nدر حال ارسال", 6000, "success");
   } catch (err) {
     console.error(err);
     setBusy(false);

@@ -2543,12 +2543,12 @@ function onFaceMeshResults_(results) {
       return;
     }
 
-    if (instruction) {
-      instruction.innerHTML =
-        "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
-    }
-    return;
-  }
+  //   if (instruction) {
+  //     instruction.innerHTML =
+  //       "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
+  //   }
+  //   return;
+  // }
     if (instruction) {
       instruction.innerHTML =
         "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
@@ -2575,6 +2575,8 @@ function onFaceMeshResults_(results) {
     maxO - minO >= MIN_NOSE_SHIFT;
   if (!hasMicroMotion) {
     faceOkStreak_ = 0;
+     if (!hasMicroMotion) {
+    faceOkStreak_ = 0;
     if (instruction) {
       instruction.innerHTML =
         "فاصله مناسب است<br><span style=\"color:#fbbf24;\">سر را کمی به چپ یا راست بچرخانید، بعد ثابت بمانید</span>";
@@ -2586,6 +2588,12 @@ function onFaceMeshResults_(results) {
   if (instruction) {
     instruction.innerHTML =
       "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه — صورت را در کادر نگه دارید</span>";
+  }
+
+  if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
+    captureArmed_ = true;
+    captureLocked_ = true;
+    startOneSecondCapture_();
   }
 
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {

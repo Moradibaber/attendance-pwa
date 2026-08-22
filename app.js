@@ -2345,7 +2345,7 @@ let motionSamples_ = [];
 let phoneMotionMag_ = 0;
 let phoneIsStable_ = false;
 let phoneStableSince_ = 0;
-const PHONE_STABLE_THRESHOLD = 0.95;  // much stricter
+const PHONE_STABLE_THRESHOLD = 1.4;  // much stricter
 const PHONE_STABLE_MS = 3000;         // must stay still longer
 let recentMotionHistory_ = [];        // last motion samples
 
@@ -2610,10 +2610,45 @@ function startThreeSecondCountdown_() {
   const countdownEl = $("countdownText");
   const instruction = $("cameraInstruction");
 
+  // First stage: wait until phone becomes stable
   if (instruction) {
     instruction.innerHTML =
       "گوشی را کاملاً ثابت نگه دارید<br>" +
-      "<span style=\"color:#fbbf24;\">۳ ثانیه بدون حرکت...</span>";
+      "<span style=\"color:#fbbf24;\">منتظر ثبات گوشی...</span>";
+  }
+  if (countdownEl) {
+    countdownEl.textContent = "—";
+    countdownEl.style.color = "#fbbf24";
+  }
+
+  // Check every 200ms until phone is stable
+  const waitStableInterval = setInterval(() => {
+    if (phoneIsStable_) {
+      clearInterval(waitStableInterval);
+      // Now start the real 3-second countdown
+      beginRealThreeSecondHold_();
+    }
+  }, 200);
+
+  // Safety timeout (if never becomes stable)
+  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+  autoCaptureTimer_ = setTimeout(() => {
+    clearInterval(waitStableInterval);
+    if (instruction) {
+      instruction.innerHTML =
+        "گوشی هنوز ثابت نشده<br><span style=\"color:#f87171;\">لطفاً گوشی را محکم و بدون حرکت نگه دارید</span>";
+    }
+  }, 15000);
+}
+
+function beginRealThreeSecondHold_() {
+  const countdownEl = $("countdownText");
+  const instruction = $("cameraInstruction");
+
+  if (instruction) {
+    instruction.innerHTML =
+      "گوشی ثابت است<br>" +
+      "<span style=\"color:#4ade80;\">۳ ثانیه بدون حرکت بمانید...</span>";
   }
   if (countdownEl) {
     countdownEl.textContent = "۳";
@@ -2621,9 +2656,10 @@ function startThreeSecondCountdown_() {
   }
 
   let remaining = 3;
+
   if (countdownInterval_) clearInterval(countdownInterval_);
   countdownInterval_ = setInterval(() => {
-    // If phone moves during countdown → reset
+    // If phone moves during the 3 seconds → cancel and go back
     if (!phoneIsStable_) {
       clearInterval(countdownInterval_);
       countdownInterval_ = null;
@@ -2633,10 +2669,16 @@ function startThreeSecondCountdown_() {
       }
       captureArmed_ = false;
       faceOkStreak_ = 0;
+
       if (instruction) {
         instruction.innerHTML =
-          "گوشی حرکت می‌کند<br><span style=\"color:#f87171;\">دوباره گوشی را کاملاً ثابت نگه دارید</span>";
+          "حرکت تشخیص داده شد<br><span style=\"color:#f87171;\">دوباره گوشی را کاملاً ثابت نگه دارید</span>";
       }
+
+      // Restart the whole process
+      setTimeout(() => {
+        startThreeSecondCountdown_();
+      }, 1200);
       return;
     }
 
@@ -2644,23 +2686,22 @@ function startThreeSecondCountdown_() {
     if (countdownEl) {
       countdownEl.textContent = remaining > 0 ? String(remaining) : "۰";
     }
+
     if (remaining <= 0) {
       clearInterval(countdownInterval_);
       countdownInterval_ = null;
 
-      // After 3 seconds of stillness, ask user to move head
+      // 3 seconds completed successfully → go to head movement stage
       captureArmed_ = true;
       startHeadMovementCountdown_();
     }
   }, 1000);
 
+  // Safety
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
-    // Timeout on the 3-second countdown (safety)
     autoCaptureTimer_ = null;
-    captureArmed_ = false;
-    captureLocked_ = false;
-  }, 3000);
+  }, 3500);
 }
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");

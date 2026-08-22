@@ -2741,13 +2741,7 @@ function startHeadMovementCountdown_() {
     captureLocked_ = false;
   }, 2500);
 }
-  } catch (err) {
-    console.error("Camera error:", err);
-    setStatus("نمی‌توان دوربین سلفی را باز کرد. لطفاً دسترسی دوربین را مجاز کنید.");
-    closeCamera();
-  }
-}
-
+ 
 function closeCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");

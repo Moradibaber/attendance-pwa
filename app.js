@@ -2729,7 +2729,7 @@ async function openFrontCamera() {
     }
 
     // Start real phone-stability monitoring
-    // startPhoneMotionMonitor_();
+    startPhoneMotionMonitor_();
         recentMotionHistory_ = [];
     phoneIsStable_ = false;
     phoneStableSince_ = 0;

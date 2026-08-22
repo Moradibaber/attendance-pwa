@@ -2619,15 +2619,15 @@ function startOneSecondCapture_() {
 
   if (instruction) {
     instruction.innerHTML =
-      'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
-      '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>';
+      'گوشی را کاملاً ثابت نگه دارید<br>' +
+      '<span style="color:#fbbf24;">۳ ثانیه بدون هیچ حرکتی...</span>';
   }
   if (countdownEl) {
-    countdownEl.textContent = "۱";
+    countdownEl.textContent = "۳";
     countdownEl.style.color = "#4ade80";
   }
 
-  let remaining = 1;
+  let remaining = 3;
   if (countdownInterval_) clearInterval(countdownInterval_);
   countdownInterval_ = setInterval(() => {
     remaining--;
@@ -2641,16 +2641,39 @@ function startOneSecondCapture_() {
     }
   }, 1000);
 
-    if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
     autoCaptureTimer_ = null;
-    if (!captureLocked_) {
+    if (!captureLocked_) return;
+
+    // Final strong stability check before taking photo
+    const maxRecent = recentMotionHistory_.length
+      ? Math.max(...recentMotionHistory_)
+      : 99;
+
+    if (
+      !phoneIsStable_ ||
+      phoneMotionMag_ > PHONE_STABLE_THRESHOLD ||
+      maxRecent > PHONE_STABLE_THRESHOLD * 1.3
+    ) {
+      // Failed stability → cancel
+      captureLocked_ = false;
+      captureArmed_ = false;
+      faceOkStreak_ = 0;
+      motionSamples_ = [];
+      recentMotionHistory_ = [];
+      if (instruction) {
+        instruction.innerHTML =
+          "لرزش تشخیص داده شد<br><span style=\"color:#f87171;\">دوباره تلاش کنید — گوشی را ۳ ثانیه ثابت نگه دارید</span>";
+      }
       return;
     }
+
+    // Passed → take the photo
     captureLocked_ = false;
     stopFaceMeshLoop_();
     captureFromVideo();
-  }, 1000);
+  }, 3000); // ← 3 seconds
 }
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");

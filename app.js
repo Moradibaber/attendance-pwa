@@ -2345,8 +2345,9 @@ let motionSamples_ = [];
 let phoneMotionMag_ = 0;
 let phoneIsStable_ = false;
 let phoneStableSince_ = 0;
-const PHONE_STABLE_THRESHOLD = 1.6;   // lower = stricter (try 1.3–2.0)
-const PHONE_STABLE_MS = 700;          // must stay still this long
+const PHONE_STABLE_THRESHOLD = 1.15;  // much stricter
+const PHONE_STABLE_MS = 1100;         // must stay still longer
+let recentMotionHistory_ = [];        // last motion samples
 
 function startPhoneMotionMonitor_() {
   if (typeof DeviceMotionEvent !== "undefined" &&
@@ -2384,6 +2385,12 @@ function onPhoneMotion_(e) {
   // remove gravity ≈ 9.8
   phoneMotionMag_ = Math.abs(mag - 9.81);
 
+  // keep last ~12 samples (roughly last 0.6–1 second)
+  recentMotionHistory_.push(phoneMotionMag_);
+  if (recentMotionHistory_.length > 12) {
+    recentMotionHistory_.shift();
+  }
+
   if (phoneMotionMag_ < PHONE_STABLE_THRESHOLD) {
     if (!phoneStableSince_) phoneStableSince_ = Date.now();
     phoneIsStable_ = (Date.now() - phoneStableSince_) >= PHONE_STABLE_MS;
@@ -2392,7 +2399,6 @@ function onPhoneMotion_(e) {
     phoneIsStable_ = false;
   }
 }
-
 // Phone: softer. PC/webcam: stricter (harder with small move / hand)
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
@@ -2512,9 +2518,12 @@ function onFaceMeshResults_(results) {
 
   // Face still OK during the 1s wait → do not require more head movement
    // Face still OK during the 1s wait → do not require more head movement
-  if (captureLocked_) {
-    // If user starts shaking the phone during the countdown → cancel
-    if (!phoneIsStable_) {
+    // Stricter check during the 1-second countdown
+    const maxRecent = recentMotionHistory_.length
+      ? Math.max(...recentMotionHistory_)
+      : 99;
+
+    if (!phoneIsStable_ || phoneMotionMag_ > PHONE_STABLE_THRESHOLD || maxRecent > PHONE_STABLE_THRESHOLD * 1.4) {
       if (autoCaptureTimer_) {
         clearTimeout(autoCaptureTimer_);
         autoCaptureTimer_ = null;
@@ -2527,13 +2536,13 @@ function onFaceMeshResults_(results) {
       captureArmed_ = false;
       faceOkStreak_ = 0;
       motionSamples_ = [];
+      recentMotionHistory_ = [];
       if (instruction) {
         instruction.innerHTML =
-          "گوشی لرزید<br><span style=\"color:#f87171;\">گوشی را ثابت نگه دارید و دوباره سر را کمی بچرخانید</span>";
+          "لرزش تشخیص داده شد<br><span style=\"color:#f87171;\">گوشی را کاملاً ثابت نگه دارید و دوباره تلاش کنید</span>";
       }
       return;
     }
-
     if (instruction) {
       instruction.innerHTML =
         "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
@@ -2719,6 +2728,9 @@ async function openFrontCamera() {
 
     // Start real phone-stability monitoring
     startPhoneMotionMonitor_();
+        recentMotionHistory_ = [];
+    phoneIsStable_ = false;
+    phoneStableSince_ = 0;
 
     await ensureFaceMesh_();
     if (faceMesh_) {
@@ -2741,7 +2753,7 @@ function closeCamera() {
   const video = $("cameraVideo");
 
   stopPhoneMotionMonitor_();   // ← add this
-
+  recentMotionHistory_ = []; // ← put it here
   if (autoCaptureTimer_) {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
@@ -2773,25 +2785,34 @@ function captureFromVideo() {
     countdownInterval_ = null;
   }
 
-  // === Anti-shake gate ===
-  if (!phoneIsStable_) {
+    // === Strong Anti-shake gate ===
+  const maxRecentMotion = recentMotionHistory_.length
+    ? Math.max(...recentMotionHistory_)
+    : 99;
+
+  const isReallyStable =
+    phoneIsStable_ &&
+    phoneMotionMag_ < PHONE_STABLE_THRESHOLD &&
+    maxRecentMotion < PHONE_STABLE_THRESHOLD * 1.35;
+
+  if (!isReallyStable) {
     const instruction = $("cameraInstruction");
     if (instruction) {
       instruction.innerHTML =
-        'گوشی در حال لرزش است<br><span style="color:#f87171;">گوشی را کاملاً ثابت نگه دارید و دوباره تلاش کنید</span>';
+        'گوشی هنوز کاملاً ثابت نیست<br><span style="color:#f87171;">گوشی را محکم و بدون هیچ حرکتی نگه دارید</span>';
     }
-    setStatus("گوشی را ثابت نگه دارید");
-    showGpsToast("گوشی را کاملاً ثابت نگه دارید", 3000, "error");
+    setStatus("گوشی را کاملاً ثابت نگه دارید");
+    showGpsToast("گوشی را کاملاً ثابت و بدون لرزش نگه دارید", 3200, "error");
 
     // reset so user can try again
     captureArmed_ = false;
     captureLocked_ = false;
     faceOkStreak_ = 0;
     motionSamples_ = [];
+    recentMotionHistory_ = [];
     return; // do NOT take the photo
   }
-  // =======================
-
+  // ==============================
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");

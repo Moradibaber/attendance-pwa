@@ -2559,8 +2559,7 @@ function onFaceMeshResults_(results) {
   // Horizontal = head turn; vertical = phone tilt up/down (ignore)
   const noseOffsetY = nose.y - ((top.y + bottom.y) / 2);
   motionSamples_.push(noseOffsetX);
-   const noseOffsetY = nose.y - ((top.y + bottom.y) / 2);
-   motionSamples_.push(noseOffsetX);
+ 
   if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
     motionSamples_.shift();
   }

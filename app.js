@@ -2345,8 +2345,8 @@ let motionSamples_ = [];
 let phoneMotionMag_ = 0;
 let phoneIsStable_ = false;
 let phoneStableSince_ = 0;
-const PHONE_STABLE_THRESHOLD = 1.15;  // much stricter
-const PHONE_STABLE_MS = 1100;         // must stay still longer
+const PHONE_STABLE_THRESHOLD = 1.05;  // much stricter
+const PHONE_STABLE_MS = 3000;         // must stay still longer
 let recentMotionHistory_ = [];        // last motion samples
 
 function startPhoneMotionMonitor_() {
@@ -2548,7 +2548,7 @@ function onFaceMeshResults_(results) {
 
     if (instruction) {
       instruction.innerHTML =
-        "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
+  "گوشی را ثابت نگه دارید<br><span style=\"color:#4ade80;\">۳ ثانیه بدون هیچ حرکتی...</span>";
     }
     return;
   }
@@ -2581,8 +2581,8 @@ function onFaceMeshResults_(results) {
 
   faceOkStreak_++;
   if (instruction) {
-    instruction.innerHTML =
-      "حرکت ثبت شد<br><span style=\"color:#4ade80;\">عکس تا ۱ ثانیه — صورت را در کادر نگه دارید</span>";
+   instruction.innerHTML =
+  "حرکت ثبت شد<br><span style=\"color:#4ade80;\">حالا گوشی را ۳ ثانیه کاملاً ثابت نگه دارید</span>";
   }
 
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {

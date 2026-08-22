@@ -2500,7 +2500,6 @@ function onFaceMeshResults_(results) {
     }
     return;
   }
-
   if (faceRatio > FACE_RATIO_MAX) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
@@ -2516,8 +2515,8 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  // Face still OK during the 1s wait → do not require more head movement
-   // Face still OK during the 1s wait → do not require more head movement
+  // Face still OK during the 1s wait
+  if (captureLocked_) {
     // Stricter check during the 1-second countdown
     const maxRecent = recentMotionHistory_.length
       ? Math.max(...recentMotionHistory_)
@@ -2543,6 +2542,7 @@ function onFaceMeshResults_(results) {
       }
       return;
     }
+
     if (instruction) {
       instruction.innerHTML =
         "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
@@ -2550,8 +2550,10 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-    // Horizontal = head turn; vertical = phone tilt up/down (ignore)
+  // Horizontal = head turn; vertical = phone tilt up/down (ignore)
   const noseOffsetY = nose.y - ((top.y + bottom.y) / 2);
+  motionSamples_.push(noseOffsetX);
+   const noseOffsetY = nose.y - ((top.y + bottom.y) / 2);
    motionSamples_.push(noseOffsetX);
   if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
     motionSamples_.shift();

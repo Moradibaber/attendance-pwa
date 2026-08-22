@@ -2610,7 +2610,6 @@ function startThreeSecondCountdown_() {
   const countdownEl = $("countdownText");
   const instruction = $("cameraInstruction");
 
-  // First stage: wait until phone becomes stable
   if (instruction) {
     instruction.innerHTML =
       "گوشی را کاملاً ثابت نگه دارید<br>" +
@@ -2621,16 +2620,18 @@ function startThreeSecondCountdown_() {
     countdownEl.style.color = "#fbbf24";
   }
 
-  // Check every 200ms until phone is stable
+  // Wait until phone becomes stable
   const waitStableInterval = setInterval(() => {
     if (phoneIsStable_) {
       clearInterval(waitStableInterval);
-      // Now start the real 3-second countdown
-      beginRealThreeSecondHold_();
+
+      // Phone is stable → go directly to head movement stage
+      captureArmed_ = true;
+      startHeadMovementCountdown_();
     }
   }, 200);
 
-  // Safety timeout (if never becomes stable)
+  // Safety timeout
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
     clearInterval(waitStableInterval);
@@ -2640,7 +2641,6 @@ function startThreeSecondCountdown_() {
     }
   }, 15000);
 }
-
 function beginRealThreeSecondHold_() {
   const countdownEl = $("countdownText");
   const instruction = $("cameraInstruction");
@@ -2693,80 +2693,14 @@ function beginRealThreeSecondHold_() {
 
       // 3 seconds completed successfully → go to head movement stage
       captureArmed_ = true;
-      startHeadMovementCountdown_();
-    }
-  }, 1000);
-
-  // Safety
-  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
-  autoCaptureTimer_ = setTimeout(() => {
-    autoCaptureTimer_ = null;
-  }, 3500);
-}
-async function openFrontCamera() {
-  const overlay = $("cameraOverlay");
-  const video = $("cameraVideo");
-  const instruction = $("cameraInstruction");
-  const countdownEl = $("countdownText");
-
-  if (!overlay || !video) {
-    setStatus("خطا: المان دوربین پیدا نشد");
-    return;
-  }
-
-  // Clear old timers
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
-
-  try {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach(t => t.stop());
-      cameraStream = null;
-    }
-
-    const constraints = {
-      audio: false,
-      video: {
-        facingMode: { ideal: "user" },
-        width: { ideal: 1280, min: 640, max: 1920 },
-        height: { ideal: 720, min: 480, max: 1080 }
-      }
-    };
-
-    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = cameraStream;
-
-    // Hide preview immediately
-    video.style.opacity = "0";
-    video.style.filter = "brightness(0)";
-
-    overlay.style.display = "flex";
-    setStatus("لطفاً ثابت بمانید...");
-
-    // Start real phone stability monitoring
-    startPhoneMotionMonitor_();
-    recentMotionHistory_ = [];
-    phoneIsStable_ = false;
-    phoneStableSince_ = 0;
-
-    // Start 3-second still countdown
-    captureArmed_ = false;
-    faceOkStreak_ = 0;
-    startThreeSecondCountdown_();
-    function startHeadMovementCountdown_() {
+function startHeadMovementCountdown_() {
   const countdownEl = $("countdownText");
   const instruction = $("cameraInstruction");
 
   if (instruction) {
     instruction.innerHTML =
       "سر را کمی به چپ یا راست بچرخانید<br>" +
-      "<span style=\"color:#4ade80;\">۲ ثانیه برای حرکت دادن سر...</span>";
+      "<span style=\"color:#4ade80;\">۲ ثانیه فرصت دارید...</span>";
   }
   if (countdownEl) {
     countdownEl.textContent = "۲";
@@ -2774,6 +2708,7 @@ async function openFrontCamera() {
   }
 
   let remaining = 2;
+
   if (countdownInterval_) clearInterval(countdownInterval_);
   countdownInterval_ = setInterval(() => {
     if (!captureArmed_) {
@@ -2786,11 +2721,12 @@ async function openFrontCamera() {
     if (countdownEl) {
       countdownEl.textContent = remaining > 0 ? String(remaining) : "۰";
     }
+
     if (remaining <= 0) {
       clearInterval(countdownInterval_);
       countdownInterval_ = null;
 
-      // Head movement done → take photo
+      // Time finished → take the photo
       captureArmed_ = false;
       captureLocked_ = false;
       stopFaceMeshLoop_();
@@ -2800,13 +2736,11 @@ async function openFrontCamera() {
 
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
-    // Safety timeout if user doesn’t move head
     autoCaptureTimer_ = null;
     captureArmed_ = false;
     captureLocked_ = false;
-  }, 2000);
+  }, 2500);
 }
-
   } catch (err) {
     console.error("Camera error:", err);
     setStatus("نمی‌توان دوربین سلفی را باز کرد. لطفاً دسترسی دوربین را مجاز کنید.");

@@ -2606,14 +2606,14 @@ function stopFaceMeshLoop_() {
   captureLocked_ = false;
   motionSamples_ = [];
 }
-function startOneSecondCapture_() {
+function startThreeSecondCountdown_() {
   const countdownEl = $("countdownText");
   const instruction = $("cameraInstruction");
 
   if (instruction) {
     instruction.innerHTML =
-      'گوشی را کاملاً ثابت نگه دارید<br>' +
-      '<span style="color:#fbbf24;">۳ ثانیه بدون هیچ حرکتی...</span>';
+      "گوشی را کاملاً ثابت نگه دارید<br>" +
+      "<span style=\"color:#fbbf24;\">۳ ثانیه بدون حرکت...</span>";
   }
   if (countdownEl) {
     countdownEl.textContent = "۳";
@@ -2623,50 +2623,44 @@ function startOneSecondCapture_() {
   let remaining = 3;
   if (countdownInterval_) clearInterval(countdownInterval_);
   countdownInterval_ = setInterval(() => {
+    // If phone moves during countdown → reset
+    if (!phoneIsStable_) {
+      clearInterval(countdownInterval_);
+      countdownInterval_ = null;
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      captureArmed_ = false;
+      faceOkStreak_ = 0;
+      if (instruction) {
+        instruction.innerHTML =
+          "گوشی حرکت می‌کند<br><span style=\"color:#f87171;\">دوباره گوشی را کاملاً ثابت نگه دارید</span>";
+      }
+      return;
+    }
+
     remaining--;
     if (countdownEl) {
       countdownEl.textContent = remaining > 0 ? String(remaining) : "۰";
-      if (remaining <= 0) countdownEl.style.color = "#f87171";
     }
     if (remaining <= 0) {
       clearInterval(countdownInterval_);
       countdownInterval_ = null;
+
+      // After 3 seconds of stillness, ask user to move head
+      captureArmed_ = true;
+      startHeadMovementCountdown_();
     }
   }, 1000);
 
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
+    // Timeout on the 3-second countdown (safety)
     autoCaptureTimer_ = null;
-    if (!captureLocked_) return;
-
-    // Final strong stability check before taking photo
-    const maxRecent = recentMotionHistory_.length
-      ? Math.max(...recentMotionHistory_)
-      : 99;
-
-    if (
-      !phoneIsStable_ ||
-      phoneMotionMag_ > PHONE_STABLE_THRESHOLD ||
-      maxRecent > PHONE_STABLE_THRESHOLD * 1.3
-    ) {
-      // Failed stability → cancel
-      captureLocked_ = false;
-      captureArmed_ = false;
-      faceOkStreak_ = 0;
-      motionSamples_ = [];
-      recentMotionHistory_ = [];
-      if (instruction) {
-        instruction.innerHTML =
-          "لرزش تشخیص داده شد<br><span style=\"color:#f87171;\">دوباره تلاش کنید — گوشی را ۳ ثانیه ثابت نگه دارید</span>";
-      }
-      return;
-    }
-
-    // Passed → take the photo
+    captureArmed_ = false;
     captureLocked_ = false;
-    stopFaceMeshLoop_();
-    captureFromVideo();
-  }, 3000); // ← 3 seconds
+  }, 3000);
 }
 async function openFrontCamera() {
   const overlay = $("cameraOverlay");
@@ -2679,7 +2673,7 @@ async function openFrontCamera() {
     return;
   }
 
-  // Clear previous timers
+  // Clear old timers
   if (autoCaptureTimer_) {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
@@ -2695,70 +2689,82 @@ async function openFrontCamera() {
       cameraStream = null;
     }
 
-       const constraints = {
-  audio: false,
-  video: {
-    facingMode: { ideal: "user" },
-    width:  { ideal: 1280, min: 640, max: 1920 },
-    height: { ideal: 720,  min: 480, max: 1080 }
-  }
-};
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: "user" },
+        width: { ideal: 1280, min: 640, max: 1920 },
+        height: { ideal: 720, min: 480, max: 1080 }
+      }
+    };
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
-        video.style.opacity = "0";
+
+    // Hide preview immediately
+    video.style.opacity = "0";
     video.style.filter = "brightness(0)";
-    if (instruction) {
-      instruction.innerHTML =
-        'صورت خود را روبه‌روی دوربین نگه دارید<br>' +
-        '<span style="color:#fbbf24;">عکس بعد از ۱ ثانیه گرفته می‌شود</span>';
-    }
-    if (countdownEl) {
-      countdownEl.textContent = "۱";
-      countdownEl.style.color = "#4ade80";
-    }
 
     overlay.style.display = "flex";
     setStatus("لطفاً ثابت بمانید...");
 
-    // Countdown 1 → 0
-    let remaining = 1;
-    countdownInterval_ = setInterval(() => {
-      remaining--;
-      if (countdownEl) {
-        countdownEl.textContent = remaining > 0 ? remaining : "۰";
-        if (remaining <= 0) countdownEl.style.color = "#f87171";
-      }
-      if (remaining <= 0) {
-        clearInterval(countdownInterval_);
-        countdownInterval_ = null;
-      }
-    }, 1000);
-
-       captureArmed_ = false;
-    faceOkStreak_ = 0;
-    if (countdownEl) countdownEl.textContent = "—";
-
-        if (instruction) {
-      instruction.innerHTML =
-        'صورت را در کادر قرار دهید<br>' +
-        '<span style="color:#fbbf24;">فاصله حدود ۲۰–۲۵ سانتی‌متر</span>';
-    }
-
-    // Start real phone-stability monitoring
+    // Start real phone stability monitoring
     startPhoneMotionMonitor_();
-        recentMotionHistory_ = [];
+    recentMotionHistory_ = [];
     phoneIsStable_ = false;
     phoneStableSince_ = 0;
 
-    await ensureFaceMesh_();
-    if (faceMesh_) {
-      stopFaceMeshLoop_();
-      tickFaceMesh_();
-    } else {
-      // SDK missing → fallback old behavior
-      startOneSecondCapture_();
+    // Start 3-second still countdown
+    captureArmed_ = false;
+    faceOkStreak_ = 0;
+    startThreeSecondCountdown_();
+    function startHeadMovementCountdown_() {
+  const countdownEl = $("countdownText");
+  const instruction = $("cameraInstruction");
+
+  if (instruction) {
+    instruction.innerHTML =
+      "سر را کمی به چپ یا راست بچرخانید<br>" +
+      "<span style=\"color:#4ade80;\">۲ ثانیه برای حرکت دادن سر...</span>";
+  }
+  if (countdownEl) {
+    countdownEl.textContent = "۲";
+    countdownEl.style.color = "#4ade80";
+  }
+
+  let remaining = 2;
+  if (countdownInterval_) clearInterval(countdownInterval_);
+  countdownInterval_ = setInterval(() => {
+    if (!captureArmed_) {
+      clearInterval(countdownInterval_);
+      countdownInterval_ = null;
+      return;
     }
+
+    remaining--;
+    if (countdownEl) {
+      countdownEl.textContent = remaining > 0 ? String(remaining) : "۰";
+    }
+    if (remaining <= 0) {
+      clearInterval(countdownInterval_);
+      countdownInterval_ = null;
+
+      // Head movement done → take photo
+      captureArmed_ = false;
+      captureLocked_ = false;
+      stopFaceMeshLoop_();
+      captureFromVideo();
+    }
+  }, 1000);
+
+  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+  autoCaptureTimer_ = setTimeout(() => {
+    // Safety timeout if user doesn’t move head
+    autoCaptureTimer_ = null;
+    captureArmed_ = false;
+    captureLocked_ = false;
+  }, 2000);
+}
 
   } catch (err) {
     console.error("Camera error:", err);

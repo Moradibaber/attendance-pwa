@@ -2431,7 +2431,6 @@ async function ensureFaceMesh_() {
   faceMeshReady_ = true;
   return faceMesh_;
 }
-
 function onFaceMeshResults_(results) {
   const instruction = $("cameraInstruction");
   const video = $("cameraVideo");
@@ -2516,13 +2515,17 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  // Face still OK during the 1s wait
+  // During the 1-second countdown
   if (captureLocked_) {
     const maxRecent = recentMotionHistory_.length
       ? Math.max(...recentMotionHistory_)
       : 99;
 
-    if (!phoneIsStable_ || phoneMotionMag_ > PHONE_STABLE_THRESHOLD || maxRecent > PHONE_STABLE_THRESHOLD * 1.4) {
+    if (
+      !phoneIsStable_ ||
+      phoneMotionMag_ > PHONE_STABLE_THRESHOLD ||
+      maxRecent > PHONE_STABLE_THRESHOLD * 1.4
+    ) {
       if (autoCaptureTimer_) {
         clearTimeout(autoCaptureTimer_);
         autoCaptureTimer_ = null;
@@ -2550,7 +2553,7 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  // Horizontal head movement check
+  // Head micro-movement check
   motionSamples_.push(noseOffsetX);
   if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
     motionSamples_.shift();
@@ -2585,13 +2588,6 @@ function onFaceMeshResults_(results) {
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
     captureArmed_ = true;
     captureLocked_ = true;
-    startOneSecondCapture_();
-  }
-}
-  if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
-    captureArmed_ = true;
-    captureLocked_ = true;
-    // Keep Face Mesh running during the 1s (do NOT stop the loop here)
     startOneSecondCapture_();
   }
 }

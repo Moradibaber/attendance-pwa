@@ -2341,6 +2341,57 @@ let faceOkStreak_ = 0;
 let captureArmed_ = false; // true = 1s timer already started
 let captureLocked_ = false; // true while waiting 1s for photo
 let motionSamples_ = [];
+/* ========== Anti-Shake (real device accelerometer) ========== */
+let phoneMotionMag_ = 0;
+let phoneIsStable_ = false;
+let phoneStableSince_ = 0;
+const PHONE_STABLE_THRESHOLD = 1.6;   // lower = stricter (try 1.3–2.0)
+const PHONE_STABLE_MS = 700;          // must stay still this long
+
+function startPhoneMotionMonitor_() {
+  if (typeof DeviceMotionEvent !== "undefined" &&
+      typeof DeviceMotionEvent.requestPermission === "function") {
+    // iOS needs permission
+    DeviceMotionEvent.requestPermission()
+      .then((state) => {
+        if (state === "granted") {
+          window.addEventListener("devicemotion", onPhoneMotion_);
+        }
+      })
+      .catch(() => {});
+  } else {
+    window.addEventListener("devicemotion", onPhoneMotion_);
+  }
+}
+
+function stopPhoneMotionMonitor_() {
+  window.removeEventListener("devicemotion", onPhoneMotion_);
+  phoneIsStable_ = false;
+  phoneStableSince_ = 0;
+  phoneMotionMag_ = 0;
+}
+
+function onPhoneMotion_(e) {
+  const acc = e.accelerationIncludingGravity || e.acceleration;
+  if (!acc) return;
+
+  const mag = Math.sqrt(
+    (acc.x || 0) ** 2 +
+    (acc.y || 0) ** 2 +
+    (acc.z || 0) ** 2
+  );
+
+  // remove gravity ≈ 9.8
+  phoneMotionMag_ = Math.abs(mag - 9.81);
+
+  if (phoneMotionMag_ < PHONE_STABLE_THRESHOLD) {
+    if (!phoneStableSince_) phoneStableSince_ = Date.now();
+    phoneIsStable_ = (Date.now() - phoneStableSince_) >= PHONE_STABLE_MS;
+  } else {
+    phoneStableSince_ = 0;
+    phoneIsStable_ = false;
+  }
+}
 
 // Phone: softer. PC/webcam: stricter (harder with small move / hand)
 const isPcWebcam_ =
@@ -2460,7 +2511,29 @@ function onFaceMeshResults_(results) {
   }
 
   // Face still OK during the 1s wait → do not require more head movement
+   // Face still OK during the 1s wait → do not require more head movement
   if (captureLocked_) {
+    // If user starts shaking the phone during the countdown → cancel
+    if (!phoneIsStable_) {
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      if (countdownInterval_) {
+        clearInterval(countdownInterval_);
+        countdownInterval_ = null;
+      }
+      captureLocked_ = false;
+      captureArmed_ = false;
+      faceOkStreak_ = 0;
+      motionSamples_ = [];
+      if (instruction) {
+        instruction.innerHTML =
+          "گوشی لرزید<br><span style=\"color:#f87171;\">گوشی را ثابت نگه دارید و دوباره سر را کمی بچرخانید</span>";
+      }
+      return;
+    }
+
     if (instruction) {
       instruction.innerHTML =
         "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
@@ -2638,11 +2711,14 @@ async function openFrontCamera() {
     faceOkStreak_ = 0;
     if (countdownEl) countdownEl.textContent = "—";
 
-    if (instruction) {
+        if (instruction) {
       instruction.innerHTML =
         'صورت را در کادر قرار دهید<br>' +
         '<span style="color:#fbbf24;">فاصله حدود ۲۰–۲۵ سانتی‌متر</span>';
     }
+
+    // Start real phone-stability monitoring
+    startPhoneMotionMonitor_();
 
     await ensureFaceMesh_();
     if (faceMesh_) {
@@ -2663,6 +2739,8 @@ async function openFrontCamera() {
 function closeCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
+
+  stopPhoneMotionMonitor_();   // ← add this
 
   if (autoCaptureTimer_) {
     clearTimeout(autoCaptureTimer_);
@@ -2694,6 +2772,25 @@ function captureFromVideo() {
     clearInterval(countdownInterval_);
     countdownInterval_ = null;
   }
+
+  // === Anti-shake gate ===
+  if (!phoneIsStable_) {
+    const instruction = $("cameraInstruction");
+    if (instruction) {
+      instruction.innerHTML =
+        'گوشی در حال لرزش است<br><span style="color:#f87171;">گوشی را کاملاً ثابت نگه دارید و دوباره تلاش کنید</span>';
+    }
+    setStatus("گوشی را ثابت نگه دارید");
+    showGpsToast("گوشی را کاملاً ثابت نگه دارید", 3000, "error");
+
+    // reset so user can try again
+    captureArmed_ = false;
+    captureLocked_ = false;
+    faceOkStreak_ = 0;
+    motionSamples_ = [];
+    return; // do NOT take the photo
+  }
+  // =======================
 
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) {

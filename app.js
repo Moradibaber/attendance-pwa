@@ -2431,7 +2431,92 @@ async function ensureFaceMesh_() {
   faceMeshReady_ = true;
   return faceMesh_;
 }
+async function openFrontCamera() {
+  const overlay = $("cameraOverlay");
+  const video = $("cameraVideo");
+  const instruction = $("cameraInstruction");
+  const countdownEl = $("countdownText");
+
+  if (!overlay || !video) {
+    setStatus("خطا: المان دوربین پیدا نشد");
+    return;
+  }
+
+  // Clear previous timers
+  if (autoCaptureTimer_) {
+    clearTimeout(autoCaptureTimer_);
+    autoCaptureTimer_ = null;
+  }
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
+  }
+
+  try {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: "user" },
+        width:  { ideal: 1280, min: 640, max: 1920 },
+        height: { ideal: 720,  min: 480, max: 1080 }
+      }
+    };
+
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = cameraStream;
+
+    // Hide preview (no live preview)
+    video.style.opacity = "0";
+    video.style.filter = "brightness(0)";
+
+    overlay.style.display = "flex";
+    setStatus("لطفاً ثابت بمانید...");
+
+    if (instruction) {
+      instruction.innerHTML =
+        "گوشی را کاملاً ثابت نگه دارید<br>" +
+        "<span style=\"color:#fbbf24;\">منتظر ثبات گوشی...</span>";
+    }
+    if (countdownEl) {
+      countdownEl.textContent = "—";
+      countdownEl.style.color = "#fbbf24";
+    }
+
+    // Reset state
+    captureArmed_ = false;
+    captureLocked_ = false;
+    faceOkStreak_ = 0;
+    motionSamples_ = [];
+    recentMotionHistory_ = [];
+    phoneIsStable_ = false;
+    phoneStableSince_ = 0;
+
+    // Start motion monitoring
+    startPhoneMotionMonitor_();
+
+    // Start the stability → head movement flow
+    startThreeSecondCountdown_();
+
+    // Start FaceMesh (optional, for face presence)
+    await ensureFaceMesh_();
+    if (faceMesh_) {
+      stopFaceMeshLoop_();
+      tickFaceMesh_();
+    }
+
+  } catch (err) {
+    console.error("Camera error:", err);
+    setStatus("نمی‌توان دوربین سلفی را باز کرد. لطفاً دسترسی دوربین را مجاز کنید.");
+    closeCamera();
+  }
+}
 function onFaceMeshResults_(results) {
+  
   const instruction = $("cameraInstruction");
   const video = $("cameraVideo");
 
@@ -2442,15 +2527,8 @@ function onFaceMeshResults_(results) {
       "max-width:340px;text-align:center;";
   }
 
-  // No face detected
+  // No face
   if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
-    faceOkStreak_ = 0;
-    captureArmed_ = false;
-    captureLocked_ = false;
-    if (autoCaptureTimer_) {
-      clearTimeout(autoCaptureTimer_);
-      autoCaptureTimer_ = null;
-    }
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2469,13 +2547,6 @@ function onFaceMeshResults_(results) {
 
   // Distance check
   if (faceRatio < FACE_RATIO_MIN || faceRatio > FACE_RATIO_MAX) {
-    faceOkStreak_ = 0;
-    captureArmed_ = false;
-    captureLocked_ = false;
-    if (autoCaptureTimer_) {
-      clearTimeout(autoCaptureTimer_);
-      autoCaptureTimer_ = null;
-    }
     if (video) {
       video.style.opacity = "0";
       video.style.filter = "brightness(0)";
@@ -2488,124 +2559,13 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  // Face is in good position → now check phone stability
+  // Face is good → show video (optional)
   if (video) {
     video.style.opacity = "1";
     video.style.filter = "none";
   }
-
-  // === MAIN RULE: phone must be still for 3 seconds ===
-  if (!phoneIsStable_) {
-    // Phone is moving → reset everything
-    faceOkStreak_ = 0;
-    captureArmed_ = false;
-    captureLocked_ = false;
-    if (autoCaptureTimer_) {
-      clearTimeout(autoCaptureTimer_);
-      autoCaptureTimer_ = null;
-    }
-    if (countdownInterval_) {
-      clearInterval(countdownInterval_);
-      countdownInterval_ = null;
-    }
-    if (instruction) {
-      instruction.innerHTML =
-        "گوشی حرکت می‌کند<br><span style=\"color:#f87171;\">گوشی را کاملاً ثابت و بدون هیچ حرکتی نگه دارید</span>";
-    }
-    return;
-  }
-
-  // Phone is currently stable
-  if (!captureArmed_) {
-    // Start the 3-second process
-    captureArmed_ = true;
-    captureLocked_ = true;
-    startThreeSecondCapture_();
-  }
-}
-function startThreeSecondCapture_() {
-  const countdownEl = $("countdownText");
-  const instruction = $("cameraInstruction");
-
-  if (instruction) {
-    instruction.innerHTML =
-      "گوشی ثابت است<br><span style=\"color:#4ade80;\">۳ ثانیه بدون حرکت بمانید...</span>";
-  }
-  if (countdownEl) {
-    countdownEl.textContent = "۳";
-    countdownEl.style.color = "#4ade80";
-  }
-
-  let remaining = 3;
-
-  if (countdownInterval_) clearInterval(countdownInterval_);
-  countdownInterval_ = setInterval(() => {
-    // If phone moves during countdown → cancel immediately
-    if (!phoneIsStable_) {
-      clearInterval(countdownInterval_);
-      countdownInterval_ = null;
-      if (autoCaptureTimer_) {
-        clearTimeout(autoCaptureTimer_);
-        autoCaptureTimer_ = null;
-      }
-      captureArmed_ = false;
-      captureLocked_ = false;
-      if (instruction) {
-        instruction.innerHTML =
-          "حرکت تشخیص داده شد<br><span style=\"color:#f87171;\">دوباره گوشی را ثابت نگه دارید</span>";
-      }
-      return;
-    }
-
-    remaining--;
-    if (countdownEl) {
-      countdownEl.textContent = remaining > 0 ? String(remaining) : "۰";
-    }
-    if (remaining <= 0) {
-      clearInterval(countdownInterval_);
-      countdownInterval_ = null;
-    }
-  }, 1000);
-
-  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
-  autoCaptureTimer_ = setTimeout(() => {
-    autoCaptureTimer_ = null;
-
-    // Final check
-    if (!captureLocked_ || !phoneIsStable_) {
-      captureArmed_ = false;
-      captureLocked_ = false;
-      return;
-    }
-
-    // Success → take photo
-    captureLocked_ = false;
-    stopFaceMeshLoop_();
-    captureFromVideo();
-  }, 3000);
-}
-async function tickFaceMesh_() {
-  const video = $("cameraVideo");
-  if (!video || !faceMesh_ || video.readyState < 2) {
-    faceMeshRaf_ = requestAnimationFrame(tickFaceMesh_);
-    return;
-  }
-  try {
-    await faceMesh_.send({ image: video });
-  } catch (e) {}
-  faceMeshRaf_ = requestAnimationFrame(tickFaceMesh_);
 }
 
-function stopFaceMeshLoop_() {
-  if (faceMeshRaf_) {
-    cancelAnimationFrame(faceMeshRaf_);
-    faceMeshRaf_ = null;
-  }
-  faceOkStreak_ = 0;
-  captureArmed_ = false;
-  captureLocked_ = false;
-  motionSamples_ = [];
-}
 function startThreeSecondCountdown_() {
   const countdownEl = $("countdownText");
   const instruction = $("cameraInstruction");
@@ -2620,12 +2580,12 @@ function startThreeSecondCountdown_() {
     countdownEl.style.color = "#fbbf24";
   }
 
-  // Wait until phone becomes stable
+  // Wait until phone is stable
   const waitStableInterval = setInterval(() => {
     if (phoneIsStable_) {
       clearInterval(waitStableInterval);
 
-      // Phone is stable → go directly to head movement stage
+      // Phone is stable → ask user to move head
       captureArmed_ = true;
       startHeadMovementCountdown_();
     }
@@ -2641,58 +2601,7 @@ function startThreeSecondCountdown_() {
     }
   }, 15000);
 }
-function beginRealThreeSecondHold_() {
-  const countdownEl = $("countdownText");
-  const instruction = $("cameraInstruction");
 
-  if (instruction) {
-    instruction.innerHTML =
-      "گوشی ثابت است<br>" +
-      "<span style=\"color:#4ade80;\">۳ ثانیه بدون حرکت بمانید...</span>";
-  }
-  if (countdownEl) {
-    countdownEl.textContent = "۳";
-    countdownEl.style.color = "#4ade80";
-  }
-
-  let remaining = 3;
-
-  if (countdownInterval_) clearInterval(countdownInterval_);
-  countdownInterval_ = setInterval(() => {
-    // If phone moves during the 3 seconds → cancel and go back
-    if (!phoneIsStable_) {
-      clearInterval(countdownInterval_);
-      countdownInterval_ = null;
-      if (autoCaptureTimer_) {
-        clearTimeout(autoCaptureTimer_);
-        autoCaptureTimer_ = null;
-      }
-      captureArmed_ = false;
-      faceOkStreak_ = 0;
-
-      if (instruction) {
-        instruction.innerHTML =
-          "حرکت تشخیص داده شد<br><span style=\"color:#f87171;\">دوباره گوشی را کاملاً ثابت نگه دارید</span>";
-      }
-
-      // Restart the whole process
-      setTimeout(() => {
-        startThreeSecondCountdown_();
-      }, 1200);
-      return;
-    }
-
-    remaining--;
-    if (countdownEl) {
-      countdownEl.textContent = remaining > 0 ? String(remaining) : "۰";
-    }
-
-    if (remaining <= 0) {
-      clearInterval(countdownInterval_);
-      countdownInterval_ = null;
-
-      // 3 seconds completed successfully → go to head movement stage
-      captureArmed_ = true;
 function startHeadMovementCountdown_() {
   const countdownEl = $("countdownText");
   const instruction = $("cameraInstruction");
@@ -2726,7 +2635,7 @@ function startHeadMovementCountdown_() {
       clearInterval(countdownInterval_);
       countdownInterval_ = null;
 
-      // Time finished → take the photo
+      // Take the photo
       captureArmed_ = false;
       captureLocked_ = false;
       stopFaceMeshLoop_();
@@ -2741,13 +2650,37 @@ function startHeadMovementCountdown_() {
     captureLocked_ = false;
   }, 2500);
 }
- 
+
+async function tickFaceMesh_() {
+  const video = $("cameraVideo");
+  if (!video || !faceMesh_ || video.readyState < 2) {
+    faceMeshRaf_ = requestAnimationFrame(tickFaceMesh_);
+    return;
+  }
+  try {
+    await faceMesh_.send({ image: video });
+  } catch (e) {}
+  faceMeshRaf_ = requestAnimationFrame(tickFaceMesh_);
+}
+
+function stopFaceMeshLoop_() {
+  if (faceMeshRaf_) {
+    cancelAnimationFrame(faceMeshRaf_);
+    faceMeshRaf_ = null;
+  }
+  faceOkStreak_ = 0;
+  captureArmed_ = false;
+  captureLocked_ = false;
+  motionSamples_ = [];
+}
+
 function closeCamera() {
   const overlay = $("cameraOverlay");
   const video = $("cameraVideo");
 
-  stopPhoneMotionMonitor_();   // ← add this
-  recentMotionHistory_ = []; // ← put it here
+  stopPhoneMotionMonitor_();
+  recentMotionHistory_ = [];
+
   if (autoCaptureTimer_) {
     clearTimeout(autoCaptureTimer_);
     autoCaptureTimer_ = null;
@@ -2757,11 +2690,12 @@ function closeCamera() {
     countdownInterval_ = null;
   }
   stopFaceMeshLoop_();
+
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;
   }
-    if (video) {
+  if (video) {
     video.style.opacity = "1";
     video.style.filter = "none";
     video.srcObject = null;
@@ -2779,7 +2713,7 @@ function captureFromVideo() {
     countdownInterval_ = null;
   }
 
-    // === Strong Anti-shake gate ===
+  // Final stability check
   const maxRecentMotion = recentMotionHistory_.length
     ? Math.max(...recentMotionHistory_)
     : 99;
@@ -2787,7 +2721,7 @@ function captureFromVideo() {
   const isReallyStable =
     phoneIsStable_ &&
     phoneMotionMag_ < PHONE_STABLE_THRESHOLD &&
-    maxRecentMotion < PHONE_STABLE_THRESHOLD * 1.35;
+    maxRecentMotion < PHONE_STABLE_THRESHOLD * 1.4;
 
   if (!isReallyStable) {
     const instruction = $("cameraInstruction");
@@ -2798,15 +2732,14 @@ function captureFromVideo() {
     setStatus("گوشی را کاملاً ثابت نگه دارید");
     showGpsToast("گوشی را کاملاً ثابت و بدون لرزش نگه دارید", 3200, "error");
 
-    // reset so user can try again
     captureArmed_ = false;
     captureLocked_ = false;
     faceOkStreak_ = 0;
     motionSamples_ = [];
     recentMotionHistory_ = [];
-    return; // do NOT take the photo
+    return;
   }
-  // ==============================
+
   const video = $("cameraVideo");
   if (!video || !video.videoWidth) {
     setStatus("ویدیو هنوز آماده نیست");
@@ -2831,165 +2764,6 @@ function captureFromVideo() {
     const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
     await processCapturedPhoto(file);
   }, "image/jpeg", 0.92);
-}
-async function processCapturedPhoto(file) {
-  if (isProcessingPhoto_) return;
-  isProcessingPhoto_ = true;
-
-  try {
-    setBusy(true, "در حال آماده‌سازی عکس...");
-    setStatus("در حال آماده‌سازی عکس...");
-    photoSelectedAtMs = Date.now();
-
-    // 1) Compress FIRST — no network
-    currentPhoto = await compressImage(file);
-    photoCompressedAtMs = Date.now();
-
-    const preview = $("photoPreview");
-    if (preview) {
-      preview.src = "";
-      preview.style.display = "none";
-    }
-    
-    // 1b) face-api.js descriptor
-       // 1b) face-api.js descriptor
-    let faceDescriptor = null;
-    try {
-      setBusy(true, "در حال بررسی چهره...");
-      setStatus("در حال بررسی چهره...");
-      // make sure models are loaded
-      await ensureFaceApiReady_();
-      let faceRes = await extractFaceDescriptor_(currentPhoto);
-      // one retry if first try failed
-      if (!faceRes || !faceRes.descriptor) {
-        await new Promise((r) => setTimeout(r, 400));
-        faceRes = await extractFaceDescriptor_(currentPhoto);
-      }
-            if (faceRes && faceRes.descriptor) {
-        faceDescriptor = faceRes.descriptor;
-
-        // Block small / off-center faces (e.g. face on a laptop screen)
-        // if (faceRes.box) {
-        //   const img = await new Promise(function (resolve, reject) {
-        //     const im = new Image();
-        //     im.onload = function () {
-        //       resolve(im);
-        //     };
-        //     im.onerror = reject;
-        //     im.src = currentPhoto;
-        //   });
-        //   const w = img.width || 1;
-        //   const h = img.height || 1;
-        //   const box = faceRes.box;
-        //   const faceArea = (box.width * box.height) / (w * h);
-        //   const cx = box.x + box.width / 2;
-        //   const cy = box.y + box.height / 2;
-        //   const dist =
-        //     Math.sqrt(Math.pow(cx / w - 0.5, 2) + Math.pow(cy / h - 0.5, 2));
-
-        //   // face must cover enough of the photo and be near center
-        //  if (faceArea < 0.08 || dist > 0.28) {
-        //     setBusy(false);
-        //     setStatus(
-        //       "صورت باید بزرگ‌تر و نزدیک وسط کادر باشد.\nدوباره عکس بگیرید."
-        //     );
-        //     showGpsToast(
-        //       "صورت خیلی کوچک یا خارج از مرکز است",
-        //       4000,
-        //       "error"
-        //     );
-        //     currentPhoto = "";
-        //     faceDescriptor = null;
-        //     return;
-        //   }
-        // }
-      }
-    } catch (e) {
-      console.warn("descriptor extract failed", e);
-    }
-
-    //           if (await hasStrongGlare_(currentPhoto)) {
-    //   setBusy(false);
-    //   setStatus("نور شدید یا بازتاب روی عکس است. دوباره با نور یکنواخت عکس بگیرید.");
-    //   showGpsToast("بازتاب نور زیاد است\nدوباره عکس بگیرید", 4000, "error");
-    //   currentPhoto = "";
-    //   return;
-    // }
-    // 2) Local profile only (no server)    // 2) Local profile only (no server)
-    try {
-      const profile = getProfileFromInputs();
-      const saved = await dbGet(STORE_PROFILE, "main");
-      if (!profile.password && saved && saved.password) {
-        profile.password = saved.password;
-      }
-      if (profile.personnelCode && profile.firstName && profile.lastName) {
-        await dbPut(STORE_PROFILE, { id: "main", ...profile });
-        cachedProfile_ = { id: "main", ...profile };
-      }
-    } catch (_) {}
-
-    // 3) Policy from cache only (no await network)
-    const policyInfo = cachedPolicyInfo_ || { attendancePolicy: DEFAULT_ATTENDANCE_POLICY };
-    const gate = evaluateAttendancePolicy(
-      policyInfo.attendancePolicy || DEFAULT_ATTENDANCE_POLICY,
-      navigator.onLine
-    );
-    if (!gate.ok) {
-      setBusy(false);
-      setStatus(gate.message);
-      currentPhoto = "";
-      return;
-    }
-
-    // 4) GPS
-    if (!isGeolocationUsable()) {
-      setBusy(false);
-      setStatus(
-        "GPS در دسترس نیست.\nلطفاً مطمئن شوید سایت با HTTPS باز شده و Location گوشی روشن است."
-      );
-      return;
-    }
-
-    setBusy(true, "در حال دریافت GPS...");
-    setStatus("در حال دریافت GPS... اگر پیام دسترسی آمد، گزینه Allow یا مجاز را بزنید.");
-    pendingLocation = await getLocationIOSFriendly();
-
-    if (!hasValidLocation(pendingLocation)) {
-      setBusy(false);
-      if (pendingLocation?.status === "denied") {
-        setStatus(
-          "دسترسی GPS رد شد.\nتردد ذخیره نمی‌شود. لطفاً Location را برای این سایت مجاز کنید و دوباره تلاش کنید."
-        );
-        return;
-      }
-      if (pendingLocation?.status === "unavailable") {
-        setStatus("موقعیت مکانی در دسترس نیست.\nلطفاً GPS گوشی را روشن کنید.");
-        return;
-      }
-      if (pendingLocation?.status === "timeout") {
-        setStatus(
-          "زمان دریافت GPS تمام شد.\nلطفاً در فضای بازتر قرار بگیرید و دوباره تلاش کنید."
-        );
-        return;
-      }
-      setStatus("GPS دریافت نشد.\nلطفاً Location را روشن و دسترسی را مجاز کنید.");
-      return;
-    }
-
-    // 5) Save once
-    setBusy(true, "در حال ذخیره تردد...");
-    setStatus("در حال ذخیره تردد...");
-        await createRecord("تردد", faceDescriptor);
-    setBusy(false);
-    setStatus("عکس تأیید و ارسال می‌شود.");
-    showGpsToast("عکس تأیید شد\nدر حال ارسال... کمی صبر کنید، ادمین سیستم عکس را بررسی خواهد نمود", 8000, "success");
-  } catch (err) {
-    console.error(err);
-    setBusy(false);
-    setStatus("خطا در پردازش عکس یا ثبت تردد");
-  } finally {
-    isProcessingPhoto_ = false;
-  }
 }
 /* =========================
    Jalali -> Gregorian (helpers)

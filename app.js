@@ -2515,7 +2515,7 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  // Face still OK during the 1s wait
+    // Face still OK during the 1s wait
   if (captureLocked_) {
     // Stricter check during the 1-second countdown
     const maxRecent = recentMotionHistory_.length
@@ -2543,6 +2543,12 @@ function onFaceMeshResults_(results) {
       return;
     }
 
+    if (instruction) {
+      instruction.innerHTML =
+        "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
+    }
+    return;
+  }
     if (instruction) {
       instruction.innerHTML =
         "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";

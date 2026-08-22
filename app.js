@@ -2500,6 +2500,7 @@ function onFaceMeshResults_(results) {
     }
     return;
   }
+
   if (faceRatio > FACE_RATIO_MAX) {
     faceOkStreak_ = 0;
     motionSamples_ = [];
@@ -2515,9 +2516,8 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-    // Face still OK during the 1s wait
+  // Face still OK during the 1s wait
   if (captureLocked_) {
-    // Stricter check during the 1-second countdown
     const maxRecent = recentMotionHistory_.length
       ? Math.max(...recentMotionHistory_)
       : 99;
@@ -2543,12 +2543,6 @@ function onFaceMeshResults_(results) {
       return;
     }
 
-  //   if (instruction) {
-  //     instruction.innerHTML =
-  //       "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
-  //   }
-  //   return;
-  // }
     if (instruction) {
       instruction.innerHTML =
         "ثابت بمانید<br><span style=\"color:#4ade80;\">عکس تا لحظاتی دیگر...</span>";
@@ -2556,10 +2550,8 @@ function onFaceMeshResults_(results) {
     return;
   }
 
-  // Horizontal = head turn; vertical = phone tilt up/down (ignore)
-  const noseOffsetY = nose.y - ((top.y + bottom.y) / 2);
+  // Horizontal head movement check
   motionSamples_.push(noseOffsetX);
- 
   if (motionSamples_.length > MOTION_SAMPLES_NEEDED) {
     motionSamples_.shift();
   }
@@ -2570,12 +2562,12 @@ function onFaceMeshResults_(results) {
     if (motionSamples_[i] < minO) minO = motionSamples_[i];
     if (motionSamples_[i] > maxO) maxO = motionSamples_[i];
   }
+
   const hasMicroMotion =
     motionSamples_.length >= MOTION_SAMPLES_NEEDED &&
     maxO - minO >= MIN_NOSE_SHIFT;
+
   if (!hasMicroMotion) {
-    faceOkStreak_ = 0;
-     if (!hasMicroMotion) {
     faceOkStreak_ = 0;
     if (instruction) {
       instruction.innerHTML =
@@ -2595,7 +2587,7 @@ function onFaceMeshResults_(results) {
     captureLocked_ = true;
     startOneSecondCapture_();
   }
-
+}
   if (!captureArmed_ && faceOkStreak_ >= FACE_OK_FRAMES) {
     captureArmed_ = true;
     captureLocked_ = true;

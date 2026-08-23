@@ -2462,22 +2462,24 @@ async function openFrontCamera() {
       audio: false,
       video: {
         facingMode: { ideal: "user" },
-        width:  { ideal: 1280, min: 640, max: 1920 },
-        height: { ideal: 720,  min: 480, max: 1080 }
+        width:  { ideal: 1280, min: 640 },
+        height: { ideal: 720,  min: 480 }
       }
     };
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
-    // NEVER show preview
-    video.style.opacity = "0";
-    video.style.filter = "brightness(0)";
+    // Make video almost invisible but still processed by browser
+    video.style.opacity = "0.02";
+    video.style.filter = "none";
+    video.style.position = "absolute";
+    video.style.zIndex = "1";
 
     overlay.style.display = "flex";
     setStatus("لطفاً ثابت بمانید...");
 
-    // Reset everything
+    // Reset state
     captureArmed_ = false;
     captureLocked_ = false;
     faceOkStreak_ = 0;
@@ -2488,6 +2490,7 @@ async function openFrontCamera() {
 
     if (instruction) {
       instruction.innerHTML = "گوشی را ثابت نگه دارید";
+      instruction.style.zIndex = "10";
     }
     if (countdownEl) {
       countdownEl.textContent = "";
@@ -2503,7 +2506,7 @@ async function openFrontCamera() {
       tickFaceMesh_();
     }
 
-    // Start waiting for 3 seconds of stillness
+    // Start waiting for phone to be still
     startStabilityWait_();
 
   } catch (err) {
@@ -2516,22 +2519,20 @@ function onFaceMeshResults_(results) {
   const instruction = $("cameraInstruction");
   const video = $("cameraVideo");
 
-  // Always keep preview hidden
+  // Keep video almost invisible
   if (video) {
-    video.style.opacity = "0";
-    video.style.filter = "brightness(0)";
+    video.style.opacity = "0.02";
   }
 
   if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
     return;
   }
 
-  // Only work after phone is stable and we are waiting for head movement
+  // Only after we are waiting for head movement
   if (!captureArmed_) return;
 
-  // Phone must still be stable while moving the head
+  // Phone must stay still even while moving the head
   if (!phoneIsStable_) {
-    // Phone moved → cancel and go back to stability wait
     captureArmed_ = false;
     if (autoCaptureTimer_) {
       clearTimeout(autoCaptureTimer_);
@@ -2540,10 +2541,7 @@ function onFaceMeshResults_(results) {
     if (instruction) {
       instruction.innerHTML = "گوشی حرکت کرد<br><span style=\"color:#f87171;\">دوباره گوشی را ثابت نگه دارید</span>";
     }
-    // Restart stability process
-    setTimeout(() => {
-      startStabilityWait_();
-    }, 1200);
+    setTimeout(() => startStabilityWait_(), 1000);
     return;
   }
 
@@ -2552,20 +2550,19 @@ function onFaceMeshResults_(results) {
   const faceCenterX = (lm[234].x + lm[454].x) / 2;
   const noseOffsetX = nose.x - faceCenterX;
 
-  // Collect nose movement
   motionSamples_.push(noseOffsetX);
-  if (motionSamples_.length > 20) {
+  if (motionSamples_.length > 18) {
     motionSamples_.shift();
   }
 
-  if (motionSamples_.length < 14) return;
+  if (motionSamples_.length < 12) return;
 
   const minO = Math.min(...motionSamples_);
   const maxO = Math.max(...motionSamples_);
-  const hasHeadMove = (maxO - minO) >= 0.08;
+  const hasHeadMove = (maxO - minO) >= 0.07;
 
   if (hasHeadMove) {
-    // Head movement detected + phone is still stable → take photo
+    // Head moved + phone is still stable → take photo now
     captureArmed_ = false;
     if (autoCaptureTimer_) {
       clearTimeout(autoCaptureTimer_);
@@ -2683,29 +2680,37 @@ function captureFromVideo() {
   }
 
   const video = $("cameraVideo");
-  if (!video) {
-    setStatus("ویدیو پیدا نشد");
+  if (!video || !video.videoWidth) {
+    setStatus("ویدیو هنوز آماده نیست - دوباره تلاش کنید");
     closeCamera();
     return;
   }
 
-  // Make sure we have a valid frame even if video is hidden
-  if (!video.videoWidth || video.videoWidth < 100) {
-    // Wait a little for the video to be ready
-    setTimeout(() => {
-      if (video.videoWidth > 100) {
-        doCapture(video);
-      } else {
-        setStatus("ویدیو هنوز آماده نیست");
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    canvas.toBlob(async (blob) => {
+      if (!blob || blob.size < 5000) {
+        setStatus("عکس گرفته نشد - دوباره تلاش کنید");
         closeCamera();
+        return;
       }
-    }, 400);
-    return;
+
+      closeCamera();
+      const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+      await processCapturedPhoto(file);
+    }, "image/jpeg", 0.92);
+
+  } catch (err) {
+    console.error("Capture error:", err);
+    setStatus("خطا در گرفتن عکس");
+    closeCamera();
   }
-
-  doCapture(video);
 }
-
 function doCapture(video) {
   try {
     const canvas = document.createElement("canvas");

@@ -2471,7 +2471,7 @@ async function openFrontCamera() {
     video.srcObject = cameraStream;
 
     // Make video almost invisible but still processed by browser
-    video.style.opacity = "0.02";
+    video.style.opacity = "0.03";
     video.style.filter = "none";
     video.style.position = "absolute";
     video.style.zIndex = "1";
@@ -2574,7 +2574,6 @@ function onFaceMeshResults_(results) {
 }
 function startStabilityWait_() {
   const instruction = $("cameraInstruction");
-
   if (instruction) {
     instruction.innerHTML = "گوشی را ثابت نگه دارید";
   }
@@ -2583,24 +2582,62 @@ function startStabilityWait_() {
     if (phoneIsStable_) {
       clearInterval(checkInterval);
 
-      // Phone is stable → ask for head movement
+      // Phone is stable → show head message and start fixed timer
       if (instruction) {
-        instruction.innerHTML =
-          "سر را کمی به چپ یا راست بچرخانید<br>" +
-          "<span style=\"color:#4ade80;\">حرکت سر را انجام دهید</span>";
+        instruction.innerHTML = "سر را کمی به چپ یا راست بچرخانید";
       }
-      startWaitingForHeadMove_();
+      startFixedHeadTimer_();
     }
   }, 200);
 
+  // Safety
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
     clearInterval(checkInterval);
     if (instruction) {
-      instruction.innerHTML = "گوشی هنوز ثابت نشده<br><span style=\"color:#f87171;\">لطفاً گوشی را کاملاً ثابت نگه دارید</span>";
+      instruction.innerHTML = "گوشی هنوز ثابت نشده<br><span style=\"color:#f87171;\">دوباره تلاش کنید</span>";
     }
   }, 15000);
-  
+}
+function startFixedHeadTimer_() {
+  const instruction = $("cameraInstruction");
+  captureArmed_ = true;
+
+  // Phone must stay still during these 2.5 seconds
+  const checkStill = setInterval(() => {
+    if (!phoneIsStable_) {
+      // Phone moved → cancel and go back
+      clearInterval(checkStill);
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      captureArmed_ = false;
+      if (instruction) {
+        instruction.innerHTML = "گوشی حرکت کرد<br><span style=\"color:#f87171;\">دوباره گوشی را ثابت نگه دارید</span>";
+      }
+      setTimeout(() => startStabilityWait_(), 1200);
+    }
+  }, 150);
+
+  // After 2.5 seconds → take the photo
+  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+  autoCaptureTimer_ = setTimeout(() => {
+    clearInterval(checkStill);
+    captureArmed_ = false;
+
+    if (phoneIsStable_) {
+      // Still stable → take photo
+      stopFaceMeshLoop_();
+      captureFromVideo();
+    } else {
+      // Not stable → restart
+      if (instruction) {
+        instruction.innerHTML = "گوشی حرکت کرد<br><span style=\"color:#f87171;\">دوباره تلاش کنید</span>";
+      }
+      setTimeout(() => startStabilityWait_(), 1200);
+    }
+  }, 2500);
 }
 function startWaitingForHeadMove_() {
   motionSamples_ = [];
@@ -2680,33 +2717,52 @@ function captureFromVideo() {
   }
 
   const video = $("cameraVideo");
-  if (!video || !video.videoWidth) {
-    setStatus("ویدیو هنوز آماده نیست - دوباره تلاش کنید");
+  if (!video) {
+    setStatus("خطا در دوربین");
     closeCamera();
     return;
   }
 
+  // Force video to be ready
+  if (video.readyState < 2 || !video.videoWidth) {
+    setStatus("در حال آماده‌سازی عکس...");
+    setTimeout(() => {
+      if (video.videoWidth > 100) {
+        takeRealPhoto(video);
+      } else {
+        setStatus("عکس گرفته نشد - دوباره تلاش کنید");
+        closeCamera();
+      }
+    }, 600);
+    return;
+  }
+
+  takeRealPhoto(video);
+}
+
+function takeRealPhoto(video) {
   try {
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     canvas.toBlob(async (blob) => {
-      if (!blob || blob.size < 5000) {
+      if (!blob || blob.size < 3000) {
         setStatus("عکس گرفته نشد - دوباره تلاش کنید");
         closeCamera();
         return;
       }
 
+      // Success
       closeCamera();
       const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
       await processCapturedPhoto(file);
-    }, "image/jpeg", 0.92);
+    }, "image/jpeg", 0.91);
 
   } catch (err) {
-    console.error("Capture error:", err);
+    console.error(err);
     setStatus("خطا در گرفتن عکس");
     closeCamera();
   }

@@ -1376,18 +1376,39 @@ async function processCapturedPhoto(file) {
       }
     } catch (_) {}
 
-    // Face descriptor (optional — still save if models fail)
+    // Face required — reject photo of screen / no face / too far
     setStatus("در حال تشخیص چهره...");
     let faceDescriptor = null;
     try {
       const face = await extractFaceDescriptor_(currentPhoto);
       if (face && Array.isArray(face.descriptor)) {
         faceDescriptor = face.descriptor;
+        // Reject if face box is tiny (often a photo-of-a-screen or far away)
+        if (face.box) {
+          const area = (face.box.width || 0) * (face.box.height || 0);
+          // relative to compressed image ~400–640 side; reject very small faces
+          if (area > 0 && area < 8000) {
+            setStatus("صورت خیلی کوچک است. دوربین را نزدیک‌تر بگیرید.");
+            showGpsToast("⚠️ صورت واضح و نزدیک‌تر بگیرید (نه عکس از مانیتور)", 4000, "error");
+            setBusy(false);
+            currentPhoto = "";
+            return;
+          }
+        }
       } else {
-        console.warn("No face descriptor — continuing without it");
+        setStatus("صورت در عکس پیدا نشد. دوباره تلاش کنید.");
+        showGpsToast("⚠️ صورت پیدا نشد — روبه‌روی دوربین بایستید", 4000, "error");
+        setBusy(false);
+        currentPhoto = "";
+        return;
       }
     } catch (e) {
       console.warn("face extract failed", e);
+      setStatus("خطا در تشخیص چهره");
+      showGpsToast("خطا در تشخیص چهره — دوباره تلاش کنید", 3500, "error");
+      setBusy(false);
+      currentPhoto = "";
+      return;
     }
 
     // GPS (required when GPS_REQUIRED is true)
@@ -2443,8 +2464,8 @@ let motionSamples_ = [];
 let phoneMotionMag_ = 0;
 let phoneIsStable_ = false;
 let phoneStableSince_ = 0;
-const PHONE_STABLE_THRESHOLD = 1.35;
-const PHONE_STABLE_MS = 3000;
+const PHONE_STABLE_THRESHOLD = 0.85;  // stricter: small phone tilt counts as move
+const PHONE_STABLE_MS = 2500;          // must stay still this long before head-move phase
 let recentMotionHistory_ = [];
 
 const isPcWebcam_ =

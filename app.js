@@ -2582,22 +2582,74 @@ function startStabilityWait_() {
     if (phoneIsStable_) {
       clearInterval(checkInterval);
 
-      // Phone is stable → show head message and start fixed timer
       if (instruction) {
-        instruction.innerHTML = "سر را کمی به چپ یا راست بچرخانید";
+        instruction.innerHTML = "سر را کمی به چپ یا راست بچرخانید<br><span style='color:#4ade80'>۲ ثانیه صبر کنید...</span>";
       }
-      startFixedHeadTimer_();
+
+      // Force take photo after 2.5 seconds (no more conditions)
+      if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+      autoCaptureTimer_ = setTimeout(() => {
+        console.log("FORCING PHOTO NOW");
+        stopFaceMeshLoop_();
+        forceTakePhoto();
+      }, 2500);
     }
   }, 200);
 
-  // Safety
+  // Safety timeout
   if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
   autoCaptureTimer_ = setTimeout(() => {
     clearInterval(checkInterval);
     if (instruction) {
-      instruction.innerHTML = "گوشی هنوز ثابت نشده<br><span style=\"color:#f87171;\">دوباره تلاش کنید</span>";
+      instruction.innerHTML = "زمان تمام شد - دوباره تلاش کنید";
     }
-  }, 15000);
+  }, 20000);
+}
+function forceTakePhoto() {
+  const video = $("cameraVideo");
+  const instruction = $("cameraInstruction");
+
+  if (!video) {
+    setStatus("ویدیو پیدا نشد");
+    closeCamera();
+    return;
+  }
+
+  setStatus("در حال گرفتن عکس...");
+
+  // Make sure video is ready
+  if (video.readyState < 2 || video.videoWidth < 100) {
+    setTimeout(() => forceTakePhoto(), 500);
+    return;
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0);
+
+    canvas.toBlob(async (blob) => {
+      if (!blob || blob.size < 2000) {
+        setStatus("عکس خالی بود - دوباره تلاش کنید");
+        closeCamera();
+        return;
+      }
+
+      // SUCCESS - close camera and process
+      closeCamera();
+      setStatus("عکس گرفته شد - در حال ارسال...");
+      
+      const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
+      await processCapturedPhoto(file);
+    }, "image/jpeg", 0.92);
+
+  } catch (err) {
+    console.error("forceTakePhoto error:", err);
+    setStatus("خطا در گرفتن عکس: " + err.message);
+    closeCamera();
+  }
 }
 function startFixedHeadTimer_() {
   const instruction = $("cameraInstruction");
@@ -2706,40 +2758,42 @@ function closeCamera() {
   }
   if (overlay) overlay.style.display = "none";
 }
+// function captureFromVideo() {
+//   if (autoCaptureTimer_) {
+//     clearTimeout(autoCaptureTimer_);
+//     autoCaptureTimer_ = null;
+//   }
+//   if (countdownInterval_) {
+//     clearInterval(countdownInterval_);
+//     countdownInterval_ = null;
+//   }
+
+//   const video = $("cameraVideo");
+//   if (!video) {
+//     setStatus("خطا در دوربین");
+//     closeCamera();
+//     return;
+//   }
+
+//   // Force video to be ready
+//   if (video.readyState < 2 || !video.videoWidth) {
+//     setStatus("در حال آماده‌سازی عکس...");
+//     setTimeout(() => {
+//       if (video.videoWidth > 100) {
+//         takeRealPhoto(video);
+//       } else {
+//         setStatus("عکس گرفته نشد - دوباره تلاش کنید");
+//         closeCamera();
+//       }
+//     }, 600);
+//     return;
+//   }
+
+//   takeRealPhoto(video);
+// }
 function captureFromVideo() {
-  if (autoCaptureTimer_) {
-    clearTimeout(autoCaptureTimer_);
-    autoCaptureTimer_ = null;
-  }
-  if (countdownInterval_) {
-    clearInterval(countdownInterval_);
-    countdownInterval_ = null;
-  }
-
-  const video = $("cameraVideo");
-  if (!video) {
-    setStatus("خطا در دوربین");
-    closeCamera();
-    return;
-  }
-
-  // Force video to be ready
-  if (video.readyState < 2 || !video.videoWidth) {
-    setStatus("در حال آماده‌سازی عکس...");
-    setTimeout(() => {
-      if (video.videoWidth > 100) {
-        takeRealPhoto(video);
-      } else {
-        setStatus("عکس گرفته نشد - دوباره تلاش کنید");
-        closeCamera();
-      }
-    }, 600);
-    return;
-  }
-
-  takeRealPhoto(video);
+  forceTakePhoto();
 }
-
 function takeRealPhoto(video) {
   try {
     const canvas = document.createElement("canvas");

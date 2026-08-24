@@ -2704,13 +2704,21 @@ function onFaceMeshResults_(results) {
   const maxO = Math.max(...motionSamples_);
   const hasHeadMove = (maxO - minO) >= HEAD_MOVE_THRESHOLD;
 
-  if (hasHeadMove) {
+   if (hasHeadMove) {
+    // Head moved + phone still stable → take photo now
     captureArmed_ = false;
     captureLocked_ = true;
-    clearCameraTimers_();
+    if (autoCaptureTimer_) {
+      clearTimeout(autoCaptureTimer_);
+      autoCaptureTimer_ = null;
+    }
+    if (stabilityCheckInterval_) {
+      clearInterval(stabilityCheckInterval_);
+      stabilityCheckInterval_ = null;
+    }
     stopFaceMeshLoop_();
-    if (instruction) {
-      instruction.innerHTML = "در حال گرفتن عکس...";
+    if ($("cameraInstruction")) {
+      $("cameraInstruction").innerHTML = "در حال گرفتن عکس...";
     }
     forceTakePhoto();
   }
@@ -2822,10 +2830,11 @@ function startWaitingForHeadMove_() {
   if (instruction) {
     instruction.innerHTML =
       "سر را کمی به چپ یا راست بچرخانید<br>" +
-      "<span style=\"color:#4ade80\">گوشی را ثابت نگه دارید — فقط سر را حرکت دهید</span><br>" +
-      "<span style=\"font-size:0.85em;opacity:0.85\">تا وقتی سر را نچرخانید عکس گرفته نمی‌شود</span>";
+      "<span style=\"color:#4ade80\">فقط ۲ ثانیه فرصت دارید</span><br>" +
+      "<span style=\"font-size:0.85em;opacity:0.85\">گوشی را اصلاً حرکت ندهید</span>";
   }
 
+  // Watch phone stability during the 2 seconds
   if (stabilityCheckInterval_) {
     clearInterval(stabilityCheckInterval_);
     stabilityCheckInterval_ = null;
@@ -2840,8 +2849,28 @@ function startWaitingForHeadMove_() {
       abortBecausePhoneMoved_();
     }
   }, 150);
-}
 
+  // Exactly 2 seconds — if no head move → restart from the beginning
+  if (autoCaptureTimer_) clearTimeout(autoCaptureTimer_);
+  autoCaptureTimer_ = setTimeout(() => {
+    if (captureLocked_ || !captureArmed_) return;
+
+    captureArmed_ = false;
+    if (stabilityCheckInterval_) {
+      clearInterval(stabilityCheckInterval_);
+      stabilityCheckInterval_ = null;
+    }
+
+    if (instruction) {
+      instruction.innerHTML =
+        "زمان تمام شد<br><span style=\"color:#f87171;\">دوباره از اول — گوشی را ثابت نگه دارید</span>";
+    }
+    // Restart from fix-phone phase (no photo taken)
+    setTimeout(() => {
+      if (!captureLocked_) startStabilityWait_();
+    }, 1200);
+  }, 2000); // ← 2 seconds only
+}
 function forceTakePhoto() {
   const video = $("cameraVideo");
 

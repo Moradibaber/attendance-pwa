@@ -2464,8 +2464,12 @@ let motionSamples_ = [];
 let phoneMotionMag_ = 0;
 let phoneIsStable_ = false;
 let phoneStableSince_ = 0;
-const PHONE_STABLE_THRESHOLD = 0.85;  // stricter: small phone tilt counts as move
-const PHONE_STABLE_MS = 2500;          // must stay still this long before head-move phase
+const isIOS_ =
+  /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+const PHONE_STABLE_THRESHOLD = isIOS_ ? 1.8 : 0.85;
+const PHONE_STABLE_MS = isIOS_ ? 2000 : 2500;
 let recentMotionHistory_ = [];
 
 const isPcWebcam_ =
@@ -2493,12 +2497,16 @@ function clearCameraTimers_() {
 }
 
 function startPhoneMotionMonitor_() {
+  // iOS: request permission (must be from user gesture — already inside button click)
   if (typeof DeviceMotionEvent !== "undefined" &&
       typeof DeviceMotionEvent.requestPermission === "function") {
     DeviceMotionEvent.requestPermission()
       .then((state) => {
         if (state === "granted") {
           window.addEventListener("devicemotion", onPhoneMotion_);
+        } else {
+          // Permission denied → treat as "no motion sensor" and use timed fallback
+          console.warn("iOS DeviceMotion permission denied");
         }
       })
       .catch(() => {});
@@ -2506,7 +2514,6 @@ function startPhoneMotionMonitor_() {
     window.addEventListener("devicemotion", onPhoneMotion_);
   }
 }
-
 function stopPhoneMotionMonitor_() {
   window.removeEventListener("devicemotion", onPhoneMotion_);
   phoneIsStable_ = false;
@@ -2602,7 +2609,15 @@ async function openFrontCamera() {
 
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
-
+    video.setAttribute("playsinline", "true");
+video.setAttribute("webkit-playsinline", "true");
+video.muted = true;
+video.playsInline = true;
+try {
+  await video.play();
+} catch (e) {
+  console.warn("video.play() failed", e);
+}
     // === NEW: THIS IS THE KEY FOR iPHONE ===
     video.setAttribute("playsinline", "true");
     video.setAttribute("webkit-playsinline", "true");
@@ -2737,23 +2752,48 @@ function startStabilityWait_() {
       "گوشی را ثابت نگه دارید<br><span style=\"font-size:0.9em;opacity:0.9\">تا گرفتن عکس، گوشی نباید حرکت کند</span>";
   }
 
+  // ---------- Android / devices with working motion ----------
   stabilityCheckInterval_ = setInterval(() => {
     if (captureLocked_) {
       clearInterval(stabilityCheckInterval_);
       stabilityCheckInterval_ = null;
       return;
     }
-    if (!phoneIsStable_) return;
-
-    clearInterval(stabilityCheckInterval_);
-    stabilityCheckInterval_ = null;
-    startWaitingForHeadMove_();
+    if (phoneIsStable_) {
+      clearInterval(stabilityCheckInterval_);
+      stabilityCheckInterval_ = null;
+      startWaitingForHeadMove_();
+    }
   }, 200);
 
-  // Overall safety: only cancel / ask retry — NEVER take a photo automatically
+  // ---------- iPhone fallback: if no motion events after 3.5s → go to head-move ----------
+  if (isIOS_) {
+    const iosFallbackTimer = setTimeout(() => {
+      if (captureLocked_ || captureArmed_) return;
+      // Still waiting for stability → assume phone is held still enough
+      if (stabilityCheckInterval_) {
+        clearInterval(stabilityCheckInterval_);
+        stabilityCheckInterval_ = null;
+      }
+      phoneIsStable_ = true; // allow head-move phase
+      startWaitingForHeadMove_();
+    }, 3500);
+
+    // keep reference so clearCameraTimers_ can clear it if needed
+    // (store on a variable that clearCameraTimers_ already clears, or add to clearCameraTimers_)
+    if (!window._iosStabilityFallback) window._iosStabilityFallback = null;
+    if (window._iosStabilityFallback) clearTimeout(window._iosStabilityFallback);
+    window._iosStabilityFallback = iosFallbackTimer;
+  }
+
+  // Overall safety timeout (never forces a photo)
   autoCaptureTimer_ = setTimeout(() => {
     if (captureLocked_) return;
     clearCameraTimers_();
+    if (window._iosStabilityFallback) {
+      clearTimeout(window._iosStabilityFallback);
+      window._iosStabilityFallback = null;
+    }
     captureArmed_ = false;
     motionSamples_ = [];
     if (instruction) {
@@ -2763,7 +2803,7 @@ function startStabilityWait_() {
     setTimeout(() => {
       if (!captureLocked_) startStabilityWait_();
     }, 2500);
-  }, OVERALL_CAMERA_TIMEOUT_MS);
+  }, typeof OVERALL_CAMERA_TIMEOUT_MS !== "undefined" ? OVERALL_CAMERA_TIMEOUT_MS : 120000);
 }
 
 /**

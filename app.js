@@ -2474,9 +2474,9 @@ let recentMotionHistory_ = [];
 
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-const HEAD_MOVE_THRESHOLD = isPcWebcam_ ? 0.10 : 0.07;
-const HEAD_SAMPLES_MIN = isPcWebcam_ ? 14 : 12;
-const HEAD_SAMPLES_MAX = 20;
+const HEAD_MOVE_THRESHOLD = isPcWebcam_ ? 0.20 : 0.18;
+const HEAD_SAMPLES_MIN = isPcWebcam_ ? 10 : 8;
+const HEAD_SAMPLES_MAX = 18;
 // How long user has (from camera open) to finish: fix phone + move head.
 // Increase this to give more time to move the head (e.g. 120000 = 2 minutes).
 const OVERALL_CAMERA_TIMEOUT_MS = 120000;
@@ -2707,7 +2707,7 @@ function onFaceMeshResults_(results) {
     // STRICT HEAD MOVEMENT (anti-cheat)
     const headAngle = Math.abs(maxO - minO);
 
-    if (headAngle < 0.35) {   // tiny screen moves are rejected
+    if (headAngle < 0.25) {   // tiny screen moves are rejected
       if (autoCaptureTimer_) {
         clearTimeout(autoCaptureTimer_);
         autoCaptureTimer_ = null;

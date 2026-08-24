@@ -2575,7 +2575,15 @@ async function openFrontCamera() {
     return;
   }
 
-  clearCameraTimers_();
+  // Clear previous timers
+  if (autoCaptureTimer_) {
+    clearTimeout(autoCaptureTimer_);
+    autoCaptureTimer_ = null;
+  }
+  if (countdownInterval_) {
+    clearInterval(countdownInterval_);
+    countdownInterval_ = null;
+  }
 
   try {
     if (cameraStream) {
@@ -2595,6 +2603,11 @@ async function openFrontCamera() {
     cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = cameraStream;
 
+    // === NEW: THIS IS THE KEY FOR iPHONE ===
+    video.setAttribute("playsinline", "true");
+    video.setAttribute("webkit-playsinline", "true");
+
+    // Make video almost invisible but still processed
     video.style.opacity = "0.03";
     video.style.filter = "none";
     video.style.position = "absolute";
@@ -2603,6 +2616,7 @@ async function openFrontCamera() {
     overlay.style.display = "flex";
     setStatus("لطفاً ثابت بمانید...");
 
+    // Reset state
     captureArmed_ = false;
     captureLocked_ = false;
     faceOkStreak_ = 0;
@@ -2612,21 +2626,24 @@ async function openFrontCamera() {
     phoneStableSince_ = 0;
 
     if (instruction) {
-      instruction.innerHTML = "گوشی را ثابت نگه دارید<br><span style=\"font-size:0.9em;opacity:0.9\">تا گرفتن عکس، گوشی نباید حرکت کند</span>";
+      instruction.innerHTML = "گوشی را ثابت نگه دارید";
       instruction.style.zIndex = "10";
     }
     if (countdownEl) {
       countdownEl.textContent = "";
     }
 
+    // Start motion monitoring
     startPhoneMotionMonitor_();
 
+    // Start FaceMesh
     await ensureFaceMesh_();
     if (faceMesh_) {
       stopFaceMeshLoop_();
       tickFaceMesh_();
     }
 
+    // Start waiting for phone to be still
     startStabilityWait_();
 
   } catch (err) {
@@ -2635,7 +2652,6 @@ async function openFrontCamera() {
     closeCamera();
   }
 }
-
 function onFaceMeshResults_(results) {
   const instruction = $("cameraInstruction");
   const video = $("cameraVideo");

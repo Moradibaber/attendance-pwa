@@ -1367,13 +1367,13 @@ async function processCapturedPhoto(file) {
     // Glare check (non-blocking if it fails)
     try {
       const glare = await hasStrongGlare_(currentPhoto);
-      if (glare) {
-        setStatus("نور شدید روی صورت است. عکس را در نور مناسب بگیرید.");
-        showGpsToast("⚠️ نور خیلی زیاد است — دوباره با نور مناسب عکس بگیرید", 4000, "error");
-        setBusy(false);
-        currentPhoto = "";
-        return;
-      }
+      // if (glare) {
+      //   setStatus("نور شدید روی صورت است. عکس را در نور مناسب بگیرید.");
+      //   showGpsToast("⚠️ نور خیلی زیاد است — دوباره با نور مناسب عکس بگیرید", 4000, "error");
+      //   setBusy(false);
+      //   currentPhoto = "";
+      //   return;
+      // }
     } catch (_) {}
 
     // Face required — reject photo of screen / no face / too far
@@ -2408,7 +2408,6 @@ async function extractFaceDescriptor_(dataUrl) {
     img.src = dataUrl;
   });
 }
-
 function hasStrongGlare_(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -2426,15 +2425,15 @@ function hasStrongGlare_(dataUrl) {
         let total = 0;
 
         for (let i = 0; i < data.length; i += 16) {
-          const r = data[i], g = data[i+1], b = data[i+2];
+          const r = data[i], g = data[i + 1], b = data[i + 2];
           const bright = (r + g + b) / 3;
           total++;
-         if (bright > 235) veryBright++;
+          if (bright > 245) veryBright++;   // only almost pure white
         }
 
         const ratio = veryBright / total;
         console.log("Glare ratio:", (ratio * 100).toFixed(1) + "%");
-      resolve(ratio > 0.04);
+        resolve(ratio > 0.15);   // only reject if >15% is pure white
       } catch (e) {
         resolve(false);
       }

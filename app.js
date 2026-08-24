@@ -2707,7 +2707,7 @@ function onFaceMeshResults_(results) {
     // STRICT HEAD MOVEMENT (anti-cheat)
     const headAngle = Math.abs(maxO - minO);
 
-    if (headAngle < 0.25) {   // tiny screen moves are rejected
+    if (headAngle < 0.18) {   // tiny screen moves are rejected
       if (autoCaptureTimer_) {
         clearTimeout(autoCaptureTimer_);
         autoCaptureTimer_ = null;

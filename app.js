@@ -2468,7 +2468,7 @@ const isIOS_ =
   /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
-const PHONE_STABLE_THRESHOLD = isIOS_ ? 1.8 : 0.85;
+const PHONE_STABLE_THRESHOLD = isIOS_ ? 2.2 : 1.1;
 const PHONE_STABLE_MS = isIOS_ ? 2000 : 2500;
 let recentMotionHistory_ = [];
 
@@ -2703,9 +2703,43 @@ function onFaceMeshResults_(results) {
   const minO = Math.min(...motionSamples_);
   const maxO = Math.max(...motionSamples_);
   const hasHeadMove = (maxO - minO) >= HEAD_MOVE_THRESHOLD;
+  if (hasHeadMove) {
+    // STRICT HEAD MOVEMENT (anti-cheat)
+    const headAngle = Math.abs(maxO - minO);
 
-   if (hasHeadMove) {
-    // Head moved + phone still stable → take photo now
+    if (headAngle < 0.35) {   // tiny screen moves are rejected
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      motionSamples_.length = 0;   // reset for next attempt
+      return;
+    }
+
+    // Strict phone must stay 100% still (no left/right tilt)
+    if (!phoneIsStable_) {
+      captureArmed_ = false;
+      captureLocked_ = true;
+      if (autoCaptureTimer_) {
+        clearTimeout(autoCaptureTimer_);
+        autoCaptureTimer_ = null;
+      }
+      if (stabilityCheckInterval_) {
+        clearInterval(stabilityCheckInterval_);
+        stabilityCheckInterval_ = null;
+      }
+      stopFaceMeshLoop_();
+      if ($("cameraInstruction")) {
+        $("cameraInstruction").innerHTML =
+          "گوشی حرکت کرد<br><span style=\"color:#f87171;\">دوباره از اول — گوشی را کاملاً ثابت نگه دارید</span>";
+      }
+      setTimeout(() => {
+        if (!captureLocked_) startStabilityWait_();
+      }, 1200);
+      return;
+    }
+
+    // Good move — take photo
     captureArmed_ = false;
     captureLocked_ = true;
     if (autoCaptureTimer_) {
@@ -2722,7 +2756,7 @@ function onFaceMeshResults_(results) {
     }
     forceTakePhoto();
   }
-}
+   }
 
 function abortBecausePhoneMoved_() {
   if (captureLocked_) return;

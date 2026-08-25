@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v274";
+const CACHE_NAME = "attendance-pwa-v275";
 const FILES = [
   "./",
   "index.html", 

@@ -2473,7 +2473,7 @@ let recentMotionHistory_ = [];
 
 const isPcWebcam_ =
   !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-const HEAD_MOVE_THRESHOLD = isPcWebcam_ ? 0.20 : 0.18;
+const HEAD_MOVE_THRESHOLD = isPcWebcam_ ? 0.18 : 0.15;
 const HEAD_SAMPLES_MIN = isPcWebcam_ ? 10 : 8;
 const HEAD_SAMPLES_MAX = 18;
 // How long user has (from camera open) to finish: fix phone + move head.

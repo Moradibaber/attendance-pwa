@@ -173,6 +173,47 @@ async function getLocalTodayAttendanceCount_() {
   }
   return count;
 }
+// ========== PASTE THIS FUNCTION HERE (above DOMContentLoaded) ==========
+async function sendHeartbeat() {
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile || !profile.personnelCode) return;
+
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "Heartbeat",
+        personnelCode: profile.personnelCode,
+        deviceId: getOrCreateDeviceId_(),
+        clientTime: new Date().toISOString()
+      })
+    });
+  } catch (_) {}
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  // ... all your existing try blocks stay exactly the same ...
+
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  } catch (_) {}
+
+  try {
+    registerForPushNotifications();
+  } catch (_) {}
+
+  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
+  setInterval(sendHeartbeat, 45000);          // every 45 seconds
+  sendHeartbeat();                            // send once immediately on open
+});
+
+// ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) sendHeartbeat();
+});
 /* =========================
    Boot
 ========================= */

@@ -2902,7 +2902,7 @@ function startWaitingForHeadMove_() {
     setTimeout(() => {
       if (!captureLocked_) startStabilityWait_();
     }, 1200);
-  }, 2000); // ← 2 seconds only
+  }, 3000); // ← 2 seconds only
 }
 function forceTakePhoto() {
   const video = $("cameraVideo");

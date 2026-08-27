@@ -1,4 +1,4 @@
-const DB_NAME = "attendance-pwa-db";
+const DB_NAME = "attendance-pwa-db"; 
 const DB_VERSION = 3;
 
 const STORE_RECORDS = "records";
@@ -323,6 +323,7 @@ async function getFirebaseMessaging_() {
     return null;
   }
 }
+
 async function registerForPushNotifications() {
   const profile = await dbGet(STORE_PROFILE, "main");
   if (!profile || !profile.personnelCode) return;
@@ -338,54 +339,19 @@ async function registerForPushNotifications() {
       return;
     }
 
+    // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
+    // منتظر ماندن برای پاسخ شبکه. گزارش وضعیت به سرور در پس‌زمینه انجام
+    // می‌شود و تاخیر شبکه دیگر روی سرعت نمایش/رفع قفل تاثیری ندارد.
     enforceNotificationGate();
     reportPushStatus_(profile.personnelCode, Notification.permission).catch(() => {});
 
-    // ==================== Token Recovery ====================
-    const messaging = await getFirebaseMessaging_();
-    if (messaging && Notification.permission === "granted") {
-      const swRegistration = await navigator.serviceWorker.ready;
-      const token = await messaging.getToken({
-        vapidKey: FCM_VAPID_KEY,
-        serviceWorkerRegistration: swRegistration
-      });
-
-      if (token) {
-        let sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PUSH_TOKENS_SHEET_NAME);
-        if (!sh) sh = SpreadsheetApp.getActiveSpreadsheet().insertSheet(PUSH_TOKENS_SHEET_NAME);
-
-        var data = sh.getDataRange().getValues();
-        var headers = data[0];
-        var pIdx = headers.indexOf("PersonnelCode");
-        var tIdx = headers.indexOf("FCMToken");
-        var statusIdx = headers.indexOf("TokenStatus");
-
-        if (statusIdx === -1) {
-          statusIdx = headers.length;
-          sh.getRange(1, statusIdx + 1).setValue("TokenStatus");
-          sh.getRange(1, statusIdx + 1).setFontWeight("bold");
-        }
-
-        if (pIdx !== -1 && tIdx !== -1) {
-          for (var i = 1; i < data.length; i++) {
-            if (String(data[i][pIdx]).trim() === profile.personnelCode) {
-              if (String(data[i][tIdx] || "").trim() === token) {
-                sh.getRange(i + 1, statusIdx + 1).setValue("ok");
-              } else {
-                // Replace dead token with new valid one
-                sh.getRange(i + 1, tIdx + 1).setValue(token);
-                sh.getRange(i + 1, statusIdx + 1).setValue("replaced_valid_token");
-                sh.getRange(i + 1, headers.indexOf("LastPermissionCheck") + 1).setValue(new Date());
-              }
-              break;
-            }
-          }
-        }
-      }
-    }
-    // =====================================================
-
     if (Notification.permission === "denied") {
+      return;
+    }
+
+    const messaging = await getFirebaseMessaging_();
+    if (!messaging) {
+      reportPushStatus_(profile.personnelCode, "unsupported_firebase_init_failed").catch(() => {});
       return;
     }
 
@@ -412,50 +378,25 @@ async function registerForPushNotifications() {
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
+            body: JSON.stringify({
         type: "RegisterPushToken",
         personnelCode: profile.personnelCode,
         token: token,
         deviceId: getOrCreateDeviceId_()
       })
     });
-
-    // ==================== IMMEDIATE WARNING PUSH ====================
-    // This will send a warning push right after the person accepts permission again
-    await sendWarningPushForUnsubscribe_(profile.personnelCode, token);
   } catch (err) {
     console.error("Push registration failed:", err);
     try {
       await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));
     } catch (_) {}
   } finally {
+    // همیشه در پایان اجرا می‌شود، صرف‌نظر از این‌که کدام مسیر بالا طی شده -
+    // این تنها جایی است که وضعیت قفل دکمه «ذخیره مشخصات» به‌روزرسانی می‌شود.
     enforceNotificationGate();
   }
 }
-async function sendWarningPushForUnsubscribe_(personnelCode, token) {
-  try {
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        type: "PushReceived",
-        personnelCode: personnelCode,
-        deviceId: getOrCreateDeviceId_(),
-        clientTime: new Date().toISOString()
-      })
-    });
 
-    const data = await response.json();
-
-    if (data.ok === true) {
-      console.log("✅ Immediate warning push sent for unsubscribe");
-    } else {
-      console.error("Warning push failed:", data);
-    }
-  } catch (err) {
-    console.error("Warning push error:", err);
-  }
-}
 // Parses "OS 16_4" style version strings out of the iOS user agent, so we
 // get the real iOS version automatically in every report instead of having
 // to ask someone to go check Settings on each phone by hand.
@@ -512,69 +453,60 @@ function positionGateOverlay_() {
 // دقیقا روی دکمه «عکس سلفی خود را بگیرید» قرار می‌گیرد و آن را غیرفعال
 // می‌کند تا کاربر نتواند تردد ثبت کند مگر اینکه اعلان‌ها را واقعا فعال کند.
 function enforceNotificationGate() {
-  const btn = document.getElementById("recordBtn");
+  const btn = document.getElementById(NOTIFICATION_GATE_TARGET_ID);
   if (!btn) return;
 
   const hasNotificationApi = "Notification" in window;
-  const permission = hasNotificationApi ? Notification.permission : "unsupported";
+  const shouldBlock = hasNotificationApi && Notification.permission === "denied";
 
-  // Remove old overlay if exists
-  if (notificationGateOverlay_) {
-    notificationGateOverlay_.remove();
-    notificationGateOverlay_ = null;
-    window.removeEventListener("scroll", positionGateOverlay_, true);
-    window.removeEventListener("resize", positionGateOverlay_);
-  }
-
-  // Only block when permission is denied
-  if (permission !== "denied") {
+  if (!shouldBlock) {
     btn.disabled = false;
+    if (notificationGateOverlay_) {
+      notificationGateOverlay_.remove();
+      notificationGateOverlay_ = null;
+      window.removeEventListener("scroll", positionGateOverlay_, true);
+      window.removeEventListener("resize", positionGateOverlay_);
+    }
     return;
   }
 
-  // Permission is denied → show strong warning and block the button
   btn.disabled = true;
 
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const steps = isIOS
-    ? "تنظیمات آیفون ← Notifications ← نام این اپ ← فعال کردن Allow Notifications"
-    : "تنظیمات گوشی ← اعلان‌ها ← این مرورگر/اپ ← فعال کردن اعلان‌ها";
+  if (!notificationGateOverlay_) {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const steps = isIOS
+      ? "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← فعال کردن Allow Notifications."
+      : "تنظیمات گوشی ← اعلان‌ها ← این مرورگر/اپلیکیشن ← فعال کردن اعلان‌ها.";
 
-  const overlay = document.createElement("div");
-  overlay.id = "notification-gate-overlay";
-  overlay.style.cssText =
-    "position:fixed;z-index:99999;background:#7c2d12;color:#fff;border-radius:12px;" +
-    "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-    "text-align:center;padding:14px 12px;font-size:13px;line-height:1.5;direction:rtl;" +
-    "box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:90%;";
+    const overlay = document.createElement("div");
+    overlay.id = "notification-gate-overlay";
+    overlay.style.cssText =
+      "z-index:99998;background:#7c2d12;color:#fff;border-radius:10px;" +
+      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+      "text-align:center;padding:6px 8px;font-size:11px;line-height:1.4;direction:rtl;" +
+      "box-shadow:0 4px 14px rgba(0,0,0,.4);";
+    overlay.innerHTML =
+      '<div style="font-weight:700;">⚠️ برای ادامه، اعلان‌ها را فعال کنید</div>' +
+      '<div style="font-size:9.5px;margin-top:2px;">' + steps + "</div>" +
+      '<button id="notification-gate-recheck" style="margin-top:5px;background:#fff;color:#7c2d12;' +
+      'border:none;border-radius:6px;padding:3px 12px;font-size:10.5px;font-weight:700;">بررسی مجدد</button>';
 
-  overlay.innerHTML =
-    '<div style="font-weight:800;font-size:15px;margin-bottom:6px;">⚠️ اعلان‌ها مسدود شده است</div>' +
-    '<div style="font-size:12px;margin-bottom:8px;">شما قبلاً اعلان را رد کرده‌اید یا به عنوان اسپم علامت زده‌اید.<br>تا وقتی اعلان‌ها را دوباره فعال نکنید، امکان ثبت تردد وجود ندارد.</div>' +
-    '<div style="font-size:11px;opacity:0.9;margin-bottom:10px;">' + steps + '</div>' +
-    '<button id="notification-gate-recheck" style="background:#fff;color:#7c2d12;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;">بررسی مجدد</button>';
+    document.body.appendChild(overlay);
+    notificationGateOverlay_ = overlay;
 
-  document.body.appendChild(overlay);
-  notificationGateOverlay_ = overlay;
+    document.getElementById("notification-gate-recheck")?.addEventListener("click", enforceNotificationGate);
+    window.addEventListener("scroll", positionGateOverlay_, true);
+    window.addEventListener("resize", positionGateOverlay_);
+  }
 
-  // Position the overlay exactly on top of the record button
   positionGateOverlay_();
-
-  document.getElementById("notification-gate-recheck")?.addEventListener("click", () => {
-    enforceNotificationGate();
-    // Also try to request permission again
-    if (Notification.permission === "default") {
-      Notification.requestPermission().then(() => {
-        enforceNotificationGate();
-        registerForPushNotifications();
-      });
-    }
-  });
-
-  window.addEventListener("scroll", positionGateOverlay_, true);
-  window.addEventListener("resize", positionGateOverlay_);
 }
 
+// وقتی کاربر از تنظیمات گوشی برمی‌گردد (بعد از فعال کردن اعلان‌ها)، این
+// رویداد اجازه می‌دهد قفل بدون نیاز به لمس دکمه «بررسی مجدد» خودش باز شود.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) enforceNotificationGate();
+});
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");

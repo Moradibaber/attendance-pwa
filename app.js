@@ -323,7 +323,6 @@ async function getFirebaseMessaging_() {
     return null;
   }
 }
-
 async function registerForPushNotifications() {
   const profile = await dbGet(STORE_PROFILE, "main");
   if (!profile || !profile.personnelCode) return;
@@ -339,19 +338,49 @@ async function registerForPushNotifications() {
       return;
     }
 
-    // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
-    // منتظر ماندن برای پاسخ شبکه. گزارش وضعیت به سرور در پس‌زمینه انجام
-    // می‌شود و تاخیر شبکه دیگر روی سرعت نمایش/رفع قفل تاثیری ندارد.
     enforceNotificationGate();
     reportPushStatus_(profile.personnelCode, Notification.permission).catch(() => {});
 
-    if (Notification.permission === "denied") {
-      return;
-    }
-
+    // ==================== NEW PART: Auto-fix dead tokens ====================
     const messaging = await getFirebaseMessaging_();
-    if (!messaging) {
-      reportPushStatus_(profile.personnelCode, "unsupported_firebase_init_failed").catch(() => {});
+    if (messaging && Notification.permission === "granted") {
+      const swRegistration = await navigator.serviceWorker.ready;
+      const token = await messaging.getToken({
+        vapidKey: FCM_VAPID_KEY,
+        serviceWorkerRegistration: swRegistration
+      });
+
+      if (token) {
+        // Check if this token already exists in the sheet
+        let sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PUSH_TOKENS_SHEET_NAME);
+        if (!sh) sh = SpreadsheetApp.getActiveSpreadsheet().insertSheet(PUSH_TOKENS_SHEET_NAME);
+
+        var data = sh.getDataRange().getValues();
+        var headers = data[0];
+        var pIdx = headers.indexOf("PersonnelCode");
+        var tIdx = headers.indexOf("FCMToken");
+
+        if (pIdx !== -1 && tIdx !== -1) {
+          for (var i = 1; i < data.length; i++) {
+            if (String(data[i][pIdx]).trim() === profile.personnelCode) {
+              if (String(data[i][tIdx] || "").trim() === token) {
+                // Token already exists and is valid → mark as ok
+                sh.getRange(i + 1, headers.indexOf("TokenStatus") + 1).setValue("ok");
+              } else {
+                // Old dead token exists → replace it with the new valid one
+                sh.getRange(i + 1, tIdx + 1).setValue(token);
+                sh.getRange(i + 1, headers.indexOf("TokenStatus") + 1).setValue("replaced_valid_token");
+                sh.getRange(i + 1, headers.indexOf("LastPermissionCheck") + 1).setValue(new Date());
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+    // =====================================================================
+
+    if (Notification.permission === "denied") {
       return;
     }
 
@@ -378,7 +407,7 @@ async function registerForPushNotifications() {
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
+      body: JSON.stringify({
         type: "RegisterPushToken",
         personnelCode: profile.personnelCode,
         token: token,
@@ -391,8 +420,6 @@ async function registerForPushNotifications() {
       await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));
     } catch (_) {}
   } finally {
-    // همیشه در پایان اجرا می‌شود، صرف‌نظر از این‌که کدام مسیر بالا طی شده -
-    // این تنها جایی است که وضعیت قفل دکمه «ذخیره مشخصات» به‌روزرسانی می‌شود.
     enforceNotificationGate();
   }
 }

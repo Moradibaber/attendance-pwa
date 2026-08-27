@@ -341,7 +341,7 @@ async function registerForPushNotifications() {
     enforceNotificationGate();
     reportPushStatus_(profile.personnelCode, Notification.permission).catch(() => {});
 
-    // ==================== NEW PART: Auto-fix dead tokens ====================
+    // ==================== Token Recovery ====================
     const messaging = await getFirebaseMessaging_();
     if (messaging && Notification.permission === "granted") {
       const swRegistration = await navigator.serviceWorker.ready;
@@ -351,7 +351,6 @@ async function registerForPushNotifications() {
       });
 
       if (token) {
-        // Check if this token already exists in the sheet
         let sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PUSH_TOKENS_SHEET_NAME);
         if (!sh) sh = SpreadsheetApp.getActiveSpreadsheet().insertSheet(PUSH_TOKENS_SHEET_NAME);
 
@@ -359,17 +358,23 @@ async function registerForPushNotifications() {
         var headers = data[0];
         var pIdx = headers.indexOf("PersonnelCode");
         var tIdx = headers.indexOf("FCMToken");
+        var statusIdx = headers.indexOf("TokenStatus");
+
+        if (statusIdx === -1) {
+          statusIdx = headers.length;
+          sh.getRange(1, statusIdx + 1).setValue("TokenStatus");
+          sh.getRange(1, statusIdx + 1).setFontWeight("bold");
+        }
 
         if (pIdx !== -1 && tIdx !== -1) {
           for (var i = 1; i < data.length; i++) {
             if (String(data[i][pIdx]).trim() === profile.personnelCode) {
               if (String(data[i][tIdx] || "").trim() === token) {
-                // Token already exists and is valid → mark as ok
-                sh.getRange(i + 1, headers.indexOf("TokenStatus") + 1).setValue("ok");
+                sh.getRange(i + 1, statusIdx + 1).setValue("ok");
               } else {
-                // Old dead token exists → replace it with the new valid one
+                // Replace dead token with new valid one
                 sh.getRange(i + 1, tIdx + 1).setValue(token);
-                sh.getRange(i + 1, headers.indexOf("TokenStatus") + 1).setValue("replaced_valid_token");
+                sh.getRange(i + 1, statusIdx + 1).setValue("replaced_valid_token");
                 sh.getRange(i + 1, headers.indexOf("LastPermissionCheck") + 1).setValue(new Date());
               }
               break;
@@ -378,7 +383,7 @@ async function registerForPushNotifications() {
         }
       }
     }
-    // =====================================================================
+    // =====================================================
 
     if (Notification.permission === "denied") {
       return;
@@ -414,6 +419,10 @@ async function registerForPushNotifications() {
         deviceId: getOrCreateDeviceId_()
       })
     });
+
+    // ==================== IMMEDIATE WARNING PUSH ====================
+    // This will send a warning push right after the person accepts permission again
+    await sendWarningPushForUnsubscribe_(profile.personnelCode, token);
   } catch (err) {
     console.error("Push registration failed:", err);
     try {
@@ -423,7 +432,30 @@ async function registerForPushNotifications() {
     enforceNotificationGate();
   }
 }
+async function sendWarningPushForUnsubscribe_(personnelCode, token) {
+  try {
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "PushReceived",
+        personnelCode: personnelCode,
+        deviceId: getOrCreateDeviceId_(),
+        clientTime: new Date().toISOString()
+      })
+    });
 
+    const data = await response.json();
+
+    if (data.ok === true) {
+      console.log("✅ Immediate warning push sent for unsubscribe");
+    } else {
+      console.error("Warning push failed:", data);
+    }
+  } catch (err) {
+    console.error("Warning push error:", err);
+  }
+}
 // Parses "OS 16_4" style version strings out of the iOS user agent, so we
 // get the real iOS version automatically in every report instead of having
 // to ask someone to go check Settings on each phone by hand.

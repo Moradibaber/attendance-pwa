@@ -512,60 +512,69 @@ function positionGateOverlay_() {
 // دقیقا روی دکمه «عکس سلفی خود را بگیرید» قرار می‌گیرد و آن را غیرفعال
 // می‌کند تا کاربر نتواند تردد ثبت کند مگر اینکه اعلان‌ها را واقعا فعال کند.
 function enforceNotificationGate() {
-  const btn = document.getElementById(NOTIFICATION_GATE_TARGET_ID);
+  const btn = document.getElementById("recordBtn");
   if (!btn) return;
 
   const hasNotificationApi = "Notification" in window;
-  const shouldBlock = hasNotificationApi && Notification.permission === "denied";
+  const permission = hasNotificationApi ? Notification.permission : "unsupported";
 
-  if (!shouldBlock) {
+  // Remove old overlay if exists
+  if (notificationGateOverlay_) {
+    notificationGateOverlay_.remove();
+    notificationGateOverlay_ = null;
+    window.removeEventListener("scroll", positionGateOverlay_, true);
+    window.removeEventListener("resize", positionGateOverlay_);
+  }
+
+  // Only block when permission is denied
+  if (permission !== "denied") {
     btn.disabled = false;
-    if (notificationGateOverlay_) {
-      notificationGateOverlay_.remove();
-      notificationGateOverlay_ = null;
-      window.removeEventListener("scroll", positionGateOverlay_, true);
-      window.removeEventListener("resize", positionGateOverlay_);
-    }
     return;
   }
 
+  // Permission is denied → show strong warning and block the button
   btn.disabled = true;
 
-  if (!notificationGateOverlay_) {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const steps = isIOS
-      ? "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← فعال کردن Allow Notifications."
-      : "تنظیمات گوشی ← اعلان‌ها ← این مرورگر/اپلیکیشن ← فعال کردن اعلان‌ها.";
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const steps = isIOS
+    ? "تنظیمات آیفون ← Notifications ← نام این اپ ← فعال کردن Allow Notifications"
+    : "تنظیمات گوشی ← اعلان‌ها ← این مرورگر/اپ ← فعال کردن اعلان‌ها";
 
-    const overlay = document.createElement("div");
-    overlay.id = "notification-gate-overlay";
-    overlay.style.cssText =
-      "z-index:99998;background:#7c2d12;color:#fff;border-radius:10px;" +
-      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-      "text-align:center;padding:6px 8px;font-size:11px;line-height:1.4;direction:rtl;" +
-      "box-shadow:0 4px 14px rgba(0,0,0,.4);";
-    overlay.innerHTML =
-      '<div style="font-weight:700;">⚠️ برای ادامه، اعلان‌ها را فعال کنید</div>' +
-      '<div style="font-size:9.5px;margin-top:2px;">' + steps + "</div>" +
-      '<button id="notification-gate-recheck" style="margin-top:5px;background:#fff;color:#7c2d12;' +
-      'border:none;border-radius:6px;padding:3px 12px;font-size:10.5px;font-weight:700;">بررسی مجدد</button>';
+  const overlay = document.createElement("div");
+  overlay.id = "notification-gate-overlay";
+  overlay.style.cssText =
+    "position:fixed;z-index:99999;background:#7c2d12;color:#fff;border-radius:12px;" +
+    "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+    "text-align:center;padding:14px 12px;font-size:13px;line-height:1.5;direction:rtl;" +
+    "box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:90%;";
 
-    document.body.appendChild(overlay);
-    notificationGateOverlay_ = overlay;
+  overlay.innerHTML =
+    '<div style="font-weight:800;font-size:15px;margin-bottom:6px;">⚠️ اعلان‌ها مسدود شده است</div>' +
+    '<div style="font-size:12px;margin-bottom:8px;">شما قبلاً اعلان را رد کرده‌اید یا به عنوان اسپم علامت زده‌اید.<br>تا وقتی اعلان‌ها را دوباره فعال نکنید، امکان ثبت تردد وجود ندارد.</div>' +
+    '<div style="font-size:11px;opacity:0.9;margin-bottom:10px;">' + steps + '</div>' +
+    '<button id="notification-gate-recheck" style="background:#fff;color:#7c2d12;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;">بررسی مجدد</button>';
 
-    document.getElementById("notification-gate-recheck")?.addEventListener("click", enforceNotificationGate);
-    window.addEventListener("scroll", positionGateOverlay_, true);
-    window.addEventListener("resize", positionGateOverlay_);
-  }
+  document.body.appendChild(overlay);
+  notificationGateOverlay_ = overlay;
 
+  // Position the overlay exactly on top of the record button
   positionGateOverlay_();
+
+  document.getElementById("notification-gate-recheck")?.addEventListener("click", () => {
+    enforceNotificationGate();
+    // Also try to request permission again
+    if (Notification.permission === "default") {
+      Notification.requestPermission().then(() => {
+        enforceNotificationGate();
+        registerForPushNotifications();
+      });
+    }
+  });
+
+  window.addEventListener("scroll", positionGateOverlay_, true);
+  window.addEventListener("resize", positionGateOverlay_);
 }
 
-// وقتی کاربر از تنظیمات گوشی برمی‌گردد (بعد از فعال کردن اعلان‌ها)، این
-// رویداد اجازه می‌دهد قفل بدون نیاز به لمس دکمه «بررسی مجدد» خودش باز شود.
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) enforceNotificationGate();
-});
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");

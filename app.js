@@ -192,24 +192,6 @@ async function sendHeartbeat() {
   } catch (_) {}
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-  // ... all your existing try blocks stay exactly the same ...
-
-  try {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
-    }
-  } catch (_) {}
-
-  try {
-    registerForPushNotifications();
-  } catch (_) {}
-
-  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
-  setInterval(sendHeartbeat, 45000);          // every 45 seconds
-  sendHeartbeat();                            // send once immediately on open
-});
-
 // ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) sendHeartbeat();
@@ -279,6 +261,14 @@ try {
   try {
     registerForPushNotifications();
   } catch (_) {}
+  try {
+    setupForegroundPushHandler_();
+  } catch (_) {}
+  // ========== ONLINE HEARTBEAT ==========
+  setInterval(sendHeartbeat, 45000);   // every 45 seconds while PWA is open
+  sendHeartbeat();                     // once immediately
+});
+  
 });
 
 /* =========================
@@ -327,7 +317,30 @@ async function getFirebaseMessaging_() {
 async function registerForPushNotifications() {
   const profile = await dbGet(STORE_PROFILE, "main");
   if (!profile || !profile.personnelCode) return;
+async function setupForegroundPushHandler_() {
+  const messaging = await getFirebaseMessaging_();
+  if (!messaging) return;
 
+  messaging.onMessage(async (payload) => {
+    // Silent ping from server
+    if (payload && payload.data && payload.data.type === "silent_ping") {
+      const profile = await dbGet(STORE_PROFILE, "main");
+      if (!profile || !profile.personnelCode) return;
+
+      try {
+        await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            type: "PushReceived",
+            personnelCode: profile.personnelCode,
+            deviceId: getOrCreateDeviceId_()
+          })
+        });
+      } catch (_) {}
+    }
+  });
+}
   try {
     const missingApis = [];
     if (!("serviceWorker" in navigator)) missingApis.push("ServiceWorker");

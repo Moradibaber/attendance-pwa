@@ -69,7 +69,6 @@ let photoCompressedAtMs = 0;
 
 const $ = (id) => document.getElementById(id);
 const DEVICE_ID_KEY = "attendance_device_id";
-const DEVICE_ID_KEY = "attendance_device_id";
 
 function getOrCreateDeviceId_() {
   try {

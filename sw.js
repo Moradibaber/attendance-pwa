@@ -27,6 +27,10 @@ self.addEventListener("install", (event) => {
 
   self.skipWaiting();
 
+  // This makes the new service worker take control immediately
+  // and keeps the deviceId alive after screen off
+  clients.claim();
+});
   // === THIS IS WHAT YOU ASKED FOR ===
   // Call clients.claim() inside install (very common and safe in this SW)
   // It makes the new worker take control immediately on first install

@@ -223,22 +223,23 @@ setTimeout(() => {
 
   try {
     // ==================== SAVE PROFILE (ذخیره مشخصات) ====================
+    // ==================== SAVE PROFILE BUTTON (FINAL VERSION) ====================
 const saveProfileBtn = $("saveProfileBtn");
 if (saveProfileBtn) {
   saveProfileBtn.addEventListener("click", async () => {
-    const profile = {
-      personnelCode: $("personnelCodeInput")?.value.trim() || "",
-      firstName: $("firstNameInput")?.value.trim() || "",
-      lastName: $("lastNameInput")?.value.trim() || "",
-      // add any other fields you have (email, phone, etc.)
-    };
-
-    if (!profile.personnelCode) {
+    const personnelCode = $("personnelCodeInput")?.value.trim();
+    if (!personnelCode) {
       showGpsToast("کد پرسنلی را وارد کنید", 3000, "error");
       return;
     }
 
     try {
+      const profile = {
+        personnelCode: personnelCode,
+        firstName: $("firstNameInput")?.value.trim() || "",
+        lastName: $("lastNameInput")?.value.trim() || "",
+      };
+
       await dbPut(STORE_PROFILE, "main", profile);
       showGpsToast("ذخیره مشخصات با موفقیت انجام شد ✅", 4000, "success");
     } catch (e) {

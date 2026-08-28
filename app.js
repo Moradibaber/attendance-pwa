@@ -252,7 +252,7 @@ try {
     setupAutoSync();
   } catch (_) {}
 
-  try {
+    try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
@@ -261,16 +261,15 @@ try {
   try {
     registerForPushNotifications();
   } catch (_) {}
+
   try {
     setupForegroundPushHandler_();
   } catch (_) {}
+
   // ========== ONLINE HEARTBEAT ==========
   setInterval(sendHeartbeat, 45000);   // every 45 seconds while PWA is open
   sendHeartbeat();                     // once immediately
-});
-  
-});
-
+});  
 /* =========================
    UI Helpers
 ========================= */
@@ -313,16 +312,11 @@ async function getFirebaseMessaging_() {
     return null;
   }
 }
-
-async function registerForPushNotifications() {
-  const profile = await dbGet(STORE_PROFILE, "main");
-  if (!profile || !profile.personnelCode) return;
 async function setupForegroundPushHandler_() {
   const messaging = await getFirebaseMessaging_();
   if (!messaging) return;
 
   messaging.onMessage(async (payload) => {
-    // Silent ping from server
     if (payload && payload.data && payload.data.type === "silent_ping") {
       const profile = await dbGet(STORE_PROFILE, "main");
       if (!profile || !profile.personnelCode) return;
@@ -341,6 +335,11 @@ async function setupForegroundPushHandler_() {
     }
   });
 }
+
+async function registerForPushNotifications() {
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile || !profile.personnelCode) return;
+
   try {
     const missingApis = [];
     if (!("serviceWorker" in navigator)) missingApis.push("ServiceWorker");
@@ -352,9 +351,6 @@ async function setupForegroundPushHandler_() {
       return;
     }
 
-    // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
-    // منتظر ماندن برای پاسخ شبکه. گزارش وضعیت به سرور در پس‌زمینه انجام
-    // می‌شود و تاخیر شبکه دیگر روی سرعت نمایش/رفع قفل تاثیری ندارد.
     enforceNotificationGate();
     reportPushStatus_(profile.personnelCode, Notification.permission).catch(() => {});
 
@@ -391,7 +387,7 @@ async function setupForegroundPushHandler_() {
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
+      body: JSON.stringify({
         type: "RegisterPushToken",
         personnelCode: profile.personnelCode,
         token: token,
@@ -404,8 +400,6 @@ async function setupForegroundPushHandler_() {
       await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));
     } catch (_) {}
   } finally {
-    // همیشه در پایان اجرا می‌شود، صرف‌نظر از این‌که کدام مسیر بالا طی شده -
-    // این تنها جایی است که وضعیت قفل دکمه «ذخیره مشخصات» به‌روزرسانی می‌شود.
     enforceNotificationGate();
   }
 }

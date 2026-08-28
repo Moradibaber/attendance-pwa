@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v284";
+const CACHE_NAME = "attendance-pwa-v286";
 const FILES = [
   "./",
   "index.html", 
@@ -12,13 +12,10 @@ const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
+// Replace this entire block with the version below
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // fetch با {cache:'reload'} به‌جای cache.addAll معمولی - این تضمین
-      // می‌کند که کش مرورگر/GitHub Pages دور زده شود و همیشه آخرین نسخه
-      // واقعی فایل‌ها از شبکه گرفته شود، حتی اگر هدرهای HTTP کش قدیمی
-      // را مجاز بدانند.
       await Promise.all(
         FILES.map(async (url) => {
           const response = await fetch(url, { cache: "reload" });
@@ -29,8 +26,12 @@ self.addEventListener("install", (event) => {
   );
 
   self.skipWaiting();
-});
 
+  // === THIS IS WHAT YOU ASKED FOR ===
+  // Call clients.claim() inside install (very common and safe in this SW)
+  // It makes the new worker take control immediately on first install
+  clients.claim();
+});
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {

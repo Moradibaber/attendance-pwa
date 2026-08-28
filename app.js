@@ -267,7 +267,7 @@ try {
   } catch (_) {}
 
   // ========== ONLINE HEARTBEAT ==========
-  setInterval(sendHeartbeat, 45000);   // every 45 seconds while PWA is open
+  setInterval(sendHeartbeat, 60000);   // every 45 seconds while PWA is open
   sendHeartbeat();                     // once immediately
 });  
 /* =========================

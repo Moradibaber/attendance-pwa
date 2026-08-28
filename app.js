@@ -68,21 +68,24 @@ let photoCompressedAtMs = 0;
 
 
 const $ = (id) => document.getElementById(id);
-// ====================== DEVICE ID (survives screen off) ======================
 const DEVICE_ID_KEY = "attendance_device_id";
 
 function getOrCreateDeviceId_() {
   try {
-    let id = localStorage.getItem(DEVICE_ID_KEY);
+    var id = localStorage.getItem(DEVICE_ID_KEY);
     if (id && String(id).length > 8) return String(id);
-
-    id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
+    id =
+      "dev_" +
+      Date.now().toString(36) +
+      "_" +
+      Math.random().toString(36).slice(2, 12);
     localStorage.setItem(DEVICE_ID_KEY, id);
     return id;
   } catch (_) {
     return "dev_fallback_" + Date.now();
   }
 }
+
 /* =========================
    Busy Overlay (Loader)
 ========================= */
@@ -189,6 +192,24 @@ async function sendHeartbeat() {
   } catch (_) {}
 }
 
+document.addEventListener("DOMContentLoaded", async () => {
+  // ... all your existing try blocks stay exactly the same ...
+
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  } catch (_) {}
+
+  try {
+    registerForPushNotifications();
+  } catch (_) {}
+
+  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
+  setInterval(sendHeartbeat, 45000);          // every 45 seconds
+  sendHeartbeat();                            // send once immediately on open
+});
+
 // ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) sendHeartbeat();
@@ -198,18 +219,16 @@ document.addEventListener("visibilitychange", () => {
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
-// Boot section – GPS toast (now works correctly)
-setTimeout(() => {
   try {
-    showGpsToast(
-      "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
-      8000,
-      "error"
-    );
-  } catch (e) {
-    console.error("GPS toast error:", e);
-  }
-}, 800);
+    setTimeout(() => {
+      showGpsToast(
+        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
+        8000,
+        "error"
+      );
+    }, 800);
+  } catch (_) {}
+
   try {
     const work = $("workLocationInput");
     if (work) work.setAttribute("list", "workLocationHistoryList");
@@ -222,32 +241,6 @@ setTimeout(() => {
   }
 
   try {
-    // ==================== SAVE PROFILE (ذخیره مشخصات) ====================
-    // ==================== SAVE PROFILE BUTTON (FINAL VERSION) ====================
-const saveProfileBtn = $("saveProfileBtn");
-if (saveProfileBtn) {
-  saveProfileBtn.addEventListener("click", async () => {
-    const personnelCode = $("personnelCodeInput")?.value.trim();
-    if (!personnelCode) {
-      showGpsToast("کد پرسنلی را وارد کنید", 3000, "error");
-      return;
-    }
-
-    try {
-      const profile = {
-        personnelCode: personnelCode,
-        firstName: $("firstNameInput")?.value.trim() || "",
-        lastName: $("lastNameInput")?.value.trim() || "",
-      };
-
-      await dbPut(STORE_PROFILE, "main", profile);
-      showGpsToast("ذخیره مشخصات با موفقیت انجام شد ✅", 4000, "success");
-    } catch (e) {
-      console.error("Save profile error:", e);
-      showGpsToast("خطا در ذخیره مشخصات", 4000, "error");
-    }
-  });
-}
     bindEvents();
   } catch (_) {}
   try {
@@ -277,7 +270,7 @@ try {
     setupAutoSync();
   } catch (_) {}
 
-    try {
+  try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
@@ -286,15 +279,8 @@ try {
   try {
     registerForPushNotifications();
   } catch (_) {}
+});
 
-  try {
-    setupForegroundPushHandler_();
-  } catch (_) {}
-
-  // ========== ONLINE HEARTBEAT ==========
-  setInterval(sendHeartbeat, 60000);   // every 45 seconds while PWA is open
-  sendHeartbeat();                     // once immediately
-});  
 /* =========================
    UI Helpers
 ========================= */
@@ -337,29 +323,6 @@ async function getFirebaseMessaging_() {
     return null;
   }
 }
-async function setupForegroundPushHandler_() {
-  const messaging = await getFirebaseMessaging_();
-  if (!messaging) return;
-
-  messaging.onMessage(async (payload) => {
-    if (payload && payload.data && payload.data.type === "silent_ping") {
-      const profile = await dbGet(STORE_PROFILE, "main");
-      if (!profile || !profile.personnelCode) return;
-
-      try {
-        await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            type: "PushReceived",
-            personnelCode: profile.personnelCode,
-            deviceId: getOrCreateDeviceId_()
-          })
-        });
-      } catch (_) {}
-    }
-  });
-}
 
 async function registerForPushNotifications() {
   const profile = await dbGet(STORE_PROFILE, "main");
@@ -376,6 +339,9 @@ async function registerForPushNotifications() {
       return;
     }
 
+    // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
+    // منتظر ماندن برای پاسخ شبکه. گزارش وضعیت به سرور در پس‌زمینه انجام
+    // می‌شود و تاخیر شبکه دیگر روی سرعت نمایش/رفع قفل تاثیری ندارد.
     enforceNotificationGate();
     reportPushStatus_(profile.personnelCode, Notification.permission).catch(() => {});
 
@@ -412,7 +378,7 @@ async function registerForPushNotifications() {
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
+            body: JSON.stringify({
         type: "RegisterPushToken",
         personnelCode: profile.personnelCode,
         token: token,
@@ -425,6 +391,8 @@ async function registerForPushNotifications() {
       await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));
     } catch (_) {}
   } finally {
+    // همیشه در پایان اجرا می‌شود، صرف‌نظر از این‌که کدام مسیر بالا طی شده -
+    // این تنها جایی است که وضعیت قفل دکمه «ذخیره مشخصات» به‌روزرسانی می‌شود.
     enforceNotificationGate();
   }
 }

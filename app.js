@@ -68,6 +68,7 @@ let photoCompressedAtMs = 0;
 
 
 const $ = (id) => document.getElementById(id);
+// ====================== DEVICE ID (survives screen off) ======================
 const DEVICE_ID_KEY = "attendance_device_id";
 
 function getOrCreateDeviceId_() {
@@ -82,7 +83,6 @@ function getOrCreateDeviceId_() {
     return "dev_fallback_" + Date.now();
   }
 }
-
 /* =========================
    Busy Overlay (Loader)
 ========================= */
@@ -198,11 +198,11 @@ document.addEventListener("visibilitychange", () => {
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
- // Boot section – GPS toast (shows correctly)
+// Boot section – GPS toast (now works correctly)
 setTimeout(() => {
   try {
     showGpsToast(
-      "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ در غیر اینصورت تردد ثبت نمی‌شود.",
+      "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
       8000,
       "error"
     );

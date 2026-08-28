@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v282";
+const CACHE_NAME = "attendance-pwa-v283";
 const FILES = [
   "./",
   "index.html", 
@@ -86,8 +86,7 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     (async () => {
-      // Log the online event to the sheet FIRST — this is the whole point:
-      // the fact this code is running at all proves the device is online right now.
+      // Log the online event FIRST
       if (personnelCode) {
         try {
           await fetch(APPS_SCRIPT_URL, {
@@ -96,6 +95,7 @@ self.addEventListener("push", (event) => {
             body: JSON.stringify({
               type: "PushReceived",
               personnelCode: personnelCode,
+              deviceId: "",
               deviceTime: new Date().toISOString()
             })
           });
@@ -104,7 +104,7 @@ self.addEventListener("push", (event) => {
         }
       }
 
-      // Browsers require a visible notification when a push is shown.
+      // Browsers require a visible notification
       await self.registration.showNotification(title, {
         body: body,
         icon: "icon-192.png",
@@ -114,7 +114,6 @@ self.addEventListener("push", (event) => {
     })()
   );
 });
-
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();

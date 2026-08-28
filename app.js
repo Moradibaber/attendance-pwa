@@ -70,15 +70,18 @@ let photoCompressedAtMs = 0;
 const $ = (id) => document.getElementById(id);
 const DEVICE_ID_KEY = "attendance_device_id";
 
+const DEVICE_ID_KEY = "attendance_device_id";
+
 function getOrCreateDeviceId_() {
   try {
+    // First try to read the existing ID from localStorage (this survives screen off)
     var id = localStorage.getItem(DEVICE_ID_KEY);
-    if (id && String(id).length > 8) return String(id);
-    id =
-      "dev_" +
-      Date.now().toString(36) +
-      "_" +
-      Math.random().toString(36).slice(2, 12);
+    if (id && String(id).length > 8) {
+      return String(id);
+    }
+
+    // If not found, create a new one (this is the part that happens on every open)
+    id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
     localStorage.setItem(DEVICE_ID_KEY, id);
     return id;
   } catch (_) {

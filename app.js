@@ -69,18 +69,13 @@ let photoCompressedAtMs = 0;
 
 const $ = (id) => document.getElementById(id);
 const DEVICE_ID_KEY = "attendance_device_id";
-
 const DEVICE_ID_KEY = "attendance_device_id";
 
 function getOrCreateDeviceId_() {
   try {
-    // First try to read the existing ID from localStorage (this survives screen off)
-    var id = localStorage.getItem(DEVICE_ID_KEY);
-    if (id && String(id).length > 8) {
-      return String(id);
-    }
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (id && String(id).length > 8) return String(id);
 
-    // If not found, create a new one (this is the part that happens on every open)
     id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
     localStorage.setItem(DEVICE_ID_KEY, id);
     return id;
@@ -204,16 +199,18 @@ document.addEventListener("visibilitychange", () => {
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
+ // Boot section – GPS toast (shows correctly)
+setTimeout(() => {
   try {
-    setTimeout(() => {
-      showGpsToast(
-        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
-        8000,
-        "error"
-      );
-    }, 800);
-  } catch (_) {}
-
+    showGpsToast(
+      "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ در غیر اینصورت تردد ثبت نمی‌شود.",
+      8000,
+      "error"
+    );
+  } catch (e) {
+    console.error("GPS toast error:", e);
+  }
+}, 800);
   try {
     const work = $("workLocationInput");
     if (work) work.setAttribute("list", "workLocationHistoryList");
@@ -226,6 +223,31 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   try {
+    // ==================== SAVE PROFILE (ذخیره مشخصات) ====================
+const saveProfileBtn = $("saveProfileBtn");
+if (saveProfileBtn) {
+  saveProfileBtn.addEventListener("click", async () => {
+    const profile = {
+      personnelCode: $("personnelCodeInput")?.value.trim() || "",
+      firstName: $("firstNameInput")?.value.trim() || "",
+      lastName: $("lastNameInput")?.value.trim() || "",
+      // add any other fields you have (email, phone, etc.)
+    };
+
+    if (!profile.personnelCode) {
+      showGpsToast("کد پرسنلی را وارد کنید", 3000, "error");
+      return;
+    }
+
+    try {
+      await dbPut(STORE_PROFILE, "main", profile);
+      showGpsToast("ذخیره مشخصات با موفقیت انجام شد ✅", 4000, "success");
+    } catch (e) {
+      console.error("Save profile error:", e);
+      showGpsToast("خطا در ذخیره مشخصات", 4000, "error");
+    }
+  });
+}
     bindEvents();
   } catch (_) {}
   try {

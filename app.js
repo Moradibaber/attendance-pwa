@@ -296,27 +296,6 @@ function notifyHeartbeat(personnelCode, deviceId, source) {
   }
 }
 
-// document.addEventListener("DOMContentLoaded", async () => {
-//   // ... all your existing try blocks stay exactly the same ...
-
-//   try {
-//     if ("serviceWorker" in navigator) {
-//       navigator.serviceWorker.register("sw.js").catch(() => {});
-//     }
-//   } catch (_) {}
-
-//   try {
-//     registerForPushNotifications();
-//   } catch (_) {}
-
-  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
- // Heartbeat is now handled by startBackgroundOnlineDetection() above
-// (we keep this for compatibility)
-
-// ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) sendHeartbeat();
-});
 /* =========================
    Boot
 ========================= */

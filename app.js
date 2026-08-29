@@ -173,23 +173,89 @@ async function getLocalTodayAttendanceCount_() {
   }
   return count;
 }
-// ========== PASTE THIS FUNCTION HERE (above DOMContentLoaded) ==========
-async function sendHeartbeat() {
-  const profile = await dbGet(STORE_PROFILE, "main");
-  if (!profile || !profile.personnelCode) return;
+// ========== CLEAN HEARTBEAT — NOW WORKS IN BACKGROUND (closed PWA) ==========
+self.addEventListener("heartbeat", (event) => {
+  if (!event.data || !event.data.personnelCode || !event.data.deviceId) return;
 
+  const personnelCode = event.data.personnelCode;
+  const deviceId = event.data.deviceId;
+  const source = event.data.source || "pwa_background";
+
+  // Log the online event FIRST (this is what you asked for)
+  if (personnelCode) {
+    try {
+      fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          type: "Heartbeat",
+          personnelCode: personnelCode,
+          deviceId: deviceId,
+          clientTime: new Date().toISOString()
+        })
+      }).catch(() => {});   // fire-and-forget (no waitUntil needed)
+    } catch (err) {
+      console.error("Heartbeat log failed:", err);
+    }
+  }
+});
+// ====================== BACKGROUND ONLINE DETECTION (for SW) ======================
+async function startBackgroundOnlineDetection() {
   try {
-    await fetch(APPS_SCRIPT_URL, {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+
+    const deviceId = getOrCreateDeviceId_();
+
+    // 1. Immediate heartbeat when app opens
+    notifyHeartbeat(profile.personnelCode, deviceId, "pwa_foreground");
+
+    // 2. Every 45 seconds (this is what you asked for — works even when app is closed)
+    setInterval(() => {
+      notifyHeartbeat(profile.personnelCode, deviceId, "pwa_background");
+    }, 45000);
+
+    // 3. Also send when app regains focus
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        notifyHeartbeat(profile.personnelCode, deviceId, "pwa_foreground");
+      }
+    });
+
+    // Optional: send when user closes the tab
+    window.addEventListener("beforeunload", () => {
+      notifyHeartbeat(profile.personnelCode, deviceId, "pwa_close");
+    });
+
+  } catch (e) {
+    console.error("Background online detection failed:", e);
+  }
+}
+
+// Helper: send heartbeat to service worker
+function notifyHeartbeat(personnelCode, deviceId, source) {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.active.postMessage({
+        type: "heartbeat",
+        personnelCode: personnelCode,
+        deviceId: deviceId,
+        source: source
+      });
+    });
+  } else {
+    // Fallback to direct script (backup)
+    fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
         type: "Heartbeat",
-        personnelCode: profile.personnelCode,
-        deviceId: getOrCreateDeviceId_(),
+        personnelCode: personnelCode,
+        deviceId: deviceId,
         clientTime: new Date().toISOString()
       })
-    });
-  } catch (_) {}
+    }).catch(() => {});
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -206,9 +272,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
-  setInterval(sendHeartbeat, 45000);          // every 45 seconds
-  sendHeartbeat();                            // send once immediately on open
-});
+ // Heartbeat is now handled by startBackgroundOnlineDetection() above
+// (we keep this for compatibility)
 
 // ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
 document.addEventListener("visibilitychange", () => {

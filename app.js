@@ -199,45 +199,42 @@ self.addEventListener("heartbeat", (event) => {
     }
   }
 });
-
-// ====================== BACKGROUND ONLINE DETECTION (per person) ======================
-async function startBackgroundOnlineDetection() {
-  try {
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile || !profile.personnelCode) return;
-
-    const deviceId = getOrCreateDeviceId_();
-
-    // Get interval from Google Sheet (exactly what you asked for)
-    const intervalMinutes = await getIntervalMinutesFromSheet_();
-
-    // 1. Immediate heartbeat when app opens
-    notifyHeartbeat(profile.personnelCode, deviceId, "pwa_foreground");
-
-    // 2. Every X minutes based on the person's "IntervalMinutes" column
-    //    (15, 5, 10, 1, etc. — works whether PWA is open or closed)
-    if (intervalMinutes > 0) {
-      setInterval(() => {
-        notifyHeartbeat(profile.personnelCode, deviceId, "pwa_background");
-      }, intervalMinutes * 60000);   // convert minutes to milliseconds
-    }
-
-    // 3. Also send when app regains focus
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
-        notifyHeartbeat(profile.personnelCode, deviceId, "pwa_foreground");
+    // ========== NEW: Get interval minutes for this person (for background timing) ==========
+    if (String(data.type || "").trim() === "GetIntervalMinutes") {
+      var personnelCode = stringifyOrBlank(data.personnelCode);
+      if (!personnelCode) {
+        return jsonOut({ ok: false, error: "Missing personnelCode" });
       }
-    });
 
-    // Optional: send when user closes the tab
-    window.addEventListener("beforeunload", () => {
-      notifyHeartbeat(profile.personnelCode, deviceId, "pwa_close");
-    });
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var users = ss.getSheetByName("Users");
+      if (!users) return jsonOut({ ok: false, error: "Users sheet not found" });
 
-  } catch (e) {
-    console.error("Background online detection failed:", e);
-  }
-}
+      var headers = users.getRange(1, 1, 1, users.getLastColumn()).getValues()[0];
+      var codeCol = -1;
+      var intervalCol = -1;
+
+      for (var h = 0; h < headers.length; h++) {
+        if (String(headers[h] || "").toLowerCase().trim() === "personnelcode") codeCol = h;
+        if (String(headers[h] || "").toLowerCase().trim() === "intervalminutes") intervalCol = h;
+      }
+
+      if (codeCol < 0 || intervalCol < 0) {
+        return jsonOut({ ok: false, error: "Columns not found" });
+      }
+
+      var uData = users.getDataRange().getValues();
+      var interval = 5; // default
+
+      for (var r = 1; r < uData.length; r++) {
+        if (String(uData[r][codeCol] || "").trim() === personnelCode) {
+          interval = parseInt(uData[r][intervalCol] || 5);
+          break;
+        }
+      }
+
+      return jsonOut({ ok: true, intervalMinutes: interval });
+    }
 
 // NEW HELPER: read IntervalMinutes from Google Sheet for this person
 async function getIntervalMinutesFromSheet_() {

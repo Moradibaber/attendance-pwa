@@ -206,14 +206,62 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
-  setInterval(sendHeartbeat, 45000);          // every 45 seconds
-  sendHeartbeat();                            // send once immediately on open
+  let heartbeatTimer_ = null;
+
+async function startHeartbeatWithInterval_() {
+  // Clear any previous timer
+  if (heartbeatTimer_) {
+    clearInterval(heartbeatTimer_);
+    heartbeatTimer_ = null;
+  }
+
+  let intervalMinutes = 1; // default = 1 minute
+
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (profile && profile.personnelCode) {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          type: "GetIntervalMinutes",
+          personnelCode: profile.personnelCode
+        })
+      });
+      const text = await res.text();
+      const data = JSON.parse(text);
+      if (data && data.ok && data.intervalMinutes) {
+        intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 1);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not load interval, using 1 minute", e);
+  }
+
+  const ms = intervalMinutes * 60 * 1000;
+  console.log("Heartbeat interval set to", intervalMinutes, "minute(s)");
+
+  // Send immediately, then on the interval
+  sendHeartbeat();
+  heartbeatTimer_ = setInterval(sendHeartbeat, ms);
+}
+
+// Call it when the app starts
+document.addEventListener("DOMContentLoaded", async () => {
+  // ... your existing code ...
+
+  try {
+    await startHeartbeatWithInterval_();
+  } catch (_) {}
 });
 
-// ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
+// Also restart when the app becomes visible again
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) sendHeartbeat();
+  if (!document.hidden) {
+    startHeartbeatWithInterval_();
+  }
 });
+
 /* =========================
    Boot
 ========================= */

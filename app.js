@@ -321,7 +321,7 @@ document.addEventListener("visibilitychange", () => {
    Boot
 ========================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  // ==================== SAFE GPS TOAST (works in Cordova + Browser) ====================
+  // ==================== SAFE GPS TOAST ====================
   setTimeout(() => {
     try {
       if (typeof showGpsToast === "function") {
@@ -331,10 +331,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           "error"
         );
       } else {
-        console.log("⚠️ showGpsToast function not found - toast skipped");
+        console.log("⚠️ showGpsToast not found - toast skipped");
       }
     } catch (e) {
-      console.error("showGpsToast failed:", e);
+      console.error("showGpsToast error:", e);
     }
   }, 800);
 
@@ -383,7 +383,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     registerForPushNotifications();
   } catch (_) {}
 });
-
+  
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",
   authDomain: "moradi-832db.firebaseapp.com",

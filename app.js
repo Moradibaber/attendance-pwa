@@ -367,6 +367,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!document.hidden) sendHeartbeat();
   });
 });
+
+  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
+  // Heartbeat is now handled by startBackgroundOnlineDetection() above
+  // (we keep this for compatibility)
+
+  // ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) sendHeartbeat();
+  });
+});
   
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",

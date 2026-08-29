@@ -320,7 +320,6 @@ document.addEventListener("visibilitychange", () => {
 /* =========================
    Boot
 ========================= */
-
 document.addEventListener("DOMContentLoaded", async () => {
   // ==================== SAFE GPS TOAST (works in Cordova + Browser) ====================
   setTimeout(() => {
@@ -384,7 +383,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     registerForPushNotifications();
   } catch (_) {}
 });
- 
+
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",
   authDomain: "moradi-832db.firebaseapp.com",

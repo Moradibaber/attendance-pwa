@@ -236,7 +236,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     setTimeout(() => {
       showGpsToast(
-        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
+        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ در غیراینصورت تردد ثبت نمی‌شود.",
         8000,
         "error"
       );

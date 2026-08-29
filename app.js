@@ -297,34 +297,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 });
 
-document.addEventListener("DOMContentLoaded", async () => {
-  setTimeout(() => {
-    try {
-      if (typeof showGpsToast === "function") {
-        showGpsToast("★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.", 8000, "error");
-      } else {
-        console.log("⚠️ showGpsToast not found - toast skipped");
-      }
-    } catch (e) {
-      console.error("showGpsToast error:", e);
-    }
-  }, 800);
-
-  try {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
-    }
-  } catch (_) {}
-
-  try {
-    registerForPushNotifications();
-  } catch (_) {}
-
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) sendHeartbeat();
-  });
-});
-
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",
   authDomain: "moradi-832db.firebaseapp.com",

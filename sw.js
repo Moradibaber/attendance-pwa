@@ -76,56 +76,52 @@ self.addEventListener("push", (event) => {
   let payload = {};
   try {
     payload = event.data ? event.data.json() : {};
-  } catch (_) {
-    payload = {};
+  } catch (e) {
+    try {
+      payload = { data: { raw: event.data ? event.data.text() : "" } };
+    } catch (_) {
+      payload = {};
+    }
   }
 
-  // FCM can put data in different places depending on platform
-  const notif = payload.notification || {};
+  // Support both formats FCM can send
   const data = payload.data || payload || {};
+  const notif = payload.notification || {};
   const personnelCode =
     data.personnelCode ||
     data.personnelcode ||
-    (payload.data && payload.data.personnelCode) ||
+    (typeof data === "object" && data.personnelCode) ||
     "";
 
   const title = notif.title || data.title || "بروزرسانی سیستم";
-  const body = notif.body || data.body || "";
+  const body  = notif.body  || data.body  || " ";
 
   event.waitUntil(
     (async () => {
-      // 1) Log online time FIRST (this is the background online detection)
-      if (personnelCode) {
-        let deviceId = "";
-        try {
-          // Try to read deviceId from IndexedDB profile if available
-          const db = await openDbInServiceWorker();
-          const profile = await dbGetInServiceWorker(db, "profile", "main");
-          if (profile && profile.deviceId) deviceId = profile.deviceId;
-        } catch (_) {}
-
-        try {
-          await fetch(APPS_SCRIPT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              type: "PushReceived",
-              personnelCode: String(personnelCode),
-              deviceId: deviceId || "",
-              deviceTime: new Date().toISOString()
-            })
-          });
-        } catch (err) {
-          console.error("PushReceived log failed:", err);
-        }
+      // Always try to log, even if personnelCode is empty
+      try {
+        await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            type: "PushReceived",
+            personnelCode: String(personnelCode || "UNKNOWN"),
+            deviceId: "",
+            deviceTime: new Date().toISOString(),
+            rawPayload: JSON.stringify(payload).slice(0, 500)
+          })
+        });
+      } catch (err) {
+        console.error("PushReceived failed:", err);
       }
 
-      // 2) Browsers require a visible notification for the push to be delivered reliably
+      // Show notification (required for reliable delivery on many browsers)
       await self.registration.showNotification(title, {
-        body: body || " ",
+        body: body,
         icon: "icon-192.png",
         silent: true,
-        tag: "attendance-update"
+        tag: "attendance-update",
+        data: { personnelCode }
       });
     })()
   );

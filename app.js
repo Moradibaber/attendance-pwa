@@ -401,21 +401,7 @@ try {
   }, 800);
 });
 
-  // ==================== SHOW GPS TOAST ONCE ====================
-  setTimeout(() => {
-    try {
-      showGpsToast(
-        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
-        8000,
-        "error"
-      );
-    } catch (e) {
-      console.error("showGpsToast failed:", e);
-    }
-  }, 800);
-});
-/* =========================
-   UI Helpers
+    UI Helpers
 ========================= */
 
 const FIREBASE_CONFIG = {

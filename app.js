@@ -256,12 +256,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 // Also restart when the app becomes visible again
+// ========== CLEAN VISIBILITYCHANGE (only one listener) ==========
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
+    // Restart heartbeat with the correct interval when the app becomes visible
     startHeartbeatWithInterval_();
   }
 });
-
 /* =========================
    Boot
 ========================= */

@@ -373,7 +373,7 @@ try {
     setupAutoSync();
   } catch (_) {}
 
-  try {
+   try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
@@ -382,6 +382,24 @@ try {
   try {
     registerForPushNotifications();
   } catch (_) {}
+
+  // ==================== SAFE GPS TOAST (works in Cordova + Browser) ====================
+  setTimeout(() => {
+    try {
+      if (typeof showGpsToast === "function") {
+        showGpsToast(
+          "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
+          8000,
+          "error"
+        );
+      } else {
+        console.log("showGpsToast function not found - toast skipped");
+      }
+    } catch (e) {
+      console.error("showGpsToast failed:", e);
+    }
+  }, 800);
+});
 
   // ==================== SHOW GPS TOAST ONCE ====================
   setTimeout(() => {

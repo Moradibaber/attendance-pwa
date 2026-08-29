@@ -1,3 +1,8 @@
+
+
+
+
+
 const DB_NAME = "attendance-pwa-db"; 
 const DB_VERSION = 3;
 
@@ -33,11 +38,7 @@ let syncTimer = null;
 let lastAdminMessage = null;
 let cameraStream = null;
 let isProcessingPhoto_ = false;
-// کش حافظه‌ای پروفایل و سیاست تردد - هدف این است که در لحظه کلیک روی دکمه
-// دوربین، هیچ await ای قبل از فراخوانی photoInput.click() وجود نداشته باشد.
-// در iOS Safari حتی چند await سریع IndexedDB هم می‌تواند «فعال‌سازی کاربر»
-// (user activation) لازم برای باز شدن دوربین را از بین ببرد و باعث شود
-// دوربین اصلا باز نشود، بدون هیچ خطایی.
+
 let cachedProfile_ = null;
 let cachedPolicyInfo_ = null;
 let faceApiReady_ = false;
@@ -66,7 +67,6 @@ let captureStartedAtMs = 0;
 let photoSelectedAtMs = 0;
 let photoCompressedAtMs = 0;
 
-
 const $ = (id) => document.getElementById(id);
 const DEVICE_ID_KEY = "attendance_device_id";
 
@@ -74,11 +74,7 @@ function getOrCreateDeviceId_() {
   try {
     var id = localStorage.getItem(DEVICE_ID_KEY);
     if (id && String(id).length > 8) return String(id);
-    id =
-      "dev_" +
-      Date.now().toString(36) +
-      "_" +
-      Math.random().toString(36).slice(2, 12);
+    id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
     localStorage.setItem(DEVICE_ID_KEY, id);
     return id;
   } catch (_) {
@@ -86,22 +82,13 @@ function getOrCreateDeviceId_() {
   }
 }
 
-/* =========================
-   Busy Overlay (Loader)
-========================= */
-
 function setBusy(isBusy, message = "در حال پردازش...") {
   const overlay = $("busyOverlay");
   const text = $("busyText");
   if (!overlay || !text) return;
-
   text.textContent = message;
   overlay.style.display = isBusy ? "flex" : "none";
 }
-
-/* =========================
-   Jalali (Persian) Date Converter
-========================= */
 
 function getJalaliDateParts(date = new Date()) {
   const g_y = date.getFullYear();
@@ -115,11 +102,7 @@ function getJalaliDateParts(date = new Date()) {
   let gm = g_m - 1;
   let gd = g_d - 1;
 
-  let g_day_no =
-    365 * gy +
-    Math.floor((gy + 3) / 4) -
-    Math.floor((gy + 99) / 100) +
-    Math.floor((gy + 399) / 400);
+  let g_day_no = 365 * gy + Math.floor((gy + 3) / 4) - Math.floor((gy + 99) / 100) + Math.floor((gy + 399) / 400);
 
   for (let i = 0; i < gm; ++i) g_day_no += g_days_in_month[i];
 
@@ -145,123 +128,114 @@ function getJalaliDateParts(date = new Date()) {
   let jm = i + 1;
   let jd = j_day_no + 1;
 
-  return {
-    jy,
-    jm: String(jm).padStart(2, "0"),
-    jd: String(jd).padStart(2, "0"),
-  };
+  return { jy, jm: String(jm).padStart(2, "0"), jd: String(jd).padStart(2, "0") };
 }
 
 function getJalaliIsoDate(d = new Date()) {
   const p = getJalaliDateParts(d);
   return `${p.jy}/${p.jm}/${p.jd}`;
 }
+
 async function getLocalTodayAttendanceCount_() {
   const today = getJalaliIsoDate();
   const records = await dbGetAll(STORE_RECORDS);
   let count = 0;
   for (const r of records) {
-    if (
-      r.recordDate === today &&
-      (r.status === "pending" ||
-        r.status === "sent" ||
-        r.status === "failed" ||
-        r.status === "syncing")
-    ) {
+    if (r.recordDate === today && (r.status === "pending" || r.status === "sent" || r.status === "failed" || r.status === "syncing")) {
       count++;
     }
   }
   return count;
 }
-// ========== CLEAN HEARTBEAT — NOW WORKS IN BACKGROUND (closed PWA) ==========
+
+function showGpsToast(message, duration = 3000, type = "success") {
+  const oldToast = document.getElementById("gps-toast");
+  if (oldToast) oldToast.remove();
+
+  if (!document.getElementById("gps-toast-style")) {
+    const style = document.createElement("style");
+    style.id = "gps-toast-style";
+    style.textContent = `
+      @keyframes gpsToastIn { 0% { opacity: 0; transform: translate(-50%, -46%) scale(0.85); } 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+      @keyframes gpsToastOut { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -46%) scale(0.85); } }
+      #gps-toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; padding: 22px 28px; border-radius: 18px; font-size: 18px; font-weight: 700; font-family: Tahoma, Vazirmatn, sans-serif; z-index: 10000; direction: rtl; text-align: center; width: 82%; max-width: 380px; border: 2px solid rgba(255,255,255,0.85); line-height: 1.7; white-space: pre-line; animation: gpsToastIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+      #gps-toast.success { background: rgba(22, 163, 74, 0.96); box-shadow: 0 14px 40px rgba(22, 163, 74, 0.4); }
+      #gps-toast.error { background: rgba(220, 38, 38, 0.95); box-shadow: 0 14px 40px rgba(220, 38, 38, 0.35); }
+      #gps-toast.hiding { animation: gpsToastOut 0.3s ease forwards; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const toast = document.createElement("div");
+  toast.id = "gps-toast";
+  toast.className = type === "success" ? "success" : "error";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add("hiding");
+    setTimeout(() => toast.remove(), 320);
+  }, duration);
+}
+
 self.addEventListener("heartbeat", (event) => {
   if (!event.data || !event.data.personnelCode || !event.data.deviceId) return;
-
   const personnelCode = event.data.personnelCode;
   const deviceId = event.data.deviceId;
   const source = event.data.source || "pwa_background";
 
-  // Log the online event FIRST (this is what you asked for)
   if (personnelCode) {
     try {
       fetch(APPS_SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          type: "Heartbeat",
-          personnelCode: personnelCode,
-          deviceId: deviceId,
-          clientTime: new Date().toISOString()
-        })
-      }).catch(() => {});   // fire-and-forget (no waitUntil needed)
+        body: JSON.stringify({ type: "Heartbeat", personnelCode: personnelCode, deviceId: deviceId, clientTime: new Date().toISOString() })
+      }).catch(() => {});
     } catch (err) {
       console.error("Heartbeat log failed:", err);
     }
   }
 });
-    // ========== NEW: Get interval minutes for this person (for background timing) ==========
-    if (String(data.type || "").trim() === "GetIntervalMinutes") {
-      var personnelCode = stringifyOrBlank(data.personnelCode);
-      if (!personnelCode) {
-        return jsonOut({ ok: false, error: "Missing personnelCode" });
-      }
 
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var users = ss.getSheetByName("Users");
-      if (!users) return jsonOut({ ok: false, error: "Users sheet not found" });
-
-      var headers = users.getRange(1, 1, 1, users.getLastColumn()).getValues()[0];
-      var codeCol = -1;
-      var intervalCol = -1;
-
-      for (var h = 0; h < headers.length; h++) {
-        if (String(headers[h] || "").toLowerCase().trim() === "personnelcode") codeCol = h;
-        if (String(headers[h] || "").toLowerCase().trim() === "intervalminutes") intervalCol = h;
-      }
-
-      if (codeCol < 0 || intervalCol < 0) {
-        return jsonOut({ ok: false, error: "Columns not found" });
-      }
-
-      var uData = users.getDataRange().getValues();
-      var interval = 5; // default
-
-      for (var r = 1; r < uData.length; r++) {
-        if (String(uData[r][codeCol] || "").trim() === personnelCode) {
-          interval = parseInt(uData[r][intervalCol] || 5);
-          break;
-        }
-      }
-
-      return jsonOut({ ok: true, intervalMinutes: interval });
+if (String(data.type || "").trim() === "GetIntervalMinutes") {
+  var personnelCode = stringifyOrBlank(data.personnelCode);
+  if (!personnelCode) return jsonOut({ ok: false, error: "Missing personnelCode" });
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var users = ss.getSheetByName("Users");
+  if (!users) return jsonOut({ ok: false, error: "Users sheet not found" });
+  var headers = users.getRange(1, 1, 1, users.getLastColumn()).getValues()[0];
+  var codeCol = -1;
+  var intervalCol = -1;
+  for (var h = 0; h < headers.length; h++) {
+    if (String(headers[h] || "").toLowerCase().trim() === "personnelcode") codeCol = h;
+    if (String(headers[h] || "").toLowerCase().trim() === "intervalminutes") intervalCol = h;
+  }
+  if (codeCol < 0 || intervalCol < 0) return jsonOut({ ok: false, error: "Columns not found" });
+  var uData = users.getDataRange().getValues();
+  var interval = 5;
+  for (var r = 1; r < uData.length; r++) {
+    if (String(uData[r][codeCol] || "").trim() === personnelCode) {
+      interval = parseInt(uData[r][intervalCol] || 5);
+      break;
     }
+  }
+  return jsonOut({ ok: true, intervalMinutes: interval });
+}
 
-// NEW HELPER: read IntervalMinutes from Google Sheet for this person
 async function getIntervalMinutesFromSheet_() {
   try {
     const profile = await dbGet(STORE_PROFILE, "main");
     const personnelCode = profile.personnelCode;
-
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        type: "GetIntervalMinutes",
-        personnelCode: personnelCode
-      })
+      body: JSON.stringify({ type: "GetIntervalMinutes", personnelCode: personnelCode })
     });
-
     const text = await res.text();
     const result = JSON.parse(text);
-
-    if (result.ok && result.intervalMinutes) {
-      return parseInt(result.intervalMinutes);
-    }
-
-    // Fallback: read from localStorage if sheet not available
+    if (result.ok && result.intervalMinutes) return parseInt(result.intervalMinutes);
     const stored = localStorage.getItem(`interval_${personnelCode}`);
     if (stored) return parseInt(stored);
-
     console.warn("Could not read IntervalMinutes from sheet, using default 5");
     return 5;
   } catch (e) {
@@ -270,48 +244,92 @@ async function getIntervalMinutesFromSheet_() {
   }
 }
 
-// Helper: send heartbeat to service worker
 function notifyHeartbeat(personnelCode, deviceId, source) {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.ready.then(reg => {
-      reg.active.postMessage({
-        type: "heartbeat",
-        personnelCode: personnelCode,
-        deviceId: deviceId,
-        source: source
-      });
+      reg.active.postMessage({ type: "heartbeat", personnelCode: personnelCode, deviceId: deviceId, source: source });
     });
   } else {
-    // Fallback to direct script (backup)
     fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        type: "Heartbeat",
-        personnelCode: personnelCode,
-        deviceId: deviceId,
-        clientTime: new Date().toISOString()
-      })
+      body: JSON.stringify({ type: "Heartbeat", personnelCode: personnelCode, deviceId: deviceId, clientTime: new Date().toISOString() })
     }).catch(() => {});
   }
 }
 
-  // ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
+document.addEventListener("DOMContentLoaded", async () => {
+  setTimeout(() => {
+    try {
+      if (typeof showGpsToast === "function") {
+        showGpsToast("★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.", 8000, "error");
+      } else {
+        console.log("⚠️ showGpsToast not found - toast skipped");
+      }
+    } catch (e) {
+      console.error("showGpsToast error:", e);
+    }
+  }, 800);
+
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  } catch (_) {}
+
+  try {
+    registerForPushNotifications();
+  } catch (_) {}
+
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) sendHeartbeat();
   });
 });
 
-  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
-  // Heartbeat is now handled by startBackgroundOnlineDetection() above
-  // (we keep this for compatibility)
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  } catch (_) {}
 
-  // ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
+  try {
+    registerForPushNotifications();
+  } catch (_) {}
+
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) sendHeartbeat();
   });
 });
-  
+
+document.addEventListener("DOMContentLoaded", async () => {
+  setTimeout(() => {
+    try {
+      if (typeof showGpsToast === "function") {
+        showGpsToast("★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.", 8000, "error");
+      } else {
+        console.log("⚠️ showGpsToast not found - toast skipped");
+      }
+    } catch (e) {
+      console.error("showGpsToast error:", e);
+    }
+  }, 800);
+
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  } catch (_) {}
+
+  try {
+    registerForPushNotifications();
+  } catch (_) {}
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) sendHeartbeat();
+  });
+});
+
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",
   authDomain: "moradi-832db.firebaseapp.com",

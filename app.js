@@ -346,7 +346,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     bindEvents();
   } catch (_) {}
-  try {
+   try {
     const work = $("workLocationInput");
     if (work) work.setAttribute("list", "workLocationHistoryList");
     await refreshWorkLocationDatalist_();
@@ -382,8 +382,20 @@ try {
   try {
     registerForPushNotifications();
   } catch (_) {}
-});
 
+  // ==================== SHOW GPS TOAST ONCE ====================
+  setTimeout(() => {
+    try {
+      showGpsToast(
+        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
+        8000,
+        "error"
+      );
+    } catch (e) {
+      console.error("showGpsToast failed:", e);
+    }
+  }, 800);
+});
 /* =========================
    UI Helpers
 ========================= */

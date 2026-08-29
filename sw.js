@@ -1,7 +1,7 @@
-const CACHE_NAME = "attendance-pwa-v302";
+const CACHE_NAME = "attendance-pwa-v303";
 const FILES = [
   "./",
-  "index.html", 
+  "index.html",
   "styles.css",
   "app.js?v=63",
   "manifest.json?v=2",
@@ -11,31 +11,27 @@ const FILES = [
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
-// Replace this entire block with the version below
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       await Promise.all(
         FILES.map(async (url) => {
-          const response = await fetch(url, { cache: "reload" });
-          await cache.put(url, response);
+          try {
+            const response = await fetch(url, { cache: "reload" });
+            await cache.put(url, response);
+          } catch (e) {
+            console.warn("Cache put failed for", url, e);
+          }
         })
       );
     })
   );
-
   self.skipWaiting();
+});
 
-  // This makes the new service worker take control immediately
-  // and keeps the deviceId alive after screen off
-  clients.claim();
-});
-  // === THIS IS WHAT YOU ASKED FOR ===
-  // Call clients.claim() inside install (very common and safe in this SW)
-  // It makes the new worker take control immediately on first install
-  clients.claim();
-});
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -44,33 +40,34 @@ self.addEventListener("activate", (event) => {
           .filter((key) => key !== CACHE_NAME)
           .map((key) => caches.delete(key))
       );
-    }).then(() => {
-      return self.clients.claim();
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
   const url = event.request.url;
 
-  // Never intercept Google Apps Script / Google / Firebase – let the browser talk to the network directly
+  // Never intercept Google / Firebase / time APIs
   if (
-    url.includes('script.google.com') ||
-    url.includes('googleapis.com') ||
-    url.includes('gstatic.com') ||
-    url.includes('google.com') ||
-    url.includes('firebase') ||
-    url.includes('worldtimeapi.org')
+    url.includes("script.google.com") ||
+    url.includes("googleapis.com") ||
+    url.includes("gstatic.com") ||
+    url.includes("google.com") ||
+    url.includes("firebase") ||
+    url.includes("worldtimeapi.org")
   ) {
-    return; // critical: do NOT call event.respondWith
+    return;
   }
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request).catch(() => {
-        console.warn("Fetch failed and not in cache:", event.request.url);
-        return new Response("Offline Content Not Available", { status: 503 });
-      });
+      return (
+        cachedResponse ||
+        fetch(event.request).catch(() => {
+          console.warn("Fetch failed and not in cache:", event.request.url);
+          return new Response("Offline Content Not Available", { status: 503 });
+        })
+      );
     })
   );
 });
@@ -83,24 +80,38 @@ self.addEventListener("push", (event) => {
     payload = {};
   }
 
+  // FCM can put data in different places depending on platform
   const notif = payload.notification || {};
-  const data = payload.data || {};
-  const personnelCode = data.personnelCode || "";
-  const title = notif.title || "بروزرسانی سیستم";
-  const body = notif.body || "";
+  const data = payload.data || payload || {};
+  const personnelCode =
+    data.personnelCode ||
+    data.personnelcode ||
+    (payload.data && payload.data.personnelCode) ||
+    "";
+
+  const title = notif.title || data.title || "بروزرسانی سیستم";
+  const body = notif.body || data.body || "";
 
   event.waitUntil(
     (async () => {
-      // Log the online event FIRST
+      // 1) Log online time FIRST (this is the background online detection)
       if (personnelCode) {
+        let deviceId = "";
+        try {
+          // Try to read deviceId from IndexedDB profile if available
+          const db = await openDbInServiceWorker();
+          const profile = await dbGetInServiceWorker(db, "profile", "main");
+          if (profile && profile.deviceId) deviceId = profile.deviceId;
+        } catch (_) {}
+
         try {
           await fetch(APPS_SCRIPT_URL, {
             method: "POST",
             headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify({
               type: "PushReceived",
-              personnelCode: personnelCode,
-              deviceId: "",
+              personnelCode: String(personnelCode),
+              deviceId: deviceId || "",
               deviceTime: new Date().toISOString()
             })
           });
@@ -109,9 +120,9 @@ self.addEventListener("push", (event) => {
         }
       }
 
-      // Browsers require a visible notification
+      // 2) Browsers require a visible notification for the push to be delivered reliably
       await self.registration.showNotification(title, {
-        body: body,
+        body: body || " ",
         icon: "icon-192.png",
         silent: true,
         tag: "attendance-update"
@@ -119,65 +130,57 @@ self.addEventListener("push", (event) => {
     })()
   );
 });
+
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();
     const records = await dbGetAllInServiceWorker(db, STORE_RECORDS);
-    const list = records.filter((r) => r.status === "pending" || r.status === "failed");
+    const list = records.filter(
+      (r) => r.status === "pending" || r.status === "failed"
+    );
 
     if (!list.length) {
       await notifyClients("SYNC_COMPLETE");
       return;
-    } 
-
-  for (const record of list) {
-
-  try {
-
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify(record)
-    });
-
-    const text = await response.text();
-
-    console.log("Sending to:", APPS_SCRIPT_URL);
-    console.log("HTTP Status:", response.status);
-    console.log("Response:", text);
-
-    const result = JSON.parse(text);
-
-    if (result.ok) {
-      record.status = "sent";
-    } else {
-      record.status = "failed";
     }
 
-    await dbPutInServiceWorker(db, STORE_RECORDS, record);
+    for (const record of list) {
+      try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(record)
+        });
 
+        const text = await response.text();
+        console.log("Sending to:", APPS_SCRIPT_URL);
+        console.log("HTTP Status:", response.status);
+        console.log("Response:", text);
+
+        const result = JSON.parse(text);
+
+        if (result.ok) {
+          record.status = "sent";
+        } else {
+          record.status = "failed";
+        }
+
+        await dbPutInServiceWorker(db, STORE_RECORDS, record);
+      } catch (err) {
+        console.error("SW Sync Error:", err);
+        console.error("URL:", APPS_SCRIPT_URL);
+        record.status = "failed";
+        await dbPutInServiceWorker(db, STORE_RECORDS, record);
+      }
+    }
+
+    await notifyClients("SYNC_COMPLETE");
   } catch (err) {
-
-    console.error("SW Sync Error:", err);
-    console.error("URL:", APPS_SCRIPT_URL);
-
-    record.status = "failed";
-    await dbPutInServiceWorker(db, STORE_RECORDS, record);
-
+    console.error("syncPendingRecordsInBackground Error:", err);
+    await notifyClients("SYNC_FAILED");
   }
-
-}   // پایان حلقه for
-
-await notifyClients("SYNC_COMPLETE");
-
-} catch (err) {
-
-  console.error("syncPendingRecordsInBackground Error:", err);
-
-  await notifyClients("SYNC_FAILED");
 }
+
 function openDbInServiceWorker() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -190,14 +193,11 @@ function openDbInServiceWorker() {
           keyPath: "id",
           autoIncrement: true
         });
-
         store.createIndex("status", "status");
       }
 
       if (!openedDb.objectStoreNames.contains("profile")) {
-        openedDb.createObjectStore("profile", {
-          keyPath: "id"
-        });
+        openedDb.createObjectStore("profile", { keyPath: "id" });
       }
     };
 
@@ -211,8 +211,17 @@ function dbGetAllInServiceWorker(db, store) {
     const tx = db.transaction(store, "readonly");
     const st = tx.objectStore(store);
     const req = st.getAll();
-
     req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGetInServiceWorker(db, store, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const st = tx.objectStore(store);
+    const req = st.get(key);
+    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
@@ -222,7 +231,6 @@ function dbPutInServiceWorker(db, store, value) {
     const tx = db.transaction(store, "readwrite");
     const st = tx.objectStore(store);
     const req = st.put(value);
-
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -235,9 +243,6 @@ async function notifyClients(type) {
   });
 
   for (const client of clientsList) {
-    client.postMessage({
-      type
-    });
+    client.postMessage({ type });
   }
-}
 }

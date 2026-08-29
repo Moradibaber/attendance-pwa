@@ -192,30 +192,15 @@ async function sendHeartbeat() {
   } catch (_) {}
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-  // ... all your existing try blocks stay exactly the same ...
-
-  try {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
-    }
-  } catch (_) {}
-
-  try {
-    registerForPushNotifications();
-  } catch (_) {}
-
-  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
-  let heartbeatTimer_ = null;
+let heartbeatTimer_ = null;
 
 async function startHeartbeatWithInterval_() {
-  // Clear any previous timer
   if (heartbeatTimer_) {
     clearInterval(heartbeatTimer_);
     heartbeatTimer_ = null;
   }
 
-  let intervalMinutes = 1; // default = 1 minute
+  let intervalMinutes = 1;
 
   try {
     const profile = await dbGet(STORE_PROFILE, "main");
@@ -239,30 +224,10 @@ async function startHeartbeatWithInterval_() {
   }
 
   const ms = intervalMinutes * 60 * 1000;
-  console.log("Heartbeat interval set to", intervalMinutes, "minute(s)");
-
-  // Send immediately, then on the interval
   sendHeartbeat();
   heartbeatTimer_ = setInterval(sendHeartbeat, ms);
 }
 
-// Call it when the app starts
-document.addEventListener("DOMContentLoaded", async () => {
-  // ... your existing code ...
-
-  try {
-    await startHeartbeatWithInterval_();
-  } catch (_) {}
-});
-
-// Also restart when the app becomes visible again
-// ========== CLEAN VISIBILITYCHANGE (only one listener) ==========
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    // Restart heartbeat with the correct interval when the app becomes visible
-    startHeartbeatWithInterval_();
-  }
-});
 /* =========================
    Boot
 ========================= */
@@ -292,17 +257,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     bindEvents();
   } catch (_) {}
+
   try {
     const work = $("workLocationInput");
     if (work) work.setAttribute("list", "workLocationHistoryList");
     await refreshWorkLocationDatalist_();
   } catch (_) {}
+
   try {
     await loadProfile();
   } catch (_) {}
-try {
+
+  try {
     ensureFaceApiReady_().catch(() => {});
   } catch (_) {}
+
   try {
     await ensurePolicyLoadedAtStartup();
   } catch (_) {}
@@ -312,7 +281,7 @@ try {
   } catch (_) {}
 
   try {
-    await fetchMessages(); 
+    await fetchMessages();
   } catch (_) {}
 
   try {
@@ -328,6 +297,18 @@ try {
   try {
     registerForPushNotifications();
   } catch (_) {}
+
+  // Start heartbeat with the person's IntervalMinutes
+  try {
+    await startHeartbeatWithInterval_();
+  } catch (_) {}
+});
+
+// Restart heartbeat when the app becomes visible again
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    startHeartbeatWithInterval_();
+  }
 });
 
 /* =========================

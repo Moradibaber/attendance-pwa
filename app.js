@@ -322,15 +322,22 @@ document.addEventListener("visibilitychange", () => {
 ========================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
-  try {
-    setTimeout(() => {
-      showGpsToast(
-        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
-        8000,
-        "error"
-      );
-    }, 800);
-  } catch (_) {}
+  // ==================== SAFE GPS TOAST (works in Cordova + Browser) ====================
+  setTimeout(() => {
+    try {
+      if (typeof showGpsToast === "function") {
+        showGpsToast(
+          "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
+          8000,
+          "error"
+        );
+      } else {
+        console.log("⚠️ showGpsToast function not found - toast skipped");
+      }
+    } catch (e) {
+      console.error("showGpsToast failed:", e);
+    }
+  }, 800);
 
   try {
     const work = $("workLocationInput");
@@ -338,25 +345,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   try {
-    db = await openDb();
-  } catch (e) {
-    console.error("DB init error", e);
-  }
-
-  try {
-    bindEvents();
-  } catch (_) {}
-   try {
     const work = $("workLocationInput");
     if (work) work.setAttribute("list", "workLocationHistoryList");
     await refreshWorkLocationDatalist_();
   } catch (_) {}
+
   try {
     await loadProfile();
   } catch (_) {}
-try {
+
+  try {
     ensureFaceApiReady_().catch(() => {});
   } catch (_) {}
+
   try {
     await ensurePolicyLoadedAtStartup();
   } catch (_) {}
@@ -373,7 +374,7 @@ try {
     setupAutoSync();
   } catch (_) {}
 
-   try {
+  try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
@@ -382,28 +383,8 @@ try {
   try {
     registerForPushNotifications();
   } catch (_) {}
-
-  // ==================== SAFE GPS TOAST (works in Cordova + Browser) ====================
-  setTimeout(() => {
-    try {
-      if (typeof showGpsToast === "function") {
-        showGpsToast(
-          "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ وگرنه تردد ثبت نمی‌شود.",
-          8000,
-          "error"
-        );
-      } else {
-        console.log("showGpsToast function not found - toast skipped");
-      }
-    } catch (e) {
-      console.error("showGpsToast failed:", e);
-    }
-  }, 800);
 });
-
-    UI Helpers
-========================= */
-
+ 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAgg2uymSkPPZamlbqNMWtuXs1VtWtDKsY",
   authDomain: "moradi-832db.firebaseapp.com",

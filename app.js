@@ -199,7 +199,8 @@ self.addEventListener("heartbeat", (event) => {
     }
   }
 });
-// ====================== BACKGROUND ONLINE DETECTION (for SW) ======================
+
+// ====================== BACKGROUND ONLINE DETECTION (per person) ======================
 async function startBackgroundOnlineDetection() {
   try {
     const profile = await dbGet(STORE_PROFILE, "main");
@@ -207,13 +208,19 @@ async function startBackgroundOnlineDetection() {
 
     const deviceId = getOrCreateDeviceId_();
 
+    // Get interval from Google Sheet (exactly what you asked for)
+    const intervalMinutes = await getIntervalMinutesFromSheet_();
+
     // 1. Immediate heartbeat when app opens
     notifyHeartbeat(profile.personnelCode, deviceId, "pwa_foreground");
 
-    // 2. Every 45 seconds (this is what you asked for — works even when app is closed)
-    setInterval(() => {
-      notifyHeartbeat(profile.personnelCode, deviceId, "pwa_background");
-    }, 45000);
+    // 2. Every X minutes based on the person's "IntervalMinutes" column
+    //    (15, 5, 10, 1, etc. — works whether PWA is open or closed)
+    if (intervalMinutes > 0) {
+      setInterval(() => {
+        notifyHeartbeat(profile.personnelCode, deviceId, "pwa_background");
+      }, intervalMinutes * 60000);   // convert minutes to milliseconds
+    }
 
     // 3. Also send when app regains focus
     document.addEventListener("visibilitychange", () => {
@@ -229,6 +236,40 @@ async function startBackgroundOnlineDetection() {
 
   } catch (e) {
     console.error("Background online detection failed:", e);
+  }
+}
+
+// NEW HELPER: read IntervalMinutes from Google Sheet for this person
+async function getIntervalMinutesFromSheet_() {
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    const personnelCode = profile.personnelCode;
+
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "GetIntervalMinutes",
+        personnelCode: personnelCode
+      })
+    });
+
+    const text = await res.text();
+    const result = JSON.parse(text);
+
+    if (result.ok && result.intervalMinutes) {
+      return parseInt(result.intervalMinutes);
+    }
+
+    // Fallback: read from localStorage if sheet not available
+    const stored = localStorage.getItem(`interval_${personnelCode}`);
+    if (stored) return parseInt(stored);
+
+    console.warn("Could not read IntervalMinutes from sheet, using default 5");
+    return 5;
+  } catch (e) {
+    console.warn("Could not read IntervalMinutes from sheet, using default 5");
+    return 5;
   }
 }
 

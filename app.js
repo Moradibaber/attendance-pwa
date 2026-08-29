@@ -1,8 +1,3 @@
-
-
-
-
-
 const DB_NAME = "attendance-pwa-db"; 
 const DB_VERSION = 3;
 

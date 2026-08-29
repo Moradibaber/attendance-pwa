@@ -321,7 +321,7 @@ document.addEventListener("visibilitychange", () => {
    Boot
 ========================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  // ==================== SAFE GPS TOAST ====================
+  // ==================== SAFE GPS TOAST (WORKS IN CORDOVA) ====================
   setTimeout(() => {
     try {
       if (typeof showGpsToast === "function") {
@@ -339,41 +339,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   }, 800);
 
   try {
-    const work = $("workLocationInput");
-    if (work) work.setAttribute("list", "workLocationHistoryList");
-  } catch (_) {}
-
-  try {
-    const work = $("workLocationInput");
-    if (work) work.setAttribute("list", "workLocationHistoryList");
-    await refreshWorkLocationDatalist_();
-  } catch (_) {}
-
-  try {
-    await loadProfile();
-  } catch (_) {}
-
-  try {
-    ensureFaceApiReady_().catch(() => {});
-  } catch (_) {}
-
-  try {
-    await ensurePolicyLoadedAtStartup();
-  } catch (_) {}
-
-  try {
-    await refreshUi();
-  } catch (_) {}
-
-  try {
-    await fetchMessages(); 
-  } catch (_) {}
-
-  try {
-    setupAutoSync();
-  } catch (_) {}
-
-  try {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }
@@ -382,6 +347,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     registerForPushNotifications();
   } catch (_) {}
+
+  // ========== ADD THESE TWO LINES AT THE END OF DOMContentLoaded ==========
+  // Heartbeat is now handled by startBackgroundOnlineDetection() above
+  // (we keep this for compatibility)
+
+  // ========== ALSO ADD THIS LISTENER (anywhere after the function) ==========
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) sendHeartbeat();
+  });
 });
   
 const FIREBASE_CONFIG = {

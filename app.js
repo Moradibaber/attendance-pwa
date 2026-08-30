@@ -306,6 +306,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     await startHeartbeatWithInterval_();
   } catch (_) {}
+    // Password placeholder
+  try {
+    const passInput = $("userPassword");
+    if (passInput) {
+      passInput.placeholder = "رمز پیش فرض 1234 میباشد، در صورت تمایل به تغییر با ادمین تماس بگیرید";
+    }
+  } catch (_) {}
 });
 
 // Restart heartbeat when the app becomes visible again

@@ -267,7 +267,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     await loadProfile();
   } catch (_) {}
-
+  try {
+    if (cachedProfile_ && cachedProfile_.personnelCode) {
+      setSaveProfileButtonSaved_();
+    }
+  } catch (_) {}
   try {
     ensureFaceApiReady_().catch(() => {});
   } catch (_) {}
@@ -732,14 +736,9 @@ function bindEvents() {
   $("cancelCameraBtn")?.addEventListener("click", closeCamera);
 
   injectWorkLocationField();
-  ["personnelCode", "firstName", "lastName", "userPassword"].forEach((id) => {
-  $(id)?.addEventListener("input", () => {
-    const b = $("saveProfileBtn");
-    if (!b) return;
-    b.style.backgroundColor = "#ff9800";
-    b.textContent = "ذخیره مشخصات";
+   ["personnelCode", "firstName", "lastName", "userPassword"].forEach((id) => {
+    $(id)?.addEventListener("input", updateSaveProfileButtonState_);
   });
-});
 }
 /* =========================
    Auto Sync
@@ -776,14 +775,17 @@ function setupAutoSync() {
     navigator.serviceWorker.addEventListener("message", async (event) => {
       if (!event.data) return;
 
-      if (event.data.type === "SYNC_COMPLETE") {
+            if (event.data.type === "SYNC_COMPLETE") {
         await refreshUi();
-        setSyncStatus("ارسال خودکار انجام شد");
+        setSyncStatus("ارسال انجام شد ✓");
+        setStatus("ارسال تردد به سرور انجام شد");
+        showGpsToast("ارسال تردد کامل شد", 3500, "success");
       }
 
       if (event.data.type === "SYNC_FAILED") {
         await refreshUi();
-        setSyncStatus("ارسال خودکار کامل نشد");
+        setSyncStatus("ارسال کامل نشد — دوباره تلاش می‌شود");
+        setStatus("ارسال ناموفق — برنامه را باز نگه دارید");
       }
     });
   }
@@ -1066,6 +1068,43 @@ async function getProfile() {
   await dbPut(STORE_PROFILE, { id: "main", ...profile });
   return profile;
 }
+function setSaveProfileButtonSaved_() {
+  const btn = $("saveProfileBtn");
+  if (!btn) return;
+  btn.disabled = true;
+  btn.style.backgroundColor = "#28a745";
+  btn.textContent = "ذخیره شد ✓";
+}
+
+function updateSaveProfileButtonState_() {
+  const btn = $("saveProfileBtn");
+  if (!btn) return;
+
+  const current = getProfileFromInputs();
+  const saved = cachedProfile_ || {};
+
+  const codeChanged =
+    String(current.personnelCode || "").trim() !==
+    String(saved.personnelCode || "").trim();
+  const firstChanged =
+    String(current.firstName || "").trim() !==
+    String(saved.firstName || "").trim();
+  const lastChanged =
+    String(current.lastName || "").trim() !==
+    String(saved.lastName || "").trim();
+
+  // Only re-enable if personnel code / first name / last name changed
+  if (codeChanged || firstChanged || lastChanged) {
+    btn.disabled = false;
+    btn.style.backgroundColor = "#ff9800";
+    btn.textContent = "ذخیره مشخصات";
+  } else {
+    // No important change → keep disabled
+    if (saved.personnelCode) {
+      setSaveProfileButtonSaved_();
+    }
+  }
+}
 
 async function saveProfile() {
   if (!db) db = await openDb();
@@ -1143,9 +1182,7 @@ async function saveProfile() {
     if ($("lastName")) $("lastName").value = profile.lastName;
     if ($("userPassword")) $("userPassword").value = profile.password;
 
-    btn.style.backgroundColor = "#28a745";
-    btn.textContent = "ذخیره شد ✓";
-    btn.disabled = false;
+    setSaveProfileButtonSaved_();
     if (st) st.textContent = "ذخیره شد";
     showGpsToast("مشخصات با موفقیت ثبت شد", 3000, "success");
 
@@ -1403,6 +1440,26 @@ async function handlePhotoSelected() {
  * After a selfie is captured: compress → optional face/glare checks → GPS → save + sync.
  * This function was missing and caused the UI to stick on «عکس گرفته شد - در حال ارسال».
  */
+function goToAttendanceStatus_() {
+  // Scroll to status / records area so user does not close app too early
+  const targets = [
+    $("syncStatus"),
+    $("pendingCount"),
+    $("recordsList"),
+    $("sentCount"),
+  ];
+
+  for (const el of targets) {
+    if (el) {
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch (_) {
+        el.scrollIntoView();
+      }
+      break;
+    }
+  }
+}
 async function processCapturedPhoto(file) {
   if (isProcessingPhoto_) {
     console.warn("processCapturedPhoto already running");
@@ -1650,24 +1707,28 @@ async function createRecord(type, faceDescriptor) {
       await refreshWorkLocationDatalist_();
     } catch (_) {}
   }
-  // Option 1 — honest toast (local save; upload may still be pending)
+    // Local save done — upload may still be pending
   showGpsToast(
-    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد و تا پایان ارسال تردد صبر کنید",
-    8000,
+    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nلطفاً تا پایان ارسال، برنامه را نبندید",
+    10000,
     "success"
   );
-  setStatus("تردد ذخیره شد — در حال ارسال...");
-  setSyncStatus("در حال ارسال...");
+  setStatus("تردد ذخیره شد — در حال ارسال به سرور...");
+  setSyncStatus("در حال ارسال... لطفاً برنامه را نبندید");
   setBusy(false);
   await refreshUi();
+
+  // Go to status section so user sees pending/sent
+  goToAttendanceStatus_();
 
   if (navigator.onLine) {
     scheduleSyncPendingRecords(300);
   } else {
-    setSyncStatus("آفلاین — بعداً ارسال می‌شود");
+    setSyncStatus("آفلاین — بعد از اتصال ارسال می‌شود. برنامه را نبندید");
   }
 
-    setTimeout(() => {
+  // Clear photo UI, but KEEP status text until sync finishes
+  setTimeout(() => {
     currentPhoto = "";
     pendingLocation = null;
     photoSelectedAtMs = 0;
@@ -1683,11 +1744,11 @@ async function createRecord(type, faceDescriptor) {
     const work = $("workLocationInput");
     if (work) work.value = "";
 
-    setStatus("");
+    // Do NOT clear setStatus / setSyncStatus here
     setBusy(false);
-  }, 2000);
+    goToAttendanceStatus_();
+  }, 1500);
 }
-
 function createClientRecordId(personnelCode, baseMs) {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `${personnelCode}-${baseMs}-${randomPart}`;

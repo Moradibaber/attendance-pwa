@@ -313,7 +313,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       passInput.placeholder = "رمز پیش فرض 1234 میباشد، در صورت تمایل به تغییر با ادمین تماس بگیرید";
     }
   } catch (_) {}
-    // Small PWA QR icon
+  // Small PWA QR icon — aligned with «ترددهای اخیر»
   try {
     if (!document.getElementById("pwa-qr-btn")) {
       const btn = document.createElement("button");
@@ -322,27 +322,29 @@ document.addEventListener("DOMContentLoaded", async () => {
       btn.title = "نمایش بارکد نصب PWA";
       btn.style.cssText = `
         position: fixed;
-        bottom: 18px;
-        left: 18px;
-        width: 52px;
-        height: 52px;
-        border-radius: 12px;
-        border: 2px solid #0f766e;
-        background: #fff;
+        bottom: 72px;          /* a little lower */
+        left: 16px;
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        border: 2px solid #1e3a8a;
+        background: #1e40af;   /* blue background */
         padding: 4px;
-        box-shadow: 0 4px 14px rgba(0,0,0,.18);
+        box-shadow: 0 4px 12px rgba(30,64,175,.35);
         z-index: 9990;
         cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       `;
 
       const img = document.createElement("img");
-      img.src = "pwa-qr.png";          // ← your QR file name
+      img.src = "pwa-qr.png";
       img.alt = "PWA QR";
-      img.style.cssText = "width:100%;height:100%;object-fit:contain;display:block;";
+      img.style.cssText = "width:100%;height:100%;object-fit:contain;display:block;border-radius:4px;background:#fff;";
       btn.appendChild(img);
 
       btn.addEventListener("click", () => {
-        // Show big QR on click
         const old = document.getElementById("pwa-qr-overlay");
         if (old) old.remove();
 
@@ -357,7 +359,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           <div style="background:#fff;border-radius:16px;padding:18px;text-align:center;max-width:320px;width:100%;">
             <div style="font-weight:700;margin-bottom:10px;direction:rtl;">اسکن برای نصب / باز کردن PWA</div>
             <img src="pwa-qr.png" style="width:100%;max-width:260px;height:auto;display:block;margin:0 auto 12px;">
-            <button id="close-pwa-qr" style="width:100%;padding:10px;border:none;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;">بستن</button>
+            <button id="close-pwa-qr" style="width:100%;padding:10px;border:none;border-radius:10px;background:#1e40af;color:#fff;font-weight:700;">بستن</button>
           </div>
         `;
         document.body.appendChild(overlay);
@@ -368,6 +370,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
 
       document.body.appendChild(btn);
+
+      // Align vertically with «ترددهای اخیر» card if it exists
+      const alignWithRecordsCard = () => {
+        const card =
+          document.getElementById("recordsList")?.closest("section, .card, .box, div") ||
+          document.getElementById("pendingCount")?.parentElement ||
+          document.getElementById("recordsList");
+        if (!card) return;
+
+        const rect = card.getBoundingClientRect();
+        // same vertical line (middle of the card header area)
+        const top = Math.max(12, rect.top + 8);
+        btn.style.top = top + "px";
+        btn.style.bottom = "auto";
+      };
+
+      setTimeout(alignWithRecordsCard, 400);
+      window.addEventListener("resize", alignWithRecordsCard);
+      window.addEventListener("scroll", alignWithRecordsCard, { passive: true });
     }
   } catch (_) {}
 });

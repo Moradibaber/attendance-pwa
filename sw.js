@@ -7,7 +7,14 @@ const FILES = [
   "manifest.json?v=2",
   "cover-rights-reserved.png"
 ];
-
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./app.js",
+  "./sw.js",
+  "./pwa-qr.png",   // ← add this
+  // ... other files
+];
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";

@@ -468,7 +468,7 @@ async function reportPushStatus_(personnelCode, permissionStatus) {
 }
 
 let notificationGateOverlay_ = null;
-const NOTIFICATION_GATE_TARGET_ID = "recordBtn"; // قفل روی دکمه «عکس سلفی خود را بگیرید»
+const NOTIFICATION_GATE_TARGET_ID = "recordBtn"; // قفل روی دکمه «عکس چهره خود را بگیرید»
 
 function positionGateOverlay_() {
   if (!notificationGateOverlay_) return;
@@ -1727,8 +1727,7 @@ async function createRecord(type, faceDescriptor) {
     setSyncStatus("آفلاین — بعد از اتصال ارسال می‌شود. برنامه را نبندید");
   }
 
-  // Clear photo UI, but KEEP status text until sync finishes
-  setTimeout(() => {
+   setTimeout(() => {
     currentPhoto = "";
     pendingLocation = null;
     photoSelectedAtMs = 0;
@@ -1744,7 +1743,10 @@ async function createRecord(type, faceDescriptor) {
     const work = $("workLocationInput");
     if (work) work.value = "";
 
-    // Do NOT clear setStatus / setSyncStatus here
+    // Clear text under selfie button
+    setStatus("");
+
+    // Keep only syncStatus in وضعیت section
     setBusy(false);
     goToAttendanceStatus_();
   }, 1500);

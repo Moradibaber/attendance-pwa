@@ -313,6 +313,63 @@ document.addEventListener("DOMContentLoaded", async () => {
       passInput.placeholder = "رمز پیش فرض 1234 میباشد، در صورت تمایل به تغییر با ادمین تماس بگیرید";
     }
   } catch (_) {}
+    // Small PWA QR icon
+  try {
+    if (!document.getElementById("pwa-qr-btn")) {
+      const btn = document.createElement("button");
+      btn.id = "pwa-qr-btn";
+      btn.type = "button";
+      btn.title = "نمایش بارکد نصب PWA";
+      btn.style.cssText = `
+        position: fixed;
+        bottom: 18px;
+        left: 18px;
+        width: 52px;
+        height: 52px;
+        border-radius: 12px;
+        border: 2px solid #0f766e;
+        background: #fff;
+        padding: 4px;
+        box-shadow: 0 4px 14px rgba(0,0,0,.18);
+        z-index: 9990;
+        cursor: pointer;
+      `;
+
+      const img = document.createElement("img");
+      img.src = "pwa-qr.png";          // ← your QR file name
+      img.alt = "PWA QR";
+      img.style.cssText = "width:100%;height:100%;object-fit:contain;display:block;";
+      btn.appendChild(img);
+
+      btn.addEventListener("click", () => {
+        // Show big QR on click
+        const old = document.getElementById("pwa-qr-overlay");
+        if (old) old.remove();
+
+        const overlay = document.createElement("div");
+        overlay.id = "pwa-qr-overlay";
+        overlay.style.cssText = `
+          position:fixed;inset:0;background:rgba(0,0,0,.65);
+          display:flex;align-items:center;justify-content:center;
+          z-index:100000;padding:20px;
+        `;
+        overlay.innerHTML = `
+          <div style="background:#fff;border-radius:16px;padding:18px;text-align:center;max-width:320px;width:100%;">
+            <div style="font-weight:700;margin-bottom:10px;direction:rtl;">اسکن برای نصب / باز کردن PWA</div>
+            <img src="pwa-qr.png" style="width:100%;max-width:260px;height:auto;display:block;margin:0 auto 12px;">
+            <button id="close-pwa-qr" style="width:100%;padding:10px;border:none;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;">بستن</button>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        document.getElementById("close-pwa-qr")?.addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) overlay.remove();
+        });
+      });
+
+      document.body.appendChild(btn);
+    }
+  } catch (_) {}
 });
 
 // Restart heartbeat when the app becomes visible again

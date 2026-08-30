@@ -182,7 +182,11 @@ label{
   color:#444 !important;
   font-weight:700 !important;
 }
-
+#userPassword::placeholder {
+  font-size: 11px;
+  color: #888;
+  opacity: 1;
+}
 input,
 button{
   width:100%;

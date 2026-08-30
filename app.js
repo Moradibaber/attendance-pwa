@@ -236,7 +236,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     setTimeout(() => {
       showGpsToast(
-        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ در غیراینصورت تردد ثبت نمی‌شود.",
+        "★ حتماً GPS و اینترنت را روشن کنید.\nدسترسی‌ها را مجاز کنید؛ در غیر اینصورت تردد ثبت نمی‌شود.",
         8000,
         "error"
       );
@@ -1652,8 +1652,8 @@ async function createRecord(type, faceDescriptor) {
   }
   // Option 1 — honest toast (local save; upload may still be pending)
   showGpsToast(
-    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد و تا پایان ارسال صبر کنید",
-    6000,
+    "✅ تردد ذخیره شد\nدر حال ارسال به سرور...\nادمین سیستم، عکس را بررسی خواهد کرد و تا پایان ارسال تردد صبر کنید",
+    8000,
     "success"
   );
   setStatus("تردد ذخیره شد — در حال ارسال...");

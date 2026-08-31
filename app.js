@@ -2176,9 +2176,11 @@ async function fetchMessages() {
     if (typeof finalMsg === "string") finalMsg = finalMsg.trim();
 
     if (finalMsg && finalMsg !== "false" && finalMsg !== "null" && finalMsg !== "undefined") {
-  lastAdminMessage = finalMsg;
-  showAdminMessage(finalMsg); // force show for test
-}
+      if (finalMsg !== lastAdminMessage) {
+        lastAdminMessage = finalMsg;
+        showAdminMessage(finalMsg);
+      }
+    }
   } catch (err) {
     console.error("Fetch messages failed:", err);
   }

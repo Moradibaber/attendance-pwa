@@ -122,15 +122,15 @@ self.addEventListener("push", (event) => {
         console.error("PushReceived failed:", err);
       }
 
-     await self.registration.showNotification(title, {
+    await self.registration.showNotification(title || "تردد", {
   body: body || " ",
   icon: "icon-192.png",
   badge: "icon-192.png",
-  silent: true,                    // no sound
+  silent: true,
   renotify: false,
   requireInteraction: false,
-  tag: "attendance-ping",          // same tag → replaces previous notification
-  data: { personnelCode }
+  tag: "attendance-ping",          // same tag → replaces previous one
+  data: { personnelCode: personnelCode || "" }
 });
       
     })()

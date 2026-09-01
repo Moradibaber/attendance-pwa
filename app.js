@@ -202,22 +202,20 @@ async function startHeartbeatWithInterval_() {
 
   let intervalMinutes = 1;
 
+   // Force interval from server for PushMonitorList (works even if profile is missing)
   try {
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (profile && profile.personnelCode) {
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          type: "GetIntervalMinutes",
-          personnelCode: profile.personnelCode
-        })
-      });
-      const text = await res.text();
-      const data = JSON.parse(text);
-      if (data && data.ok && data.intervalMinutes) {
-        intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 1);
-      }
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "GetIntervalMinutes",
+        personnelCode: "force_check"   // dummy code just to trigger server
+      })
+    });
+    const text = await res.text();
+    const data = JSON.parse(text);
+    if (data && data.ok && data.intervalMinutes) {
+      intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 1);
     }
   } catch (e) {
     console.warn("Could not load interval, using 1 minute", e);

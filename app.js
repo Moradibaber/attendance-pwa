@@ -448,17 +448,15 @@ async function registerForPushNotifications() {
   if (!profile || !profile.personnelCode) return;
 
   try {
-      try {
     const missingApis = [];
     if (!("serviceWorker" in navigator)) missingApis.push("ServiceWorker");
-    if (!("PushManager" in window))  missingApis.push("PushManager");
+    if (!("PushManager" in window)) missingApis.push("PushManager");
     if (!("Notification" in window)) missingApis.push("Notification");
 
     if (missingApis.length) {
       await reportPushStatus_(profile.personnelCode, "unsupported_no_push_api:missing=" + missingApis.join(","));
       return;
     }
-}
 
     // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
     // منتظر ماندن برای پاسخ شبکه. گزارش وضعیت به سرور در پس‌زمینه انجام
@@ -506,8 +504,7 @@ async function registerForPushNotifications() {
         deviceId: getOrCreateDeviceId_()
       })
     });
-  }
-  catch (err) {
+  } catch (err) {
     console.error("Push registration failed:", err);
     try {
       await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));

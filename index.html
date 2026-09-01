@@ -350,11 +350,5 @@ records {
       }, 4000);
     });
   </script>
-  <script>
-  // This makes sure the service worker is registered
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
-</script>
 </body>
 </html>

@@ -401,7 +401,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 // Restart heartbeat when the app becomes visible again
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
-    startHeartbeatWithInterval_();
+    // startHeartbeatWithInterval_();
   }
 });
 

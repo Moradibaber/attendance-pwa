@@ -194,19 +194,19 @@ async function sendHeartbeat() {
 
 let heartbeatTimer_ = null;
 
-
-// ==================== SIMPLIFIED HEARTBEAT (no timers needed) ====================
+// ==================== SIMPLIFIED HEARTBEAT (no more timers) ====================
 function startHeartbeat() {
-  // Send heartbeat immediately when app opens
+  // Send one heartbeat immediately
   sendHeartbeat();
 
-  // Restart when user comes back (visibilitychange)
+  // Restart when app becomes visible again
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       sendHeartbeat();
     }
   });
 }
+
 /* =========================
    Boot
 ========================= */

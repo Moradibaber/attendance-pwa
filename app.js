@@ -194,17 +194,43 @@ async function sendHeartbeat() {
 
 let heartbeatTimer_ = null;
 
-// ==================== SIMPLIFIED HEARTBEAT (no more timers) ====================
-function startHeartbeat() {
-  // Send one heartbeat immediately
+// ==================== ROBUST HEARTBEAT (works on iOS Safari PWA + Chrome) ====================
+async function startHeartbeatWithInterval_() {
+  if (heartbeatTimer_) {
+    clearInterval(heartbeatTimer_);
+    heartbeatTimer_ = null;
+  }
+
+  let intervalMinutes = 1;
+
+  // Force interval from server every time (works even if profile is missing locally)
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "GetIntervalMinutes",
+        personnelCode: "force_check"   // dummy code only to trigger server
+      })
+    });
+
+    const text = await res.text();
+    const data = JSON.parse(text);
+
+    if (data && data.ok && data.intervalMinutes) {
+      intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 1);
+    }
+  } catch (e) {
+    console.warn("Could not load interval from server, using 1 minute", e);
+  }
+
+  const ms = intervalMinutes * 60 * 1000;
+
+  // Immediate heartbeat
   sendHeartbeat();
 
-  // Restart when app becomes visible again
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-      sendHeartbeat();
-    }
-  });
+  // Periodic heartbeat (works in foreground and background)
+  heartbeatTimer_ = setInterval(sendHeartbeat, ms);
 }
 
 /* =========================
@@ -282,10 +308,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   // Start heartbeat with the person's IntervalMinutes
-  // Start heartbeat (works on Safari iOS PWA + Chrome iOS)
-try {
-  startHeartbeat();
-} catch (_) {}
+  try {
+    await startHeartbeatWithInterval_();
+  } catch (_) {}
     // Password placeholder
   try {
     const passInput = $("userPassword");
@@ -376,7 +401,7 @@ try {
 // Restart heartbeat when the app becomes visible again
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
-    // startHeartbeatWithInterval_();
+    startHeartbeatWithInterval_();
   }
 });
 

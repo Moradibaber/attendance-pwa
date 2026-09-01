@@ -448,6 +448,9 @@ async function registerForPushNotifications() {
   if (!profile || !profile.personnelCode) return;
 
   try {
+    // First enforce the gate so the user sees the message immediately
+    enforceNotificationGate();
+
     const missingApis = [];
     if (!("serviceWorker" in navigator)) missingApis.push("ServiceWorker");
     if (!("PushManager" in window)) missingApis.push("PushManager");
@@ -455,30 +458,34 @@ async function registerForPushNotifications() {
 
     if (missingApis.length) {
       await reportPushStatus_(profile.personnelCode, "unsupported_no_push_api:missing=" + missingApis.join(","));
+      enforceNotificationGate();
       return;
     }
 
-    // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
-    // منتظر ماندن برای پاسخ شبکه. گزارش وضعیت به سرور در پس‌زمینه انجام
-    // می‌شود و تاخیر شبکه دیگر روی سرعت نمایش/رفع قفل تاثیری ندارد.
-    enforceNotificationGate();
+    // Report current permission
     reportPushStatus_(profile.personnelCode, Notification.permission).catch(() => {});
 
     if (Notification.permission === "denied") {
+      enforceNotificationGate();
+      return;
+    }
+
+    // Ask for permission if needed
+    let permission = Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+
+    enforceNotificationGate();
+    reportPushStatus_(profile.personnelCode, permission).catch(() => {});
+
+    if (permission !== "granted") {
       return;
     }
 
     const messaging = await getFirebaseMessaging_();
     if (!messaging) {
       reportPushStatus_(profile.personnelCode, "unsupported_firebase_init_failed").catch(() => {});
-      return;
-    }
-
-    const permission = await Notification.requestPermission();
-    enforceNotificationGate();
-    reportPushStatus_(profile.personnelCode, permission).catch(() => {});
-
-    if (permission !== "granted") {
       return;
     }
 
@@ -494,28 +501,32 @@ async function registerForPushNotifications() {
       return;
     }
 
+    // Send token to server
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
+      body: JSON.stringify({
         type: "RegisterPushToken",
         personnelCode: profile.personnelCode,
         token: token,
         deviceId: getOrCreateDeviceId_()
       })
     });
+
+    // Final status
+    await reportPushStatus_(profile.personnelCode, "granted");
   } catch (err) {
     console.error("Push registration failed:", err);
     try {
-      await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));
+      await reportPushStatus_(
+        profile.personnelCode,
+        "error:" + String(err && err.message || err).slice(0, 120)
+      );
     } catch (_) {}
   } finally {
-    // همیشه در پایان اجرا می‌شود، صرف‌نظر از این‌که کدام مسیر بالا طی شده -
-    // این تنها جایی است که وضعیت قفل دکمه «ذخیره مشخصات» به‌روزرسانی می‌شود.
     enforceNotificationGate();
   }
 }
-
 // Parses "OS 16_4" style version strings out of the iOS user agent, so we
 // get the real iOS version automatically in every report instead of having
 // to ask someone to go check Settings on each phone by hand.
@@ -551,9 +562,19 @@ async function reportPushStatus_(personnelCode, permissionStatus) {
     console.error("reportPushStatus_ failed:", err);
   }
 }
+/* =========================
+   STRONGER NOTIFICATION + PWA GATE
+========================= */
 
 let notificationGateOverlay_ = null;
-const NOTIFICATION_GATE_TARGET_ID = "recordBtn"; // قفل روی دکمه «عکس چهره خود را بگیرید»
+const NOTIFICATION_GATE_TARGET_ID = "recordBtn";
+
+function isRunningAsPwa_() {
+  return (
+    window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
+  );
+}
 
 function positionGateOverlay_() {
   if (!notificationGateOverlay_) return;
@@ -569,14 +590,21 @@ function positionGateOverlay_() {
   });
 }
 
-// دقیقا روی دکمه «عکس سلفی خود را بگیرید» قرار می‌گیرد و آن را غیرفعال
-// می‌کند تا کاربر نتواند تردد ثبت کند مگر اینکه اعلان‌ها را واقعا فعال کند.
 function enforceNotificationGate() {
   const btn = document.getElementById(NOTIFICATION_GATE_TARGET_ID);
   if (!btn) return;
 
   const hasNotificationApi = "Notification" in window;
-  const shouldBlock = hasNotificationApi && Notification.permission === "denied";
+  const permission = hasNotificationApi ? Notification.permission : "unsupported";
+  const isPwa = isRunningAsPwa_();
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  // Block conditions
+  const blockBecauseDenied = hasNotificationApi && permission === "denied";
+  const blockBecauseDefault = hasNotificationApi && permission === "default";
+  const blockBecauseNotPwa = isIOS && !isPwa;
+
+  const shouldBlock = blockBecauseDenied || blockBecauseDefault || blockBecauseNotPwa;
 
   if (!shouldBlock) {
     btn.disabled = false;
@@ -589,42 +617,70 @@ function enforceNotificationGate() {
     return;
   }
 
+  // Block the button
   btn.disabled = true;
 
+  // Create overlay if needed
   if (!notificationGateOverlay_) {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const steps = isIOS
-      ? "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← فعال کردن Allow Notifications."
-      : "تنظیمات گوشی ← اعلان‌ها ← این مرورگر/اپلیکیشن ← فعال کردن اعلان‌ها.";
-
     const overlay = document.createElement("div");
     overlay.id = "notification-gate-overlay";
     overlay.style.cssText =
-      "z-index:99998;background:#7c2d12;color:#fff;border-radius:10px;" +
+      "z-index:99998;background:#7c2d12;color:#fff;border-radius:12px;" +
       "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-      "text-align:center;padding:6px 8px;font-size:11px;line-height:1.4;direction:rtl;" +
-      "box-shadow:0 4px 14px rgba(0,0,0,.4);";
-    overlay.innerHTML =
-      '<div style="font-weight:700;">⚠️ برای ادامه، اعلان‌ها را فعال کنید</div>' +
-      '<div style="font-size:9.5px;margin-top:2px;">' + steps + "</div>" +
-      '<button id="notification-gate-recheck" style="margin-top:5px;background:#fff;color:#7c2d12;' +
-      'border:none;border-radius:6px;padding:3px 12px;font-size:10.5px;font-weight:700;">بررسی مجدد</button>';
-
+      "text-align:center;padding:10px 12px;font-size:12px;line-height:1.5;direction:rtl;" +
+      "box-shadow:0 6px 20px rgba(0,0,0,.45);";
     document.body.appendChild(overlay);
     notificationGateOverlay_ = overlay;
 
-    document.getElementById("notification-gate-recheck")?.addEventListener("click", enforceNotificationGate);
     window.addEventListener("scroll", positionGateOverlay_, true);
     window.addEventListener("resize", positionGateOverlay_);
   }
 
+  // Message according to the problem
+  let title = "⚠️ برای ثبت تردد باید اعلان‌ها فعال باشد";
+  let steps = "";
+
+  if (blockBecauseNotPwa) {
+    title = "⚠️ باید از نسخه نصب‌شده (PWA) استفاده کنید";
+    steps = "۱. در سافاری دکمه Share را بزنید<br>۲. گزینه «Add to Home Screen» را انتخاب کنید<br>۳. اپ را از صفحه اصلی گوشی باز کنید";
+  } else if (blockBecauseDenied) {
+    if (isIOS) {
+      steps = "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← Allow Notifications را روشن کنید";
+    } else {
+      steps = "تنظیمات گوشی ← اعلان‌ها ← این مرورگر یا اپلیکیشن ← اعلان‌ها را فعال کنید";
+    }
+  } else if (blockBecauseDefault) {
+    steps = "لطفاً اجازه اعلان‌ها را بدهید تا بتوانید تردد ثبت کنید";
+  }
+
+  notificationGateOverlay_.innerHTML = `
+    <div style="font-weight:800;font-size:13px;margin-bottom:4px;">${title}</div>
+    <div style="font-size:11px;opacity:0.95;margin-bottom:8px;">${steps}</div>
+    <button id="notification-gate-recheck" style="
+      background:#fff;color:#7c2d12;border:none;border-radius:8px;
+      padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;">
+      بررسی مجدد
+    </button>
+  `;
+
+  document.getElementById("notification-gate-recheck")?.addEventListener("click", async () => {
+    if (Notification.permission === "default") {
+      try {
+        await Notification.requestPermission();
+      } catch (_) {}
+    }
+    enforceNotificationGate();
+    registerForPushNotifications().catch(() => {});
+  });
+
   positionGateOverlay_();
 }
 
-// وقتی کاربر از تنظیمات گوشی برمی‌گردد (بعد از فعال کردن اعلان‌ها)، این
-// رویداد اجازه می‌دهد قفل بدون نیاز به لمس دکمه «بررسی مجدد» خودش باز شود.
+// Re-check when user returns to the app
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) enforceNotificationGate();
+  if (!document.hidden) {
+    enforceNotificationGate();
+  }
 });
 
 function showGpsToast(message, duration = 3000, type = "success") {

@@ -448,20 +448,16 @@ async function registerForPushNotifications() {
   if (!profile || !profile.personnelCode) return;
 
   try {
+      try {
     const missingApis = [];
     if (!("serviceWorker" in navigator)) missingApis.push("ServiceWorker");
-    if (!("PushManager" in window)) missingApis.push("PushManager");
+    if (!("PushManager" in window))  missingApis.push("PushManager");
     if (!("Notification" in window)) missingApis.push("Notification");
 
-   // NEW: iOS-specific push check (Safari + PWA)
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-const isPWA  = window.navigator.standalone === true || 
-               (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-
-if (isIOS && isPWA) {
-  // iOS Safari PWA doesn't support push until SW is registered + permission granted
-  await reportPushStatus_(profile.personnelCode, "unsupported_iOS_PWA");
-  return;
+    if (missingApis.length) {
+      await reportPushStatus_(profile.personnelCode, "unsupported_no_push_api:missing=" + missingApis.join(","));
+      return;
+    }
 }
 
     // وضعیت دسترسی همین الان مشخص است - قفل را فورا اعمال یا بردار، بدون
@@ -510,7 +506,8 @@ if (isIOS && isPWA) {
         deviceId: getOrCreateDeviceId_()
       })
     });
-  } catch (err) {
+  }
+  catch (err) {
     console.error("Push registration failed:", err);
     try {
       await reportPushStatus_(profile.personnelCode, "error:" + String(err && err.message || err).slice(0, 120));

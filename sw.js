@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v326";
+const CACHE_NAME = "attendance-pwa-v323";
 const FILES = [
   "./",
   "index.html",
@@ -248,77 +248,4 @@ async function notifyClients(type) {
   for (const client of clientsList) {
     client.postMessage({ type });
   }
-}
-// sw.js - Final Reliable Heartbeat (works on Safari + Chrome iOS)
-const HEARTBEAT_INTERVAL = 60000; // 1 minute
-
-let heartbeatIntervalId = null;
-let currentPersonnelCode = null;
-
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', () => {
-  self.clients.claim();
-  setupHeartbeat();
-  fetchCurrentProfile();
-});
-
-function setupHeartbeat() {
-  if (heartbeatIntervalId) clearInterval(heartbeatIntervalId);
-  heartbeatIntervalId = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
-}
-
-async function fetchCurrentProfile() {
-  try {
-    const db = await openIndexedDB();
-    const profile = await dbGet(db, "profile", "main");
-    if (profile && profile.personnelCode) {
-      currentPersonnelCode = profile.personnelCode;
-    }
-  } catch (e) {
-    console.log("No profile in SW yet");
-  }
-}
-
-async function sendHeartbeat() {
-  if (!currentPersonnelCode) {
-    await fetchCurrentProfile();
-    if (!currentPersonnelCode) return;
-  }
-
-  const deviceId = localStorage.getItem("attendance_device_id") || "sw_fallback";
-
-  try {
-    await fetch("https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec", {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        type: "Heartbeat",
-        personnelCode: currentPersonnelCode,
-        deviceId: deviceId,
-        clientTime: new Date().toISOString()
-      })
-    });
-    console.log("✅ Heartbeat sent from SW");
-  } catch (e) {
-    console.log("Heartbeat failed", e);
-  }
-}
-
-// Helpers
-function openIndexedDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open("attendance-pwa-db", 3);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function dbGet(db, store, key) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, "readonly");
-    const storeObj = tx.objectStore(store);
-    const req = storeObj.get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
 }

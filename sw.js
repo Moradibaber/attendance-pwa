@@ -249,45 +249,50 @@ async function notifyClients(type) {
     client.postMessage({ type });
   }
 }
-// sw.js - Heartbeat Service Worker (works on Safari + Chrome iOS)
-const HEARTBEAT_INTERVAL_MS = 60000;   // 1 minute (change if you want)
+// sw.js - Reliable Heartbeat Service Worker (works on Safari iOS PWA + Chrome iOS)
+const HEARTBEAT_INTERVAL = 60 * 1000; // 1 minute (change if you want longer)
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
+let heartbeatIntervalId = null;
+let currentPersonnelCode = null;
+let currentDeviceId = null;
 
+// ====================== INIT ======================
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', () => self.clients.claim());
+
+// Start heartbeat as soon as service worker is active
 self.addEventListener('activate', () => {
-  self.clients.claim();
-  // Start heartbeat immediately
-  startHeartbeat();
+  setupHeartbeat();
+  // Also fetch current profile immediately
+  fetchCurrentProfile();
 });
 
-function startHeartbeat() {
-  setInterval(() => {
-    // This code runs every 1 minute in background
-    sendHeartbeatToServer();
-  }, HEARTBEAT_INTERVAL_MS);
+function setupHeartbeat() {
+  if (heartbeatIntervalId) clearInterval(heartbeatIntervalId);
+  heartbeatIntervalId = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
 }
 
-async function sendHeartbeatToServer() {
-  // Get personnel code from IndexedDB (same as in main app)
-  let personnelCode = null;
-  let deviceId = null;
-
+async function fetchCurrentProfile() {
   try {
     const db = await openIndexedDB();
     const profile = await dbGet(db, "profile", "main");
-    personnelCode = profile?.personnelCode;
-    deviceId = localStorage.getItem("attendance_device_id") || "sw_fallback";
+    if (profile && profile.personnelCode) {
+      currentPersonnelCode = profile.personnelCode;
+      console.log("✅ Personnel code loaded in SW:", currentPersonnelCode);
+    }
   } catch (e) {
-    console.warn("Could not get profile in SW", e);
-    return;
+    console.log("No profile yet in SW");
+  }
+}
+
+// ====================== HEARTBEAT LOGIC ======================
+async function sendHeartbeat() {
+  if (!currentPersonnelCode) {
+    await fetchCurrentProfile();
+    if (!currentPersonnelCode) return;
   }
 
-  if (!personnelCode) {
-    console.log("No personnel code in SW");
-    return;
-  }
+  const deviceId = localStorage.getItem("attendance_device_id") || "sw_fallback";
 
   try {
     await fetch("https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec", {
@@ -295,18 +300,18 @@ async function sendHeartbeatToServer() {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
         type: "Heartbeat",
-        personnelCode: personnelCode,
+        personnelCode: currentPersonnelCode,
         deviceId: deviceId,
         clientTime: new Date().toISOString()
       })
     });
-    console.log("Heartbeat sent from SW");
+    console.log("Heartbeat sent from Service Worker");
   } catch (e) {
-    console.log("Heartbeat failed (normal)", e);
+    console.log("Heartbeat failed (normal on background)", e);
   }
 }
 
-// Simple IndexedDB helper (copy from your main app)
+// ====================== HELPERS ======================
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("attendance-pwa-db", 3);

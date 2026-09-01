@@ -249,21 +249,16 @@ async function notifyClients(type) {
     client.postMessage({ type });
   }
 }
-// sw.js - Reliable Heartbeat Service Worker (works on Safari iOS PWA + Chrome iOS)
-const HEARTBEAT_INTERVAL = 60 * 1000; // 1 minute (change if you want longer)
+// sw.js - Final Reliable Heartbeat (works on Safari + Chrome iOS)
+const HEARTBEAT_INTERVAL = 60000; // 1 minute
 
 let heartbeatIntervalId = null;
 let currentPersonnelCode = null;
-let currentDeviceId = null;
 
-// ====================== INIT ======================
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', () => self.clients.claim());
-
-// Start heartbeat as soon as service worker is active
 self.addEventListener('activate', () => {
+  self.clients.claim();
   setupHeartbeat();
-  // Also fetch current profile immediately
   fetchCurrentProfile();
 });
 
@@ -278,14 +273,12 @@ async function fetchCurrentProfile() {
     const profile = await dbGet(db, "profile", "main");
     if (profile && profile.personnelCode) {
       currentPersonnelCode = profile.personnelCode;
-      console.log("✅ Personnel code loaded in SW:", currentPersonnelCode);
     }
   } catch (e) {
-    console.log("No profile yet in SW");
+    console.log("No profile in SW yet");
   }
 }
 
-// ====================== HEARTBEAT LOGIC ======================
 async function sendHeartbeat() {
   if (!currentPersonnelCode) {
     await fetchCurrentProfile();
@@ -305,13 +298,13 @@ async function sendHeartbeat() {
         clientTime: new Date().toISOString()
       })
     });
-    console.log("Heartbeat sent from Service Worker");
+    console.log("✅ Heartbeat sent from SW");
   } catch (e) {
-    console.log("Heartbeat failed (normal on background)", e);
+    console.log("Heartbeat failed", e);
   }
 }
 
-// ====================== HELPERS ======================
+// Helpers
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("attendance-pwa-db", 3);

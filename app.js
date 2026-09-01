@@ -194,45 +194,19 @@ async function sendHeartbeat() {
 
 let heartbeatTimer_ = null;
 
-// ==================== ROBUST HEARTBEAT (works on iOS Safari PWA + Chrome) ====================
-async function startHeartbeatWithInterval_() {
-  if (heartbeatTimer_) {
-    clearInterval(heartbeatTimer_);
-    heartbeatTimer_ = null;
-  }
 
-  let intervalMinutes = 1;
-
-  // Force interval from server every time (works even if profile is missing locally)
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        type: "GetIntervalMinutes",
-        personnelCode: "force_check"   // dummy code only to trigger server
-      })
-    });
-
-    const text = await res.text();
-    const data = JSON.parse(text);
-
-    if (data && data.ok && data.intervalMinutes) {
-      intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 1);
-    }
-  } catch (e) {
-    console.warn("Could not load interval from server, using 1 minute", e);
-  }
-
-  const ms = intervalMinutes * 60 * 1000;
-
-  // Immediate heartbeat
+// ==================== SIMPLIFIED HEARTBEAT (no timers needed) ====================
+function startHeartbeat() {
+  // Send heartbeat immediately when app opens
   sendHeartbeat();
 
-  // Periodic heartbeat (works in foreground and background)
-  heartbeatTimer_ = setInterval(sendHeartbeat, ms);
+  // Restart when user comes back (visibilitychange)
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      sendHeartbeat();
+    }
+  });
 }
-
 /* =========================
    Boot
 ========================= */
@@ -308,9 +282,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) {}
 
   // Start heartbeat with the person's IntervalMinutes
-  try {
-    await startHeartbeatWithInterval_();
-  } catch (_) {}
+  // Start heartbeat (works on Safari iOS PWA + Chrome iOS)
+try {
+  startHeartbeat();
+} catch (_) {}
     // Password placeholder
   try {
     const passInput = $("userPassword");

@@ -194,6 +194,7 @@ async function sendHeartbeat() {
 
 let heartbeatTimer_ = null;
 
+// ==================== ROBUST HEARTBEAT (works on iOS Safari PWA + Chrome) ====================
 async function startHeartbeatWithInterval_() {
   if (heartbeatTimer_) {
     clearInterval(heartbeatTimer_);
@@ -202,27 +203,33 @@ async function startHeartbeatWithInterval_() {
 
   let intervalMinutes = 1;
 
-   // Force interval from server for PushMonitorList (works even if profile is missing)
+  // Force interval from server every time (works even if profile is missing locally)
   try {
     const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
         type: "GetIntervalMinutes",
-        personnelCode: "force_check"   // dummy code just to trigger server
+        personnelCode: "force_check"   // dummy code only to trigger server
       })
     });
+
     const text = await res.text();
     const data = JSON.parse(text);
+
     if (data && data.ok && data.intervalMinutes) {
       intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 1);
     }
   } catch (e) {
-    console.warn("Could not load interval, using 1 minute", e);
+    console.warn("Could not load interval from server, using 1 minute", e);
   }
 
   const ms = intervalMinutes * 60 * 1000;
+
+  // Immediate heartbeat
   sendHeartbeat();
+
+  // Periodic heartbeat (works in foreground and background)
   heartbeatTimer_ = setInterval(sendHeartbeat, ms);
 }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v328";
+const CACHE_NAME = "attendance-pwa-v329";
 const FILES = [
   "./",
   "index.html",
@@ -122,14 +122,17 @@ self.addEventListener("push", (event) => {
         console.error("PushReceived failed:", err);
       }
 
-      // Show notification (required for reliable delivery on many browsers)
-      await self.registration.showNotification(title, {
-        body: body,
-        icon: "icon-192.png",
-        silent: true,
-        tag: "attendance-update",
-        data: { personnelCode }
-      });
+     await self.registration.showNotification(title, {
+  body: body || " ",
+  icon: "icon-192.png",
+  badge: "icon-192.png",
+  silent: true,                    // no sound
+  renotify: false,
+  requireInteraction: false,
+  tag: "attendance-ping",          // same tag → replaces previous notification
+  data: { personnelCode }
+});
+      
     })()
   );
 });

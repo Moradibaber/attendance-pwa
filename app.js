@@ -636,23 +636,37 @@ function enforceNotificationGate() {
     window.addEventListener("resize", positionGateOverlay_);
   }
 
-  // Message according to the problem
+    // Message according to the problem
   let title = "⚠️ برای ثبت تردد باید اعلان‌ها فعال باشد";
   let steps = "";
 
   if (blockBecauseNotPwa) {
-    title = "⚠️ باید از نسخه نصب‌شده (PWA) استفاده کنید";
-    steps = "۱. در سافاری دکمه Share را بزنید<br>۲. گزینه «Add to Home Screen» را انتخاب کنید<br>۳. اپ را از صفحه اصلی گوشی باز کنید";
+    title = "⚠️ ابتدا اپلیکیشن «تردد» را نصب کنید";
+    steps = `
+      ۱. در مرورگر دکمه <b>Share</b> (مربع با فلش) را بزنید<br>
+      ۲. گزینه <b>Add to Home Screen</b> را انتخاب کنید<br>
+      ۳. نام را «تردد» بگذارید و Add را بزنید<br>
+      ۴. حالا اپ را از <b>صفحه اصلی گوشی</b> باز کنید
+    `;
   } else if (blockBecauseDenied) {
+    title = "⚠️ اعلان‌های اپ «تردد» خاموش است";
     if (isIOS) {
-      steps = "تنظیمات آیفون ← Notifications ← نام این اپلیکیشن ← Allow Notifications را روشن کنید";
+      steps = `
+        مسیر دقیق:<br>
+        تنظیمات آیفون ← Notifications ← <b>تردد</b><br>
+        ← گزینه <b>Allow Notifications</b> را روشن کنید
+      `;
     } else {
-      steps = "تنظیمات گوشی ← اعلان‌ها ← این مرورگر یا اپلیکیشن ← اعلان‌ها را فعال کنید";
+      steps = `
+        مسیر دقیق:<br>
+        تنظیمات گوشی ← اعلان‌ها ← <b>تردد</b> یا مرورگر<br>
+        ← اعلان‌ها را فعال کنید
+      `;
     }
   } else if (blockBecauseDefault) {
-    steps = "لطفاً اجازه اعلان‌ها را بدهید تا بتوانید تردد ثبت کنید";
+    title = "⚠️ اجازه اعلان‌ها لازم است";
+    steps = `برای ثبت تردد باید به اپ «تردد» اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و Allow را انتخاب کنید.`;
   }
-
   notificationGateOverlay_.innerHTML = `
     <div style="font-weight:800;font-size:13px;margin-bottom:4px;">${title}</div>
     <div style="font-size:11px;opacity:0.95;margin-bottom:8px;">${steps}</div>

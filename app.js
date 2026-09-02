@@ -575,18 +575,24 @@ function isRunningAsPwa_() {
     (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
   );
 }
-
 function positionGateOverlay_() {
   if (!notificationGateOverlay_) return;
-  const btn = document.getElementById(NOTIFICATION_GATE_TARGET_ID);
-  if (!btn) return;
-  const rect = btn.getBoundingClientRect();
+
+  // Try to place it near the Save Profile button
+  const saveBtn = document.getElementById("saveProfileBtn");
+  const target = saveBtn || document.getElementById(NOTIFICATION_GATE_TARGET_ID);
+
+  if (!target) return;
+
+  const rect = target.getBoundingClientRect();
+
   Object.assign(notificationGateOverlay_.style, {
     position: "fixed",
-    top: rect.top + "px",
-    left: rect.left + "px",
-    width: rect.width + "px",
-    height: rect.height + "px"
+    top: (rect.top - 8) + "px",          // slightly above the button
+    left: Math.max(12, rect.left - 20) + "px",
+    width: "auto",
+    maxWidth: "310px",
+    height: "auto"
   });
 }
 
@@ -659,36 +665,37 @@ function enforceNotificationGate() {
     steps = `برای ثبت تردد باید اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و <b>Allow</b> را انتخاب کنید.`;
   }
 
-  // Clear readable white box
+  // Beautiful white box – all text on white background
   notificationGateOverlay_.style.cssText = `
     position: fixed;
     z-index: 99999;
     background: #ffffff;
     color: #1e293b;
-    border: 3px solid #dc2626;
-    border-radius: 16px;
-    padding: 18px 16px;
-    font-size: 14px;
+    border: 2.5px solid #dc2626;
+    border-radius: 14px;
+    padding: 16px 14px;
+    font-size: 13.5px;
     line-height: 1.7;
     direction: rtl;
     text-align: center;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
-    max-width: 320px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+    max-width: 310px;
   `;
 
   notificationGateOverlay_.innerHTML = `
     <div style="
       font-weight: 800;
-      font-size: 16px;
+      font-size: 15.5px;
       color: #dc2626;
-      margin-bottom: 12px;
-      line-height: 1.4;
+      margin-bottom: 10px;
+      background: #ffffff;
     ">${title}</div>
 
     <div style="
       font-size: 13.5px;
       color: #334155;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
+      background: #ffffff;
       line-height: 1.75;
     ">${steps}</div>
 
@@ -697,8 +704,8 @@ function enforceNotificationGate() {
       color: white;
       border: none;
       border-radius: 10px;
-      padding: 11px 28px;
-      font-size: 15px;
+      padding: 10px 24px;
+      font-size: 14.5px;
       font-weight: 700;
       cursor: pointer;
       width: 100%;
@@ -1247,41 +1254,25 @@ async function getProfile() {
 function setSaveProfileButtonSaved_() {
   const btn = $("saveProfileBtn");
   if (!btn) return;
-  btn.disabled = true;
-  btn.style.backgroundColor = "#28a745";
-  btn.textContent = "ذخیره شد ✓";
+
+  btn.textContent = "ذخیره مشخصات";          // remove the tick
+  btn.style.background = "#94a3b8";           // grey (deactivated look)
+  btn.style.color = "#fff";
+  btn.style.cursor = "default";
+  btn.disabled = true;                       // visually and functionally deactivated
 }
 
 function updateSaveProfileButtonState_() {
   const btn = $("saveProfileBtn");
   if (!btn) return;
 
-  const current = getProfileFromInputs();
-  const saved = cachedProfile_ || {};
-
-  const codeChanged =
-    String(current.personnelCode || "").trim() !==
-    String(saved.personnelCode || "").trim();
-  const firstChanged =
-    String(current.firstName || "").trim() !==
-    String(saved.firstName || "").trim();
-  const lastChanged =
-    String(current.lastName || "").trim() !==
-    String(saved.lastName || "").trim();
-
-  // Only re-enable if personnel code / first name / last name changed
-  if (codeChanged || firstChanged || lastChanged) {
-    btn.disabled = false;
-    btn.style.backgroundColor = "#ff9800";
-    btn.textContent = "ذخیره مشخصات";
-  } else {
-    // No important change → keep disabled
-    if (saved.personnelCode) {
-      setSaveProfileButtonSaved_();
-    }
-  }
+  // Enable + green only when user changes something
+  btn.disabled = false;
+  btn.style.background = "#16a34a";           // green
+  btn.style.color = "#fff";
+  btn.style.cursor = "pointer";
+  btn.textContent = "ذخیره مشخصات";
 }
-
 async function saveProfile() {
   if (!db) db = await openDb();
 

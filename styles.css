@@ -694,3 +694,11 @@ img, canvas, .form-hero-image, .photo-row img {
   border: 2px solid #e5e7eb !important;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
 }
+/* Notification Gate Overlay */
+#notification-gate-overlay button {
+  transition: all 0.2s ease;
+}
+#notification-gate-overlay button:hover {
+  background: #1e3a8a !important;
+  transform: scale(1.03);
+}

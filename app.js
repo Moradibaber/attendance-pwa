@@ -598,11 +598,11 @@ function enforceNotificationGate() {
   const permission = hasNotificationApi ? Notification.permission : "unsupported";
   const isPwa = isRunningAsPwa_();
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isAndroid = /Android/.test(navigator.userAgent);
 
-  // Block conditions
   const blockBecauseDenied = hasNotificationApi && permission === "denied";
   const blockBecauseDefault = hasNotificationApi && permission === "default";
-  const blockBecauseNotPwa = isIOS && !isPwa;
+  const blockBecauseNotPwa = (isIOS || isAndroid) && !isPwa;
 
   const shouldBlock = blockBecauseDenied || blockBecauseDefault || blockBecauseNotPwa;
 
@@ -617,18 +617,11 @@ function enforceNotificationGate() {
     return;
   }
 
-  // Block the button
   btn.disabled = true;
 
-  // Create overlay if needed
   if (!notificationGateOverlay_) {
     const overlay = document.createElement("div");
     overlay.id = "notification-gate-overlay";
-    overlay.style.cssText =
-      "z-index:99998;background:#7c2d12;color:#fff;border-radius:12px;" +
-      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-      "text-align:center;padding:10px 12px;font-size:12px;line-height:1.5;direction:rtl;" +
-      "box-shadow:0 6px 20px rgba(0,0,0,.45);";
     document.body.appendChild(overlay);
     notificationGateOverlay_ = overlay;
 
@@ -636,52 +629,87 @@ function enforceNotificationGate() {
     window.addEventListener("resize", positionGateOverlay_);
   }
 
-    // Message according to the problem
-  let title = "⚠️ برای ثبت تردد باید اعلان‌ها فعال باشد";
+  let title = "";
   let steps = "";
 
   if (blockBecauseNotPwa) {
-    title = "⚠️ ابتدا اپلیکیشن «تردد» را نصب کنید";
-    steps = `
-      ۱. در مرورگر دکمه <b>Share</b> (مربع با فلش) را بزنید<br>
-      ۲. گزینه <b>Add to Home Screen</b> را انتخاب کنید<br>
-      ۳. نام را «تردد» بگذارید و Add را بزنید<br>
-      ۴. حالا اپ را از <b>صفحه اصلی گوشی</b> باز کنید
-    `;
-  } else if (blockBecauseDenied) {
-    title = "⚠️ اعلان‌های اپ «تردد» خاموش است";
+    title = "📱 ابتدا اپ را به صفحه اصلی اضافه کنید";
     if (isIOS) {
       steps = `
-        مسیر دقیق:<br>
-        تنظیمات آیفون ← Notifications ← <b>تردد</b><br>
-        ← گزینه <b>Allow Notifications</b> را روشن کنید
+        ۱. دکمه <b>Share</b> (مربع با فلش) را بزنید<br>
+        ۲. گزینه <b>Add to Home Screen</b> را انتخاب کنید<br>
+        ۳. نام را «تردد» بگذارید و Add را بزنید<br>
+        ۴. حالا اپ را از صفحه اصلی باز کنید
       `;
     } else {
       steps = `
-        مسیر دقیق:<br>
-        تنظیمات گوشی ← اعلان‌ها ← <b>تردد</b> یا مرورگر<br>
-        ← اعلان‌ها را فعال کنید
+        ۱. منوی سه‌نقطه Chrome را باز کنید<br>
+        ۲. گزینه <b>Add to Home screen</b> یا <b>Install app</b> را بزنید<br>
+        ۳. تأیید کنید<br>
+        ۴. اپ را از صفحه اصلی باز کنید
       `;
     }
-  } else if (blockBecauseDefault) {
-    title = "⚠️ اجازه اعلان‌ها لازم است";
-    steps = `برای ثبت تردد باید به اپ «تردد» اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و Allow را انتخاب کنید.`;
+  } else if (blockBecauseDenied) {
+    title = "🔔 اعلان‌ها خاموش است";
+    steps = isIOS
+      ? `تنظیمات آیفون ← Notifications ← <b>تردد</b><br>← Allow Notifications را روشن کنید`
+      : `تنظیمات گوشی ← اعلان‌ها ← <b>تردد</b> یا مرورگر را فعال کنید`;
+  } else {
+    title = "🔔 اجازه اعلان‌ها لازم است";
+    steps = `برای ثبت تردد باید اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و <b>Allow</b> را انتخاب کنید.`;
   }
+
+  // Clear readable white box
+  notificationGateOverlay_.style.cssText = `
+    position: fixed;
+    z-index: 99999;
+    background: #ffffff;
+    color: #1e293b;
+    border: 3px solid #dc2626;
+    border-radius: 16px;
+    padding: 18px 16px;
+    font-size: 14px;
+    line-height: 1.7;
+    direction: rtl;
+    text-align: center;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    max-width: 320px;
+  `;
+
   notificationGateOverlay_.innerHTML = `
-    <div style="font-weight:800;font-size:13px;margin-bottom:4px;">${title}</div>
-    <div style="font-size:11px;opacity:0.95;margin-bottom:8px;">${steps}</div>
+    <div style="
+      font-weight: 800;
+      font-size: 16px;
+      color: #dc2626;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    ">${title}</div>
+
+    <div style="
+      font-size: 13.5px;
+      color: #334155;
+      margin-bottom: 16px;
+      line-height: 1.75;
+    ">${steps}</div>
+
     <button id="notification-gate-recheck" style="
-      background:#fff;color:#7c2d12;border:none;border-radius:8px;
-      padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;">
+      background: #dc2626;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 11px 28px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+    ">
       بررسی مجدد
     </button>
   `;
 
   document.getElementById("notification-gate-recheck")?.addEventListener("click", async () => {
     if (Notification.permission === "default") {
-      try {
-        await Notification.requestPermission();
-      } catch (_) {}
+      try { await Notification.requestPermission(); } catch (_) {}
     }
     enforceNotificationGate();
     registerForPushNotifications().catch(() => {});
@@ -689,13 +717,6 @@ function enforceNotificationGate() {
 
   positionGateOverlay_();
 }
-
-// Re-check when user returns to the app
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    enforceNotificationGate();
-  }
-});
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");

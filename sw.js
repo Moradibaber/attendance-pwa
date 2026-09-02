@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v330";
+const CACHE_NAME = "attendance-pwa-v331";
 const FILES = [
   "./",
   "index.html",
@@ -78,7 +78,6 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
-
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
@@ -91,21 +90,16 @@ self.addEventListener("push", (event) => {
     }
   }
 
-  // Support both formats FCM can send
   const data = payload.data || payload || {};
   const notif = payload.notification || {};
-  const personnelCode =
-    data.personnelCode ||
-    data.personnelcode ||
-    (typeof data === "object" && data.personnelCode) ||
-    "";
+  const personnelCode = data.personnelCode || data.personnelcode || "" || "";
 
   const title = notif.title || data.title || "بروزرسانی سیستم";
   const body  = notif.body  || data.body  || " ";
 
   event.waitUntil(
     (async () => {
-      // Always try to log, even if personnelCode is empty
+      // 1. Log in SW (this already works even when app is closed/screen off)
       try {
         await fetch(APPS_SCRIPT_URL, {
           method: "POST",
@@ -122,17 +116,40 @@ self.addEventListener("push", (event) => {
         console.error("PushReceived failed:", err);
       }
 
-    await self.registration.showNotification(title || "تردد", {
-  body: body || " ",
-  icon: "icon-192.png",
-  badge: "icon-192.png",
-  silent: true,
-  renotify: false,
-  requireInteraction: false,
-  tag: "attendance-ping",          // same tag → replaces previous one
-  data: { personnelCode: personnelCode || "" }
-});
-      
+      // 2. Immediately send Heartbeat (this is the screen-off heartbeat improvement)
+      //    - Works even if page is closed
+      //    - Will be picked up by your frontend visibilitychange + startHeartbeat
+      try {
+        const profile = await dbGetInServiceWorker(null, STORE_PROFILE, "main"); // dummy db
+        if (profile && profile.personnelCode) {
+          const res = await fetch(APPS_SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              type: "Heartbeat",
+              personnelCode: profile.personnelCode,
+              deviceId: getOrCreateDeviceId_ ? getOrCreateDeviceId_() : "sw-" + Date.now(),
+              clientTime: new Date().toISOString()
+            })
+          });
+          await res.text(); // ignore result
+        }
+      } catch (e) {
+        console.warn("SW Heartbeat on push failed:", e);
+      }
+
+      // 3. Show notification
+      await self.registration.showNotification(title || "تردد", {
+        body: body || " ",
+        icon: "icon-192.png",
+        badge: "icon-192.png",
+        silent: true,
+        renotify: false,
+        requireInteraction: false,
+        tag: "attendance-ping",
+        data: { personnelCode: personnelCode || "" }
+      });
+
     })()
   );
 });

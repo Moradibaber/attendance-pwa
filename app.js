@@ -418,13 +418,16 @@ window.addEventListener("focus", () => {
   } catch (_) {}
 });
 
-// Restart heartbeat when the app becomes visible again
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    startHeartbeatWithInterval_();
-  }
-});
+// Restart heartbeat when app becomes visible / online / focused
+function restartHeartbeatIfNeeded_() {
+  if (document.hidden) return;
+  startHeartbeatWithInterval_();
+}
 
+document.addEventListener("visibilitychange", restartHeartbeatIfNeeded_);
+window.addEventListener("pageshow", restartHeartbeatIfNeeded_);
+window.addEventListener("online", restartHeartbeatIfNeeded_);
+window.addEventListener("focus", restartHeartbeatIfNeeded_);
 /* =========================
    UI Helpers
 ========================= */
@@ -623,27 +626,47 @@ function enforceNotificationGate() {
   const permission = hasNotificationApi ? Notification.permission : "unsupported";
   const isPwa = isRunningAsPwa_();
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isAndroid = /Android/.test(navigator.userAgent);
 
   const blockBecauseDenied = hasNotificationApi && permission === "denied";
   const blockBecauseDefault = hasNotificationApi && permission === "default";
-  const blockBecauseNotPwa = isIOS && !isPwa;
+  const blockBecauseNotPwa = (isIOS || isAndroid) && !isPwa;   // now also encourages Chrome users
+
   const shouldBlock = blockBecauseDenied || blockBecauseDefault || blockBecauseNotPwa;
 
   if (!shouldBlock) {
     btn.disabled = false;
-    if (notificationGateOverlay_) notificationGateOverlay_.remove();
+    if (notificationGateOverlay_) {
+      notificationGateOverlay_.remove();
+      notificationGateOverlay_ = null;
+      window.removeEventListener("scroll", positionGateOverlay_, true);
+      window.removeEventListener("resize", positionGateOverlay_);
+    }
     return;
   }
 
+  // Block the button
   btn.disabled = true;
 
-  // Create overlay if not exists
+  // Create overlay only once
   if (!notificationGateOverlay_) {
     const overlay = document.createElement("div");
     overlay.id = "notification-gate-overlay";
     overlay.style.cssText = `
-      z-index: 99999; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
-      display: flex; align-items: center; justify-content: center; padding: 20px;
+      z-index:99998;
+      background:#7c2d12;
+      color:#fff;
+      border-radius:14px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding:14px 16px;
+      font-size:13px;
+      line-height:1.6;
+      direction:rtl;
+      box-shadow:0 8px 25px rgba(0,0,0,.5);
     `;
     document.body.appendChild(overlay);
     notificationGateOverlay_ = overlay;
@@ -652,49 +675,52 @@ function enforceNotificationGate() {
     window.addEventListener("resize", positionGateOverlay_);
   }
 
+  // Better messages + icons
   let title = "";
-  let stepsHTML = "";
-  const isChrome = /Chrome/.test(navigator.userAgent) && !/Edge/.test(navigator.userAgent);
+  let steps = "";
 
   if (blockBecauseNotPwa) {
-    title = `⚠️ ابتدا «تردد» را به صفحه اصلی اضافه کنید`;
-    stepsHTML = `
-      <div style="font-size:15px; margin:12px 0;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:28px;">📱</span>
-          <div>گوشی را ثابت نگه دارید</div>
-        </div>
-        <ol style="padding-right:20px; margin-top:10px; line-height:1.8;">
-          <li>در مرورگر روی <b>Share</b> (مربع با فلش) بزنید</li>
-          <li><b>Add to Home Screen</b> را انتخاب کنید</li>
-          <li>نام را <b>تردد</b> بگذارید</li>
-          <li>اضافه شد</li>
-        </ol>
-      </div>
-    `;
+    title = "📱 ابتدا اپ را به صفحه اصلی اضافه کنید";
+    if (isIOS) {
+      steps = `
+        ۱. دکمه <b>Share</b> (مربع با فلش) را بزنید<br>
+        ۲. گزینه <b>Add to Home Screen</b> را انتخاب کنید<br>
+        ۳. نام را «تردد» بگذارید و Add را بزنید<br>
+        ۴. حالا اپ را از صفحه اصلی باز کنید
+      `;
+    } else {
+      // Chrome / Android
+      steps = `
+        ۱. منوی سه‌نقطه Chrome را باز کنید<br>
+        ۲. گزینه <b>Add to Home screen</b> یا <b>Install app</b> را بزنید<br>
+        ۳. تأیید کنید<br>
+        ۴. اپ را از صفحه اصلی باز کنید
+      `;
+    }
   } else if (blockBecauseDenied) {
-    title = `⚠️ اعلان‌های «تردد» خاموش است`;
-    stepsHTML = isIOS 
-      ? `تنظیمات آیفون → Notifications → <b>تردد</b> → Allow Notifications را روشن کنید`
-      : `تنظیمات گوشی → اعلان‌ها → <b>تردد</b> یا مرورگر را فعال کنید`;
-  } else if (blockBecauseDefault) {
-    title = `⚠️ اجازه اعلان‌ها لازم است`;
-    stepsHTML = `لطفاً روی دکمه زیر بزنید و <b>Allow</b> را انتخاب کنید`;
+    title = "🔔 اعلان‌ها خاموش است";
+    steps = isIOS
+      ? `تنظیمات آیفون ← Notifications ← <b>تردد</b><br>← Allow Notifications را روشن کنید`
+      : `تنظیمات گوشی ← اعلان‌ها ← <b>تردد</b> یا مرورگر را فعال کنید`;
+  } else {
+    title = "🔔 اجازه اعلان‌ها لازم است";
+    steps = `برای ثبت تردد باید اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و <b>Allow</b> را انتخاب کنید.`;
   }
 
   notificationGateOverlay_.innerHTML = `
-    <div style="background:#fff; border-radius:18px; padding:28px; max-width:340px; width:92%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
-      <div style="font-size:22px; font-weight:800; margin-bottom:12px; color:#1e40af;">${title}</div>
-      <div style="font-size:15.5px; line-height:1.7; color:#374151;">${stepsHTML}</div>
-      <button id="notification-gate-recheck" 
-        style="margin-top:20px; width:100%; padding:14px; background:#1e40af; color:white; border:none; border-radius:10px; font-weight:700; font-size:16px; cursor:pointer;">
-        بررسی مجدد
-      </button>
-    </div>
+    <div style="font-weight:800;font-size:15px;margin-bottom:8px;">${title}</div>
+    <div style="font-size:13px;opacity:0.95;margin-bottom:12px;line-height:1.7;">${steps}</div>
+    <button id="notification-gate-recheck" style="
+      background:#fff;color:#7c2d12;border:none;border-radius:10px;
+      padding:9px 22px;font-size:14px;font-weight:700;cursor:pointer;">
+      بررسی مجدد
+    </button>
   `;
 
-  document.getElementById("notification-gate-recheck").addEventListener("click", () => {
-    if (Notification.permission === "default") Notification.requestPermission();
+  document.getElementById("notification-gate-recheck")?.addEventListener("click", async () => {
+    if (Notification.permission === "default") {
+      try { await Notification.requestPermission(); } catch (_) {}
+    }
     enforceNotificationGate();
     registerForPushNotifications().catch(() => {});
   });

@@ -1,4 +1,4 @@
-const DB_NAME = "attendance-pwa-db";
+const DB_NAME = "attendance-pwa-db"; 
 const DB_VERSION = 3;
 
 const STORE_RECORDS = "records";
@@ -305,31 +305,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Start heartbeat with the person's IntervalMinutes
   try {
     await startHeartbeatWithInterval_();
-    // Restart heartbeat + sync when screen wakes or app becomes visible
-window.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    startHeartbeatWithInterval_();           // restart your existing heartbeat
-    scheduleSyncPendingRecords(800);         // force sync
-    fetchMessages().catch(() => {});
-  }
-});
-
-window.addEventListener("pageshow", () => {
-  startHeartbeatWithInterval_();
-  scheduleSyncPendingRecords(800);
-});
-
-window.addEventListener("online", () => {
-  startHeartbeatWithInterval_();
-  scheduleSyncPendingRecords(800);
-});
-
-window.addEventListener("focus", () => {
-  if (navigator.onLine) {
-    startHeartbeatWithInterval_();
-    scheduleSyncPendingRecords(500);
-  }
-});
   } catch (_) {}
     // Password placeholder
   try {
@@ -418,6 +393,7 @@ window.addEventListener("focus", () => {
   } catch (_) {}
 });
 
+// Restart heartbeat when the app becomes visible again
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     startHeartbeatWithInterval_();
@@ -622,11 +598,11 @@ function enforceNotificationGate() {
   const permission = hasNotificationApi ? Notification.permission : "unsupported";
   const isPwa = isRunningAsPwa_();
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isAndroid = /Android/.test(navigator.userAgent);
 
+  // Block conditions
   const blockBecauseDenied = hasNotificationApi && permission === "denied";
   const blockBecauseDefault = hasNotificationApi && permission === "default";
-  const blockBecauseNotPwa = (isIOS || isAndroid) && !isPwa;   // now also encourages Chrome users
+  const blockBecauseNotPwa = isIOS && !isPwa;
 
   const shouldBlock = blockBecauseDenied || blockBecauseDefault || blockBecauseNotPwa;
 
@@ -644,26 +620,15 @@ function enforceNotificationGate() {
   // Block the button
   btn.disabled = true;
 
-  // Create overlay only once
+  // Create overlay if needed
   if (!notificationGateOverlay_) {
     const overlay = document.createElement("div");
     overlay.id = "notification-gate-overlay";
-    overlay.style.cssText = `
-      z-index:99998;
-      background:#7c2d12;
-      color:#fff;
-      border-radius:14px;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      text-align:center;
-      padding:14px 16px;
-      font-size:13px;
-      line-height:1.6;
-      direction:rtl;
-      box-shadow:0 8px 25px rgba(0,0,0,.5);
-    `;
+    overlay.style.cssText =
+      "z-index:99998;background:#7c2d12;color:#fff;border-radius:12px;" +
+      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+      "text-align:center;padding:10px 12px;font-size:12px;line-height:1.5;direction:rtl;" +
+      "box-shadow:0 6px 20px rgba(0,0,0,.45);";
     document.body.appendChild(overlay);
     notificationGateOverlay_ = overlay;
 
@@ -671,51 +636,52 @@ function enforceNotificationGate() {
     window.addEventListener("resize", positionGateOverlay_);
   }
 
-  // Better messages + icons
-  let title = "";
+    // Message according to the problem
+  let title = "⚠️ برای ثبت تردد باید اعلان‌ها فعال باشد";
   let steps = "";
 
   if (blockBecauseNotPwa) {
-    title = "📱 ابتدا اپ را به صفحه اصلی اضافه کنید";
+    title = "⚠️ ابتدا اپلیکیشن «تردد» را نصب کنید";
+    steps = `
+      ۱. در مرورگر دکمه <b>Share</b> (مربع با فلش) را بزنید<br>
+      ۲. گزینه <b>Add to Home Screen</b> را انتخاب کنید<br>
+      ۳. نام را «تردد» بگذارید و Add را بزنید<br>
+      ۴. حالا اپ را از <b>صفحه اصلی گوشی</b> باز کنید
+    `;
+  } else if (blockBecauseDenied) {
+    title = "⚠️ اعلان‌های اپ «تردد» خاموش است";
     if (isIOS) {
       steps = `
-        ۱. دکمه <b>Share</b> (مربع با فلش) را بزنید<br>
-        ۲. گزینه <b>Add to Home Screen</b> را انتخاب کنید<br>
-        ۳. نام را «تردد» بگذارید و Add را بزنید<br>
-        ۴. حالا اپ را از صفحه اصلی باز کنید
+        مسیر دقیق:<br>
+        تنظیمات آیفون ← Notifications ← <b>تردد</b><br>
+        ← گزینه <b>Allow Notifications</b> را روشن کنید
       `;
     } else {
-      // Chrome / Android
       steps = `
-        ۱. منوی سه‌نقطه Chrome را باز کنید<br>
-        ۲. گزینه <b>Add to Home screen</b> یا <b>Install app</b> را بزنید<br>
-        ۳. تأیید کنید<br>
-        ۴. اپ را از صفحه اصلی باز کنید
+        مسیر دقیق:<br>
+        تنظیمات گوشی ← اعلان‌ها ← <b>تردد</b> یا مرورگر<br>
+        ← اعلان‌ها را فعال کنید
       `;
     }
-  } else if (blockBecauseDenied) {
-    title = "🔔 اعلان‌ها خاموش است";
-    steps = isIOS
-      ? `تنظیمات آیفون ← Notifications ← <b>تردد</b><br>← Allow Notifications را روشن کنید`
-      : `تنظیمات گوشی ← اعلان‌ها ← <b>تردد</b> یا مرورگر را فعال کنید`;
-  } else {
-    title = "🔔 اجازه اعلان‌ها لازم است";
-    steps = `برای ثبت تردد باید اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و <b>Allow</b> را انتخاب کنید.`;
+  } else if (blockBecauseDefault) {
+    title = "⚠️ اجازه اعلان‌ها لازم است";
+    steps = `برای ثبت تردد باید به اپ «تردد» اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و Allow را انتخاب کنید.`;
   }
-
   notificationGateOverlay_.innerHTML = `
-    <div style="font-weight:800;font-size:15px;margin-bottom:8px;">${title}</div>
-    <div style="font-size:13px;opacity:0.95;margin-bottom:12px;line-height:1.7;">${steps}</div>
+    <div style="font-weight:800;font-size:13px;margin-bottom:4px;">${title}</div>
+    <div style="font-size:11px;opacity:0.95;margin-bottom:8px;">${steps}</div>
     <button id="notification-gate-recheck" style="
-      background:#fff;color:#7c2d12;border:none;border-radius:10px;
-      padding:9px 22px;font-size:14px;font-weight:700;cursor:pointer;">
+      background:#fff;color:#7c2d12;border:none;border-radius:8px;
+      padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;">
       بررسی مجدد
     </button>
   `;
 
   document.getElementById("notification-gate-recheck")?.addEventListener("click", async () => {
     if (Notification.permission === "default") {
-      try { await Notification.requestPermission(); } catch (_) {}
+      try {
+        await Notification.requestPermission();
+      } catch (_) {}
     }
     enforceNotificationGate();
     registerForPushNotifications().catch(() => {});
@@ -723,6 +689,13 @@ function enforceNotificationGate() {
 
   positionGateOverlay_();
 }
+
+// Re-check when user returns to the app
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    enforceNotificationGate();
+  }
+});
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");

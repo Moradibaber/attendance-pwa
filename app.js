@@ -418,16 +418,12 @@ window.addEventListener("focus", () => {
   } catch (_) {}
 });
 
-// Restart heartbeat when app becomes visible / online / focused
-function restartHeartbeatIfNeeded_() {
-  if (document.hidden) return;
-  startHeartbeatWithInterval_();
-}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    startHeartbeatWithInterval_();
+  }
+});
 
-document.addEventListener("visibilitychange", restartHeartbeatIfNeeded_);
-window.addEventListener("pageshow", restartHeartbeatIfNeeded_);
-window.addEventListener("online", restartHeartbeatIfNeeded_);
-window.addEventListener("focus", restartHeartbeatIfNeeded_);
 /* =========================
    UI Helpers
 ========================= */

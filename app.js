@@ -305,6 +305,31 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Start heartbeat with the person's IntervalMinutes
   try {
     await startHeartbeatWithInterval_();
+    // Restart heartbeat + sync when screen wakes or app becomes visible
+window.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    startHeartbeatWithInterval_();           // restart your existing heartbeat
+    scheduleSyncPendingRecords(800);         // force sync
+    fetchMessages().catch(() => {});
+  }
+});
+
+window.addEventListener("pageshow", () => {
+  startHeartbeatWithInterval_();
+  scheduleSyncPendingRecords(800);
+});
+
+window.addEventListener("online", () => {
+  startHeartbeatWithInterval_();
+  scheduleSyncPendingRecords(800);
+});
+
+window.addEventListener("focus", () => {
+  if (navigator.onLine) {
+    startHeartbeatWithInterval_();
+    scheduleSyncPendingRecords(500);
+  }
+});
   } catch (_) {}
     // Password placeholder
   try {
@@ -599,36 +624,27 @@ function enforceNotificationGate() {
   const isPwa = isRunningAsPwa_();
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-  // Block conditions
   const blockBecauseDenied = hasNotificationApi && permission === "denied";
   const blockBecauseDefault = hasNotificationApi && permission === "default";
   const blockBecauseNotPwa = isIOS && !isPwa;
-
   const shouldBlock = blockBecauseDenied || blockBecauseDefault || blockBecauseNotPwa;
 
   if (!shouldBlock) {
     btn.disabled = false;
-    if (notificationGateOverlay_) {
-      notificationGateOverlay_.remove();
-      notificationGateOverlay_ = null;
-      window.removeEventListener("scroll", positionGateOverlay_, true);
-      window.removeEventListener("resize", positionGateOverlay_);
-    }
+    if (notificationGateOverlay_) notificationGateOverlay_.remove();
     return;
   }
 
-  // Block the button
   btn.disabled = true;
 
-  // Create overlay if needed
+  // Create overlay if not exists
   if (!notificationGateOverlay_) {
     const overlay = document.createElement("div");
     overlay.id = "notification-gate-overlay";
-    overlay.style.cssText =
-      "z-index:99998;background:#7c2d12;color:#fff;border-radius:12px;" +
-      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-      "text-align:center;padding:10px 12px;font-size:12px;line-height:1.5;direction:rtl;" +
-      "box-shadow:0 6px 20px rgba(0,0,0,.45);";
+    overlay.style.cssText = `
+      z-index: 99999; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    `;
     document.body.appendChild(overlay);
     notificationGateOverlay_ = overlay;
 
@@ -636,66 +652,55 @@ function enforceNotificationGate() {
     window.addEventListener("resize", positionGateOverlay_);
   }
 
-    // Message according to the problem
-  let title = "⚠️ برای ثبت تردد باید اعلان‌ها فعال باشد";
-  let steps = "";
+  let title = "";
+  let stepsHTML = "";
+  const isChrome = /Chrome/.test(navigator.userAgent) && !/Edge/.test(navigator.userAgent);
 
   if (blockBecauseNotPwa) {
-    title = "⚠️ ابتدا اپلیکیشن «تردد» را نصب کنید";
-    steps = `
-      ۱. در مرورگر دکمه <b>Share</b> (مربع با فلش) را بزنید<br>
-      ۲. گزینه <b>Add to Home Screen</b> را انتخاب کنید<br>
-      ۳. نام را «تردد» بگذارید و Add را بزنید<br>
-      ۴. حالا اپ را از <b>صفحه اصلی گوشی</b> باز کنید
+    title = `⚠️ ابتدا «تردد» را به صفحه اصلی اضافه کنید`;
+    stepsHTML = `
+      <div style="font-size:15px; margin:12px 0;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:28px;">📱</span>
+          <div>گوشی را ثابت نگه دارید</div>
+        </div>
+        <ol style="padding-right:20px; margin-top:10px; line-height:1.8;">
+          <li>در مرورگر روی <b>Share</b> (مربع با فلش) بزنید</li>
+          <li><b>Add to Home Screen</b> را انتخاب کنید</li>
+          <li>نام را <b>تردد</b> بگذارید</li>
+          <li>اضافه شد</li>
+        </ol>
+      </div>
     `;
   } else if (blockBecauseDenied) {
-    title = "⚠️ اعلان‌های اپ «تردد» خاموش است";
-    if (isIOS) {
-      steps = `
-        مسیر دقیق:<br>
-        تنظیمات آیفون ← Notifications ← <b>تردد</b><br>
-        ← گزینه <b>Allow Notifications</b> را روشن کنید
-      `;
-    } else {
-      steps = `
-        مسیر دقیق:<br>
-        تنظیمات گوشی ← اعلان‌ها ← <b>تردد</b> یا مرورگر<br>
-        ← اعلان‌ها را فعال کنید
-      `;
-    }
+    title = `⚠️ اعلان‌های «تردد» خاموش است`;
+    stepsHTML = isIOS 
+      ? `تنظیمات آیفون → Notifications → <b>تردد</b> → Allow Notifications را روشن کنید`
+      : `تنظیمات گوشی → اعلان‌ها → <b>تردد</b> یا مرورگر را فعال کنید`;
   } else if (blockBecauseDefault) {
-    title = "⚠️ اجازه اعلان‌ها لازم است";
-    steps = `برای ثبت تردد باید به اپ «تردد» اجازه اعلان بدهید.<br>روی دکمه زیر بزنید و Allow را انتخاب کنید.`;
+    title = `⚠️ اجازه اعلان‌ها لازم است`;
+    stepsHTML = `لطفاً روی دکمه زیر بزنید و <b>Allow</b> را انتخاب کنید`;
   }
+
   notificationGateOverlay_.innerHTML = `
-    <div style="font-weight:800;font-size:13px;margin-bottom:4px;">${title}</div>
-    <div style="font-size:11px;opacity:0.95;margin-bottom:8px;">${steps}</div>
-    <button id="notification-gate-recheck" style="
-      background:#fff;color:#7c2d12;border:none;border-radius:8px;
-      padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;">
-      بررسی مجدد
-    </button>
+    <div style="background:#fff; border-radius:18px; padding:28px; max-width:340px; width:92%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+      <div style="font-size:22px; font-weight:800; margin-bottom:12px; color:#1e40af;">${title}</div>
+      <div style="font-size:15.5px; line-height:1.7; color:#374151;">${stepsHTML}</div>
+      <button id="notification-gate-recheck" 
+        style="margin-top:20px; width:100%; padding:14px; background:#1e40af; color:white; border:none; border-radius:10px; font-weight:700; font-size:16px; cursor:pointer;">
+        بررسی مجدد
+      </button>
+    </div>
   `;
 
-  document.getElementById("notification-gate-recheck")?.addEventListener("click", async () => {
-    if (Notification.permission === "default") {
-      try {
-        await Notification.requestPermission();
-      } catch (_) {}
-    }
+  document.getElementById("notification-gate-recheck").addEventListener("click", () => {
+    if (Notification.permission === "default") Notification.requestPermission();
     enforceNotificationGate();
     registerForPushNotifications().catch(() => {});
   });
 
   positionGateOverlay_();
 }
-
-// Re-check when user returns to the app
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    enforceNotificationGate();
-  }
-});
 
 function showGpsToast(message, duration = 3000, type = "success") {
   const oldToast = document.getElementById("gps-toast");

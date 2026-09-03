@@ -84,22 +84,38 @@ self.addEventListener("push", (event) => {
     payload = event.data ? event.data.json() : {};
   } catch (e) {
     try {
-      payload = { data: { raw: event.data ? event.data.text() : "" } };
+      payload = { raw: event.data ? event.data.text() : "" };
     } catch (_) {
       payload = {};
     }
   }
 
+  // Very robust extraction of personnelCode
   const data = payload.data || payload || {};
-  const notif = payload.notification || {};
-  const personnelCode = data.personnelCode || data.personnelcode || "" || "";
+  let personnelCode =
+    data.personnelCode ||
+    data.personnelcode ||
+    data.PersonnelCode ||
+    payload.personnelCode ||
+    "";
 
-  const title = notif.title || data.title || "بروزرسانی سیستم";
-  const body  = notif.body  || data.body  || " ";
-
+  // Fallback: if still empty, try to read last known code from IndexedDB
   event.waitUntil(
     (async () => {
-      // 1. Log in SW (this already works even when app is closed/screen off)
+      if (!personnelCode) {
+        try {
+          const db = await openDbInServiceWorker();
+          const profile = await dbGetInServiceWorker(db, "profile", "main");
+          if (profile && profile.personnelCode) {
+            personnelCode = profile.personnelCode;
+          }
+        } catch (e) {}
+      }
+
+      const title = (payload.notification && payload.notification.title) || data.title || "یادآوری تردد";
+      const body  = (payload.notification && payload.notification.body)  || data.body  || " ";
+
+      // 1. Always try to report PushReceived (this is what updates OnlineHistory)
       try {
         await fetch(APPS_SCRIPT_URL, {
           method: "POST",
@@ -109,38 +125,30 @@ self.addEventListener("push", (event) => {
             personnelCode: String(personnelCode || "UNKNOWN"),
             deviceId: "",
             deviceTime: new Date().toISOString(),
-            rawPayload: JSON.stringify(payload).slice(0, 500)
+            source: "sw-push"
           })
         });
       } catch (err) {
         console.error("PushReceived failed:", err);
-      }
-
-      // 2. Immediately send Heartbeat (this is the screen-off heartbeat improvement)
-      //    - Works even if page is closed
-      //    - Will be picked up by your frontend visibilitychange + startHeartbeat
-      try {
-        const profile = await dbGetInServiceWorker(null, STORE_PROFILE, "main"); // dummy db
-        if (profile && profile.personnelCode) {
-          const res = await fetch(APPS_SCRIPT_URL, {
+        // one quick retry
+        try {
+          await fetch(APPS_SCRIPT_URL, {
             method: "POST",
             headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify({
-              type: "Heartbeat",
-              personnelCode: profile.personnelCode,
-              deviceId: getOrCreateDeviceId_ ? getOrCreateDeviceId_() : "sw-" + Date.now(),
-              clientTime: new Date().toISOString()
+              type: "PushReceived",
+              personnelCode: String(personnelCode || "UNKNOWN"),
+              deviceId: "",
+              deviceTime: new Date().toISOString(),
+              source: "sw-push-retry"
             })
           });
-          await res.text(); // ignore result
-        }
-      } catch (e) {
-        console.warn("SW Heartbeat on push failed:", e);
+        } catch (e2) {}
       }
 
-      // 3. Show notification
-      await self.registration.showNotification(title || "تردد", {
-        body: body || " ",
+      // 2. Show notification (required so browser keeps the SW alive)
+      await self.registration.showNotification(title, {
+        body: body,
         icon: "icon-192.png",
         badge: "icon-192.png",
         silent: true,
@@ -149,11 +157,9 @@ self.addEventListener("push", (event) => {
         tag: "attendance-ping",
         data: { personnelCode: personnelCode || "" }
       });
-
     })()
   );
 });
-
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();

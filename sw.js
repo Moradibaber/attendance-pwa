@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v350"; 
+const CACHE_NAME = "attendance-pwa-v351"; 
 const FILES = [
   "./",
   "index.html",
@@ -84,19 +84,12 @@ self.addEventListener("push", (event) => {
     let title = "یادآوری تردد";
     let body = " ";
 
-    // ---- Parse payload safely ----
     try {
       if (event.data) {
         const payload = event.data.json();
-        console.log("SW Push payload:", payload);
-
         const data = payload.data || payload || {};
-        personnelCode =
-          data.personnelCode ||
-          data.personnelcode ||
-          data.PersonnelCode ||
-          payload.personnelCode ||
-          "";
+
+        personnelCode = data.personnelCode || data.personnelcode || "";
 
         if (payload.notification) {
           title = payload.notification.title || title;
@@ -104,59 +97,35 @@ self.addEventListener("push", (event) => {
         }
       }
     } catch (e) {
-      console.error("SW parse error:", e);
+      console.log("Push parse error", e);
     }
 
-    // ---- Fallback: read from IndexedDB ----
-    if (!personnelCode) {
-      try {
-        const db = await openDbInServiceWorker();
-        const profile = await dbGetInServiceWorker(db, "profile", "main");
-        if (profile && profile.personnelCode) {
-          personnelCode = profile.personnelCode;
-          console.log("SW used profile fallback:", personnelCode);
-        }
-      } catch (e) {
-        console.warn("SW profile fallback failed:", e);
-      }
-    }
-
-    console.log("SW final personnelCode:", personnelCode);
-
-    // ---- Always report to server ----
+    // Report to server (this updates OnlineHistory)
     try {
-      const res = await fetch(APPS_SCRIPT_URL, {
+      await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           type: "PushReceived",
           personnelCode: String(personnelCode || "UNKNOWN"),
           deviceId: "",
-          deviceTime: new Date().toISOString(),
-          source: "sw-push"
+          deviceTime: new Date().toISOString()
         })
       });
-      console.log("SW PushReceived status:", res.status);
     } catch (err) {
-      console.error("SW PushReceived failed:", err);
+      console.error("PushReceived error", err);
     }
 
-    // ---- Show notification (keeps SW alive) ----
-    try {
-      await self.registration.showNotification(title, {
-        body: body,
-        icon: "icon-192.png",
-        badge: "icon-192.png",
-        silent: true,
-        tag: "attendance-ping",
-        data: { personnelCode }
-      });
-    } catch (e) {
-      console.error("showNotification error:", e);
-    }
+    // Show notification
+    await self.registration.showNotification(title, {
+      body: body,
+      icon: "icon-192.png",
+      badge: "icon-192.png",
+      silent: true,
+      tag: "attendance-ping"
+    });
   })());
 });
-
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();

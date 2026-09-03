@@ -200,7 +200,7 @@ async function startHeartbeatWithInterval_() {
     heartbeatTimer_ = null;
   }
 
-  let intervalMinutes = 1;
+  let intervalMinutes = 5; // default
 
   try {
     const profile = await dbGet(STORE_PROFILE, "main");
@@ -213,20 +213,27 @@ async function startHeartbeatWithInterval_() {
           personnelCode: profile.personnelCode
         })
       });
-      const text = await res.text();
-      const data = JSON.parse(text);
-      if (data && data.ok && data.intervalMinutes) {
-        intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 1);
+
+      let text = await res.text();
+
+      // Clean the response (remove possible extra characters)
+      text = text.trim();
+      if (text.startsWith('{') && text.includes('intervalMinutes')) {
+        const data = JSON.parse(text);
+        if (data && data.ok && data.intervalMinutes) {
+          intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 5);
+        }
       }
     }
   } catch (e) {
-    console.warn("Could not load interval, using 1 minute", e);
+    console.warn("Could not load interval, using 5 minutes", e);
   }
 
   const ms = intervalMinutes * 60 * 1000;
   sendHeartbeat();
   heartbeatTimer_ = setInterval(sendHeartbeat, ms);
 }
+
 
 /* =========================
    Boot

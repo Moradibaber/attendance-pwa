@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v348"; 
+const CACHE_NAME = "attendance-pwa-v350"; 
 const FILES = [
   "./",
   "index.html",
@@ -79,87 +79,84 @@ self.addEventListener("fetch", (event) => {
   );
 });
 self.addEventListener("push", (event) => {
-  let payload = {};
-  try {
-    payload = event.data ? event.data.json() : {};
-  } catch (e) {
+  event.waitUntil((async () => {
+    let personnelCode = "";
+    let title = "یادآوری تردد";
+    let body = " ";
+
+    // ---- Parse payload safely ----
     try {
-      payload = { raw: event.data ? event.data.text() : "" };
-    } catch (_) {
-      payload = {};
+      if (event.data) {
+        const payload = event.data.json();
+        console.log("SW Push payload:", payload);
+
+        const data = payload.data || payload || {};
+        personnelCode =
+          data.personnelCode ||
+          data.personnelcode ||
+          data.PersonnelCode ||
+          payload.personnelCode ||
+          "";
+
+        if (payload.notification) {
+          title = payload.notification.title || title;
+          body = payload.notification.body || body;
+        }
+      }
+    } catch (e) {
+      console.error("SW parse error:", e);
     }
-  }
 
-  // Very robust extraction of personnelCode
-  const data = payload.data || payload || {};
-  let personnelCode =
-    data.personnelCode ||
-    data.personnelcode ||
-    data.PersonnelCode ||
-    payload.personnelCode ||
-    "";
-
-  // Fallback: if still empty, try to read last known code from IndexedDB
-  event.waitUntil(
-    (async () => {
-      if (!personnelCode) {
-        try {
-          const db = await openDbInServiceWorker();
-          const profile = await dbGetInServiceWorker(db, "profile", "main");
-          if (profile && profile.personnelCode) {
-            personnelCode = profile.personnelCode;
-          }
-        } catch (e) {}
-      }
-
-      const title = (payload.notification && payload.notification.title) || data.title || "یادآوری تردد";
-      const body  = (payload.notification && payload.notification.body)  || data.body  || " ";
-
-      // 1. Always try to report PushReceived (this is what updates OnlineHistory)
+    // ---- Fallback: read from IndexedDB ----
+    if (!personnelCode) {
       try {
-        await fetch(APPS_SCRIPT_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            type: "PushReceived",
-            personnelCode: String(personnelCode || "UNKNOWN"),
-            deviceId: "",
-            deviceTime: new Date().toISOString(),
-            source: "sw-push"
-          })
-        });
-      } catch (err) {
-        console.error("PushReceived failed:", err);
-        // one quick retry
-        try {
-          await fetch(APPS_SCRIPT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              type: "PushReceived",
-              personnelCode: String(personnelCode || "UNKNOWN"),
-              deviceId: "",
-              deviceTime: new Date().toISOString(),
-              source: "sw-push-retry"
-            })
-          });
-        } catch (e2) {}
+        const db = await openDbInServiceWorker();
+        const profile = await dbGetInServiceWorker(db, "profile", "main");
+        if (profile && profile.personnelCode) {
+          personnelCode = profile.personnelCode;
+          console.log("SW used profile fallback:", personnelCode);
+        }
+      } catch (e) {
+        console.warn("SW profile fallback failed:", e);
       }
+    }
 
-      // 2. Show notification (required so browser keeps the SW alive)
+    console.log("SW final personnelCode:", personnelCode);
+
+    // ---- Always report to server ----
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          type: "PushReceived",
+          personnelCode: String(personnelCode || "UNKNOWN"),
+          deviceId: "",
+          deviceTime: new Date().toISOISOString(),
+          source: "sw-push"
+        })
+      });
+      console.log("SW PushReceived status:", res.status);
+    } catch (err) {
+      console.error("SW PushReceived failed:", err);
+    }
+
+    // ---- Show notification (keeps SW alive) ----
+    try {
       await self.registration.showNotification(title, {
         body: body,
         icon: "icon-192.png",
         badge: "icon-192.png",
         silent: true,
-        renotify: false,
-        requireInteraction: false,
         tag: "attendance-ping",
-        data: { personnelCode: personnelCode || "" }
+        data: { personnelCode }
       });
-    })()
-  );
+    } catch (e) {
+      console.error("showNotification error:", e);
+    }
+  })());
 });
+
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();

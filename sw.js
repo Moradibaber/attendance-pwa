@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v336"; 
+const CACHE_NAME = "attendance-pwa-v337";
 const FILES = [
   "./",
   "index.html",
@@ -7,17 +7,12 @@ const FILES = [
   "manifest.json?v=2",
   "cover-rights-reserved.png"
 ];
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./app.js",
-  "./sw.js",
-  "./pwa-qr.png",   // ← add this
-  // ... other files
-];
+
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
+const STORE_PROFILE = "profile";
+
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
 
@@ -78,6 +73,7 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
@@ -92,14 +88,17 @@ self.addEventListener("push", (event) => {
 
   const data = payload.data || payload || {};
   const notif = payload.notification || {};
-  const personnelCode = data.personnelCode || data.personnelcode || "" || "";
+  const personnelCode =
+    data.personnelCode ||
+    data.personnelcode ||
+    "";
 
   const title = notif.title || data.title || "بروزرسانی سیستم";
   const body  = notif.body  || data.body  || " ";
 
   event.waitUntil(
     (async () => {
-      // 1. Log in SW (this already works even when app is closed/screen off)
+      // Log PushReceived (this is the main signal when screen is off / PWA closed)
       try {
         await fetch(APPS_SCRIPT_URL, {
           method: "POST",
@@ -116,29 +115,7 @@ self.addEventListener("push", (event) => {
         console.error("PushReceived failed:", err);
       }
 
-      // 2. Immediately send Heartbeat (this is the screen-off heartbeat improvement)
-      //    - Works even if page is closed
-      //    - Will be picked up by your frontend visibilitychange + startHeartbeat
-      try {
-        const profile = await dbGetInServiceWorker(null, STORE_PROFILE, "main"); // dummy db
-        if (profile && profile.personnelCode) {
-          const res = await fetch(APPS_SCRIPT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              type: "Heartbeat",
-              personnelCode: profile.personnelCode,
-              deviceId: getOrCreateDeviceId_ ? getOrCreateDeviceId_() : "sw-" + Date.now(),
-              clientTime: new Date().toISOString()
-            })
-          });
-          await res.text(); // ignore result
-        }
-      } catch (e) {
-        console.warn("SW Heartbeat on push failed:", e);
-      }
-
-      // 3. Show notification
+      // Show silent notification
       await self.registration.showNotification(title || "تردد", {
         body: body || " ",
         icon: "icon-192.png",
@@ -149,7 +126,6 @@ self.addEventListener("push", (event) => {
         tag: "attendance-ping",
         data: { personnelCode: personnelCode || "" }
       });
-
     })()
   );
 });
@@ -219,8 +195,8 @@ function openDbInServiceWorker() {
         store.createIndex("status", "status");
       }
 
-      if (!openedDb.objectStoreNames.contains("profile")) {
-        openedDb.createObjectStore("profile", { keyPath: "id" });
+      if (!openedDb.objectStoreNames.contains(STORE_PROFILE)) {
+        openedDb.createObjectStore(STORE_PROFILE, { keyPath: "id" });
       }
     };
 

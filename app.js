@@ -86,6 +86,38 @@ function getOrCreateDeviceId_() {
   }
 }
 
+async function saveProfileToDB(personnelCode, deviceId) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("attendance-pwa-db", 3);
+
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains("profile")) {
+        db.createObjectStore("profile", { keyPath: "id" });
+      }
+    };
+
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction("profile", "readwrite");
+      const store = tx.objectStore("profile");
+
+      store.put({
+        id: "main",
+        personnelCode: String(personnelCode || ""),
+        deviceId: String(deviceId || "")
+      });
+
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+
+    request.onerror = () => reject(request.error);
+  });
+}
 /* =========================
    Busy Overlay (Loader)
 ========================= */
@@ -271,18 +303,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     await refreshWorkLocationDatalist_();
   } catch (_) {}
 
-  try {
-    await loadProfile();
-  } catch (_) {}
-  try {
-    if (cachedProfile_ && cachedProfile_.personnelCode) {
-      setSaveProfileButtonSaved_();
-    }
-  } catch (_) {}
-  try {
-    ensureFaceApiReady_().catch(() => {});
-  } catch (_) {}
+ try {
+  await loadProfile();
+} catch (_) {}
 
+try {
+  if (cachedProfile_ && cachedProfile_.personnelCode) {
+    setSaveProfileButtonSaved_();
+
+    // ← ADD THIS LINE
+    await saveProfileToDB(cachedProfile_.personnelCode, getOrCreateDeviceId_());
+  }
+} catch (_) {}
   try {
     await ensurePolicyLoadedAtStartup();
   } catch (_) {}

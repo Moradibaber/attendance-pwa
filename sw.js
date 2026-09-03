@@ -132,7 +132,7 @@ self.addEventListener("push", (event) => {
           type: "PushReceived",
           personnelCode: String(personnelCode || "UNKNOWN"),
           deviceId: "",
-          deviceTime: new Date().toISOISOString(),
+          deviceTime: new Date().toISOString(),
           source: "sw-push"
         })
       });

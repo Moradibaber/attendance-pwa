@@ -128,14 +128,6 @@ self.addEventListener("push", (event) => {
     });
   })());
 });
-// Still show notification
-    await self.registration.showNotification(title, {
-      body: body + " | code: " + (personnelCode || "empty"),
-      silent: true,
-      tag: "attendance-ping"
-    });
-  })());
-});
 
 async function syncPendingRecordsInBackground() {
   try {

@@ -1276,7 +1276,7 @@ async function verifyPasswordWithServer_(personnelCode, password) {
     console.error("verifyPassword error:", err);
     return {
       ok: false,
-      error: "ارتباط با سرور برقرار نشد. اینترنت آیفون را بررسی کنید.",
+      error: "ارتباط با سرور برقرار نشد. اینترنت را بررسی کنید.",
     };
   }
 }

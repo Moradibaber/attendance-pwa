@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v354"; 
+const CACHE_NAME = "attendance-pwa-v355"; 
 const FILES = [
   "./",
   "index.html",
@@ -112,47 +112,30 @@ self.addEventListener("fetch", (event) => {
 //     } catch (err) {
 //       console.error("Fetch failed on iOS:", err);
 //     }
+
 self.addEventListener("push", (event) => {
   event.waitUntil((async () => {
     let personnelCode = "";
-    let title = "یادآوری تردد";
-    let body = " ";
     let deviceId = "";
 
     try {
       if (event.data) {
         const payload = event.data.json();
         const data = payload.data || payload || {};
-
         personnelCode = data.personnelCode || data.personnelcode || "";
-        
-        // Try to get a real deviceId if the server sent it
         deviceId = data.deviceId || data.deviceid || "";
-
-        if (payload.notification) {
-          title = payload.notification.title || title;
-          body = payload.notification.body || body;
-        }
       }
-    } catch (e) {
-      console.log("Push parse error", e);
-    }
+    } catch (e) {}
 
-    // If we still don't have a deviceId, try to read it from IndexedDB
+    // Try to get real deviceId from IndexedDB
     if (!deviceId) {
       try {
         const db = await openDbInServiceWorker();
         const profile = await dbGetInServiceWorker(db, "profile", "main");
-        if (profile && profile.deviceId) {
-          deviceId = profile.deviceId;
-        }
+        if (profile && profile.deviceId) deviceId = profile.deviceId;
       } catch (e) {}
     }
-
-    // Final fallback – never use "ios-test"
-    if (!deviceId) {
-      deviceId = "unknown-device";
-    }
+    if (!deviceId) deviceId = "unknown-device";
 
     // Report to server
     try {
@@ -167,13 +150,11 @@ self.addEventListener("push", (event) => {
           source: "push"
         })
       });
-    } catch (err) {
-      console.error("PushReceived error", err);
-    }
+    } catch (err) {}
 
-    // Show notification
-    await self.registration.showNotification(title, {
-      body: body,
+    // ===== FINAL NOTIFICATION TEXT =====
+    await self.registration.showNotification("یادآوری تردد", {
+      body: "لغو اشتراک-Unsubscribe نکنید در غیر اینصورت تردد ثبت نمی شود",
       icon: "icon-192.png",
       badge: "icon-192.png",
       silent: true,
@@ -181,7 +162,8 @@ self.addEventListener("push", (event) => {
     });
   })());
 });
-    // Still show notification
+
+// Still show notification
     await self.registration.showNotification(title, {
       body: body + " | code: " + (personnelCode || "empty"),
       silent: true,

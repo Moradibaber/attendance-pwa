@@ -162,7 +162,6 @@ self.addEventListener("push", (event) => {
     });
   })());
 });
-
 // Still show notification
     await self.registration.showNotification(title, {
       body: body + " | code: " + (personnelCode || "empty"),

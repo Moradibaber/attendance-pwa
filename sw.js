@@ -126,9 +126,7 @@ self.addEventListener("push", (event) => {
       silent: true,
       tag: "attendance-ping"
     });
-  })());
-});
-
+ 
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();

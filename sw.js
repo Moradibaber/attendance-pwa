@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v353"; 
+const CACHE_NAME = "attendance-pwa-v354"; 
 const FILES = [
   "./",
   "index.html",
@@ -78,41 +78,109 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+// self.addEventListener("push", (event) => {
+//   event.waitUntil((async () => {
+//     let personnelCode = "";
+//     let title = "یادآوری";
+//     let body = "تست";
+
+//     try {
+//       if (event.data) {
+//         const payload = event.data.json();
+//         console.log("iOS Push payload:", JSON.stringify(payload));
+
+//         const data = payload.data || payload || {};
+//         personnelCode = data.personnelCode || data.personnelcode || "";
+//       }
+//     } catch (e) {
+//       console.log("Parse error", e);
+//     }
+
+//     // Force a clear log to server
+//     try {
+//       await fetch(APPS_SCRIPT_URL, {
+//         method: "POST",
+//         headers: { "Content-Type": "text/plain;charset=utf-8" },
+//         body: JSON.stringify({
+//           type: "PushReceived",
+//           personnelCode: String(personnelCode || "UNKNOWN-IOS"),
+//           deviceId: "ios-test",
+//           deviceTime: new Date().toISOString(),
+//           source: "ios-debug"
+//         })
+//       });
+//     } catch (err) {
+//       console.error("Fetch failed on iOS:", err);
+//     }
 self.addEventListener("push", (event) => {
   event.waitUntil((async () => {
     let personnelCode = "";
-    let title = "یادآوری";
-    let body = "تست";
+    let title = "یادآوری تردد";
+    let body = " ";
+    let deviceId = "";
 
     try {
       if (event.data) {
         const payload = event.data.json();
-        console.log("iOS Push payload:", JSON.stringify(payload));
-
         const data = payload.data || payload || {};
+
         personnelCode = data.personnelCode || data.personnelcode || "";
+        
+        // Try to get a real deviceId if the server sent it
+        deviceId = data.deviceId || data.deviceid || "";
+
+        if (payload.notification) {
+          title = payload.notification.title || title;
+          body = payload.notification.body || body;
+        }
       }
     } catch (e) {
-      console.log("Parse error", e);
+      console.log("Push parse error", e);
     }
 
-    // Force a clear log to server
+    // If we still don't have a deviceId, try to read it from IndexedDB
+    if (!deviceId) {
+      try {
+        const db = await openDbInServiceWorker();
+        const profile = await dbGetInServiceWorker(db, "profile", "main");
+        if (profile && profile.deviceId) {
+          deviceId = profile.deviceId;
+        }
+      } catch (e) {}
+    }
+
+    // Final fallback – never use "ios-test"
+    if (!deviceId) {
+      deviceId = "unknown-device";
+    }
+
+    // Report to server
     try {
       await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           type: "PushReceived",
-          personnelCode: String(personnelCode || "UNKNOWN-IOS"),
-          deviceId: "ios-test",
+          personnelCode: String(personnelCode || "UNKNOWN"),
+          deviceId: deviceId,
           deviceTime: new Date().toISOString(),
-          source: "ios-debug"
+          source: "push"
         })
       });
     } catch (err) {
-      console.error("Fetch failed on iOS:", err);
+      console.error("PushReceived error", err);
     }
 
+    // Show notification
+    await self.registration.showNotification(title, {
+      body: body,
+      icon: "icon-192.png",
+      badge: "icon-192.png",
+      silent: true,
+      tag: "attendance-ping"
+    });
+  })());
+});
     // Still show notification
     await self.registration.showNotification(title, {
       body: body + " | code: " + (personnelCode || "empty"),

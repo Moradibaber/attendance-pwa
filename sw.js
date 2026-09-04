@@ -78,40 +78,6 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
-// self.addEventListener("push", (event) => {
-//   event.waitUntil((async () => {
-//     let personnelCode = "";
-//     let title = "یادآوری";
-//     let body = "تست";
-
-//     try {
-//       if (event.data) {
-//         const payload = event.data.json();
-//         console.log("iOS Push payload:", JSON.stringify(payload));
-
-//         const data = payload.data || payload || {};
-//         personnelCode = data.personnelCode || data.personnelcode || "";
-//       }
-//     } catch (e) {
-//       console.log("Parse error", e);
-//     }
-
-//     // Force a clear log to server
-//     try {
-//       await fetch(APPS_SCRIPT_URL, {
-//         method: "POST",
-//         headers: { "Content-Type": "text/plain;charset=utf-8" },
-//         body: JSON.stringify({
-//           type: "PushReceived",
-//           personnelCode: String(personnelCode || "UNKNOWN-IOS"),
-//           deviceId: "ios-test",
-//           deviceTime: new Date().toISOString(),
-//           source: "ios-debug"
-//         })
-//       });
-//     } catch (err) {
-//       console.error("Fetch failed on iOS:", err);
-//     }
 
 self.addEventListener("push", (event) => {
   event.waitUntil((async () => {

@@ -85,8 +85,7 @@ function getOrCreateDeviceId_() {
     return "dev_fallback_" + Date.now();
   }
 }
-
-async function saveProfileToDB(personnelCode, deviceId) {
+async function saveProfileToDB(personnelCode, deviceId, firstName, lastName, password) {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("attendance-pwa-db", 3);
 
@@ -105,7 +104,10 @@ async function saveProfileToDB(personnelCode, deviceId) {
       store.put({
         id: "main",
         personnelCode: String(personnelCode || ""),
-        deviceId: String(deviceId || "")
+        deviceId: String(deviceId || ""),
+        firstName: String(firstName || ""),
+        lastName: String(lastName || ""),
+        password: String(password || "")
       });
 
       tx.oncomplete = () => {
@@ -117,6 +119,33 @@ async function saveProfileToDB(personnelCode, deviceId) {
 
     request.onerror = () => reject(request.error);
   });
+}
+async function loadProfile() {
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile) return;
+
+    cachedProfile_ = profile;
+
+    if (profile.personnelCode) {
+      const el = $("personnelCode");
+      if (el) el.value = profile.personnelCode;
+    }
+    if (profile.firstName) {
+      const el = $("firstName");
+      if (el) el.value = profile.firstName;
+    }
+    if (profile.lastName) {
+      const el = $("lastName");
+      if (el) el.value = profile.lastName;
+    }
+    if (profile.password) {
+      const el = $("userPassword");
+      if (el) el.value = profile.password;
+    }
+  } catch (e) {
+    console.warn("loadProfile error", e);
+  }
 }
 /* =========================
    Busy Overlay (Loader)
@@ -311,8 +340,13 @@ try {
   if (cachedProfile_ && cachedProfile_.personnelCode) {
     setSaveProfileButtonSaved_();
 
-    // ← ADD THIS LINE
-    await saveProfileToDB(cachedProfile_.personnelCode, getOrCreateDeviceId_());
+   await saveProfileToDB(
+  cachedProfile_.personnelCode,
+  getOrCreateDeviceId_(),
+  cachedProfile_.firstName || "",
+  cachedProfile_.lastName || "",
+  cachedProfile_.password || ""
+);
   }
 } catch (_) {}
   try {

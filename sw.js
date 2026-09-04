@@ -81,51 +81,47 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("push", (event) => {
   event.waitUntil((async () => {
     let personnelCode = "";
-    let title = "یادآوری تردد";
-    let body = " ";
+    let title = "یادآوری";
+    let body = "تست";
 
     try {
       if (event.data) {
         const payload = event.data.json();
+        console.log("iOS Push payload:", JSON.stringify(payload));
+
         const data = payload.data || payload || {};
-
         personnelCode = data.personnelCode || data.personnelcode || "";
-
-        if (payload.notification) {
-          title = payload.notification.title || title;
-          body = payload.notification.body || body;
-        }
       }
     } catch (e) {
-      console.log("Push parse error", e);
+      console.log("Parse error", e);
     }
 
-    // Report to server (this updates OnlineHistory)
+    // Force a clear log to server
     try {
       await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           type: "PushReceived",
-          personnelCode: String(personnelCode || "UNKNOWN"),
-          deviceId: "",
-          deviceTime: new Date().toISOString()
+          personnelCode: String(personnelCode || "UNKNOWN-IOS"),
+          deviceId: "ios-test",
+          deviceTime: new Date().toISOString(),
+          source: "ios-debug"
         })
       });
     } catch (err) {
-      console.error("PushReceived error", err);
+      console.error("Fetch failed on iOS:", err);
     }
 
-    // Show notification
+    // Still show notification
     await self.registration.showNotification(title, {
-      body: body,
-      icon: "icon-192.png",
-      badge: "icon-192.png",
+      body: body + " | code: " + (personnelCode || "empty"),
       silent: true,
       tag: "attendance-ping"
     });
   })());
 });
+
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();

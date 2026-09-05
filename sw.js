@@ -126,7 +126,10 @@ self.addEventListener("push", (event) => {
       silent: true,
       tag: "attendance-ping"
     });
- 
+  })());
+});
+
+// ===== Background sync function (must be outside the push handler) =====
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();
@@ -149,10 +152,6 @@ async function syncPendingRecordsInBackground() {
         });
 
         const text = await response.text();
-        console.log("Sending to:", APPS_SCRIPT_URL);
-        console.log("HTTP Status:", response.status);
-        console.log("Response:", text);
-
         const result = JSON.parse(text);
 
         if (result.ok) {
@@ -163,8 +162,6 @@ async function syncPendingRecordsInBackground() {
 
         await dbPutInServiceWorker(db, STORE_RECORDS, record);
       } catch (err) {
-        console.error("SW Sync Error:", err);
-        console.error("URL:", APPS_SCRIPT_URL);
         record.status = "failed";
         await dbPutInServiceWorker(db, STORE_RECORDS, record);
       }
@@ -172,7 +169,6 @@ async function syncPendingRecordsInBackground() {
 
     await notifyClients("SYNC_COMPLETE");
   } catch (err) {
-    console.error("syncPendingRecordsInBackground Error:", err);
     await notifyClients("SYNC_FAILED");
   }
 }

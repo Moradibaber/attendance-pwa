@@ -445,21 +445,21 @@ try {
   // Start heartbeat with the person's IntervalMinutes
   try {
     await startHeartbeatWithInterval_();
-       // Start heartbeat + deviceId + periodic sync
-  try {
+      try {
     await ensureDeviceIdInProfile_();
-    await startHeartbeatWithInterval_();
     await registerPeriodicHeartbeatSync_();
   } catch (_) {}
-
-  // Password placeholder
+  } catch (_) {}
+    // Password placeholder
+  
   try {
     const passInput = $("userPassword");
     if (passInput) {
-      passInput.placeholder = "رمز پیش فرض 1234 میباشد، در صورت تمایل به تغییر با ادمین تماس بگیرید";
+      passInput.placeholder = "رمز پیش فرض 1234";
     }
-  } catch (_) {} 
-    try {
+  } catch (_) {}
+  // Small PWA QR icon — aligned with «ترددهای اخیر»
+  try {
     if (!document.getElementById("pwa-qr-btn")) {
       const btn = document.createElement("button");
       btn.id = "pwa-qr-btn";
@@ -544,22 +544,26 @@ try {
 // When page becomes visible (app opened or resumed)
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
-    startHeartbeatWithInterval_();
+    startHeartbeatWithInterval_();           // restart interval + send immediately
   } else {
+    // Last chance before the page is hidden/frozen
     sendHeartbeat("hidden");
   }
 });
 
+// When internet comes back
 window.addEventListener("online", () => {
   sendHeartbeat("online");
   startHeartbeatWithInterval_();
 });
 
+// When user taps on the tab (focus)
 window.addEventListener("focus", () => {
   if (document.visibilityState === "visible") {
     sendHeartbeat("focus");
   }
 });
+
 // Android-specific: when app resumes from background
 document.addEventListener("resume", () => {
   startHeartbeatWithInterval_();

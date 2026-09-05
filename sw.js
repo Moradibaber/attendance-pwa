@@ -240,7 +240,13 @@ async function notifyClients(type) {
 }
 // ========== HEARTBEAT VIA SERVICE WORKER ==========
 
-// Open IndexedDB inside the worker (same DB as the main app)
+// ========== HEARTBEAT VIA SERVICE WORKER (FIXED) ==========
+
+const HEARTBEAT_DB_NAME = "attendance-pwa-db";
+const HEARTBEAT_DB_VERSION = 3;
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
+
 function openHeartbeatDb_() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(HEARTBEAT_DB_NAME, HEARTBEAT_DB_VERSION);
@@ -249,11 +255,10 @@ function openHeartbeatDb_() {
   });
 }
 
-// Get profile (personnelCode + deviceId) from the main app's DB
 async function getProfileFromDb_() {
-  const db = await openHeartbeatDb_();
-  return new Promise((resolve) => {
-    try {
+  try {
+    const db = await openHeartbeatDb_();
+    return new Promise((resolve) => {
       const tx = db.transaction("profile", "readonly");
       const store = tx.objectStore("profile");
       const req = store.get("main");
@@ -265,55 +270,53 @@ async function getProfileFromDb_() {
         db.close();
         resolve(null);
       };
-    } catch (e) {
-      resolve(null);
-    }
-  });
+    });
+  } catch (e) {
+    return null;
+  }
 }
 
-// Send heartbeat from the Service Worker
 async function sendBackgroundHeartbeat_(reason = "periodic") {
   try {
     const profile = await getProfileFromDb_();
     if (!profile || !profile.personnelCode) {
-      console.log("No profile in DB");
+      console.log("[SW Heartbeat] No profile found");
       return;
     }
 
     const payload = {
       type: "Heartbeat",
-      personnelCode: profile.personnelCode,
-      deviceId: profile.deviceId || "",   // will be set by main app
+      personnelCode: String(profile.personnelCode),
+      deviceId: String(profile.deviceId || ""),
       clientTime: new Date().toISOString(),
-      reason: reason,                    // "periodic" | "push" | etc.
-      fromServiceWorker: true,
-      platform: /iPad|iPhone|iPod/.test(navigator.userAgent || "")
-        ? (getIosVersionLabel_() || "iOS")
-        : (/Android/.test(navigator.userAgent || "") ? "Android" : "Other"),
-      isStandalone: false
+      reason: reason,
+      fromServiceWorker: true
     };
 
-    await fetch(APPS_SCRIPT_URL, {
+    const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
     });
+
+    console.log("[SW Heartbeat] sent, status:", res.status, "reason:", reason);
   } catch (e) {
-    console.warn("SW heartbeat failed", e);
+    console.warn("[SW Heartbeat] failed", e);
   }
 }
 
-// Register for background sync
+// Periodic Background Sync (Android Chrome + installed PWA only)
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === "heartbeat") {
     event.waitUntil(sendBackgroundHeartbeat_("periodic"));
   }
 });
 
-// Optional: send heartbeat when push arrives
+// Also send a heartbeat whenever a push arrives (works on both Android & iOS)
 self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
+      // keep your existing push handling here if you have any
       await sendBackgroundHeartbeat_("push");
     })()
   );

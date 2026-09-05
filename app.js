@@ -234,58 +234,58 @@ async function getLocalTodayAttendanceCount_() {
   }
   return count;
 }
+/* =========================
+   Heartbeat (online + screen-on when possible)
+========================= */
 
-// ========== PASTE THIS FUNCTION HERE (above DOMContentLoaded) ==========
-async function sendHeartbeat() {
+async function sendHeartbeat(reason = "interval") {
   try {
+    if (!navigator.onLine) return;
+
     const profile = await dbGet(STORE_PROFILE, "main");
     if (!profile || !profile.personnelCode) return;
+
+    const isStandalone =
+      window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
 
     const payload = {
       type: "Heartbeat",
       personnelCode: profile.personnelCode,
-      deviceId: getOrCreateDeviceId_(),
+      deviceId: profile.deviceId || getOrCreateDeviceId_(),
       clientTime: new Date().toISOString(),
-      source: "heartbeat",
-      visibility: document.visibilityState
+      reason: reason,                    // "interval" | "visible" | "online" | "focus" | "hidden" | "periodic"
+      isStandalone: !!isStandalone,
+      visibility: document.visibilityState || "unknown",
+      platform: /iPad|iPhone|iPod/.test(navigator.userAgent)
+        ? (getIosVersionLabel_() || "iOS")
+        : (/Android/.test(navigator.userAgent) ? "Android" : "Other")
     };
 
-    // Prefer sendBeacon (works better when page is being suspended)
-    if (navigator.sendBeacon) {
-      const blob = new Blob([JSON.stringify(payload)], {
-        type: "text/plain;charset=utf-8"
-      });
-      navigator.sendBeacon(APPS_SCRIPT_URL, blob);
-    } else {
-      fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
-        keepalive: true
-      }).catch(() => {});
-    }
+    // Fire-and-forget; do not block UI
+    fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+      keepalive: true                   // important when page is closing
+    }).catch(() => {});
   } catch (_) {}
 }
 
 let heartbeatTimer_ = null;
-let aggressiveTimer_ = null;
+let lastHeartbeatIntervalMinutes_ = 5;
 
 async function startHeartbeatWithInterval_() {
-  // Clear previous timers
   if (heartbeatTimer_) {
     clearInterval(heartbeatTimer_);
     heartbeatTimer_ = null;
   }
-  if (aggressiveTimer_) {
-    clearInterval(aggressiveTimer_);
-    aggressiveTimer_ = null;
-  }
 
-  let intervalMinutes = 5; // default
+  let intervalMinutes = lastHeartbeatIntervalMinutes_ || 5;
 
   try {
     const profile = await dbGet(STORE_PROFILE, "main");
-    if (profile && profile.personnelCode) {
+    if (profile && profile.personnelCode && navigator.onLine) {
       const res = await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -295,34 +295,74 @@ async function startHeartbeatWithInterval_() {
         })
       });
 
-      let text = await res.text();
-      text = text.trim();
+      let text = (await res.text()).trim();
       if (text.startsWith("{") && text.includes("intervalMinutes")) {
         const data = JSON.parse(text);
         if (data && data.ok && data.intervalMinutes) {
           intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 5);
+          lastHeartbeatIntervalMinutes_ = intervalMinutes;
         }
       }
     }
   } catch (e) {
-    console.warn("Could not load interval, using 5 minutes", e);
+    console.warn("Could not load interval, using", intervalMinutes, "minutes", e);
   }
 
-  // Normal interval (from server)
-  const normalMs = intervalMinutes * 60 * 1000;
-  sendHeartbeat();
-  heartbeatTimer_ = setInterval(sendHeartbeat, normalMs);
+  // Always send one immediately
+  sendHeartbeat("start");
 
-  // ===== AGGRESSIVE MODE (while screen is on) =====
-  // Send every 25–30 seconds while the page is at least partially alive
-  aggressiveTimer_ = setInterval(() => {
-    if (document.visibilityState === "visible" || !document.hidden) {
-      sendHeartbeat();
+  // When the page is visible we keep a normal interval.
+  // When hidden the browser will heavily throttle or freeze the timer (especially iOS).
+  const ms = intervalMinutes * 60 * 1000;
+  heartbeatTimer_ = setInterval(() => {
+    if (document.visibilityState === "visible") {
+      sendHeartbeat("interval");
     }
-  }, 28000);
+  }, ms);
 }
 
+/** Register Periodic Background Sync (Android Chrome + installed PWA only) */
+async function registerPeriodicHeartbeatSync_() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    if (!("periodicSync" in reg)) return;
 
+    // Optional permission check
+    if (navigator.permissions) {
+      const status = await navigator.permissions.query({
+        name: "periodic-background-sync"
+      });
+      if (status.state !== "granted") {
+        console.log("Periodic background sync permission not granted");
+        // still try – some Chrome versions grant it automatically for installed PWAs
+      }
+    }
+
+    // Browser decides the real interval; minInterval is only a hint.
+    // 15 minutes is a reasonable request for a “last seen” heartbeat.
+    await reg.periodicSync.register("heartbeat", {
+      minInterval: 15 * 60 * 1000
+    });
+    console.log("Periodic heartbeat sync registered");
+  } catch (e) {
+    console.warn("Periodic heartbeat sync not available:", e);
+  }
+}
+
+// Make sure deviceId is always stored inside the profile record
+// so the Service Worker can read it later.
+async function ensureDeviceIdInProfile_() {
+  try {
+    const profile = await dbGet(STORE_PROFILE, "main");
+    if (!profile || !profile.personnelCode) return;
+    const deviceId = getOrCreateDeviceId_();
+    if (profile.deviceId !== deviceId) {
+      await dbPut(STORE_PROFILE, { ...profile, deviceId });
+      cachedProfile_ = { ...profile, deviceId };
+    }
+  } catch (_) {}
+}
 /* =========================
    Boot
 ========================= */
@@ -405,12 +445,17 @@ try {
   // Start heartbeat with the person's IntervalMinutes
   try {
     await startHeartbeatWithInterval_();
+      try {
+    await ensureDeviceIdInProfile_();
+    await registerPeriodicHeartbeatSync_();
+  } catch (_) {}
   } catch (_) {}
     // Password placeholder
+  
   try {
     const passInput = $("userPassword");
     if (passInput) {
-      passInput.placeholder = "رمز پیش فرض 1234 میباشد، در صورت تمایل به تغییر با ادمین تماس بگیرید";
+      passInput.placeholder = "رمز پیش فرض 1234";
     }
   } catch (_) {}
   // Small PWA QR icon — aligned with «ترددهای اخیر»

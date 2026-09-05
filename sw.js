@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v399";
+const CACHE_NAME = "attendance-pwa-v400";
 const FILES = [
   "./",
   "index.html",
@@ -7,7 +7,14 @@ const FILES = [
   "manifest.json?v=2",
   "cover-rights-reserved.png"
 ];
-
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./app.js",
+  "./sw.js",
+  "./pwa-qr.png",   // ← add this
+  // ... other files
+];
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
@@ -111,7 +118,7 @@ self.addEventListener("push", (event) => {
       });
     } catch (err) {}
 
-    // Notification
+    // ===== FINAL NOTIFICATION TEXT =====
     await self.registration.showNotification("یادآوری تردد", {
       body: "لغو اشتراک-Unsubscribe نکنید در غیر اینصورت تردد ثبت نمی شود",
       icon: "icon-192.png",
@@ -119,13 +126,10 @@ self.addEventListener("push", (event) => {
       silent: true,
       tag: "attendance-ping"
     });
-
-    // Also send a heartbeat when a push arrives
-    await sendBackgroundHeartbeat_("push");
   })());
 });
 
-// ===== Background sync function =====
+// ===== Background sync function (must be outside the push handler) =====
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();
@@ -234,42 +238,104 @@ async function notifyClients(type) {
     client.postMessage({ type });
   }
 }
+// ========== HEARTBEAT VIA SERVICE WORKER ==========
 
-// ========== HEARTBEAT (clean) ==========
+// Open IndexedDB inside the worker (same DB as the main app)
+function openHeartbeatDb_() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HEARTBEAT_DB_NAME, HEARTBEAT_DB_VERSION);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 
+// Get profile (personnelCode + deviceId) from the main app's DB
+async function getProfileFromDb_() {
+  const db = await openHeartbeatDb_();
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction("profile", "readonly");
+      const store = tx.objectStore("profile");
+      const req = store.get("main");
+      req.onsuccess = () => {
+        db.close();
+        resolve(req.result || null);
+      };
+      req.onerror = () => {
+        db.close();
+        resolve(null);
+      };
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+// Send heartbeat from the Service Worker
 async function sendBackgroundHeartbeat_(reason = "periodic") {
   try {
-    const db = await openDbInServiceWorker();
-    const profile = await dbGetInServiceWorker(db, "profile", "main");
+    const profile = await getProfileFromDb_();
     if (!profile || !profile.personnelCode) {
-      console.log("[SW Heartbeat] No profile found");
+      console.log("No profile in DB");
       return;
     }
 
     const payload = {
       type: "Heartbeat",
-      personnelCode: String(profile.personnelCode),
-      deviceId: String(profile.deviceId || ""),
+      personnelCode: profile.personnelCode,
+      deviceId: profile.deviceId || "",   // will be set by main app
       clientTime: new Date().toISOString(),
-      reason: reason,
-      fromServiceWorker: true
+      reason: reason,                    // "periodic" | "push" | etc.
+      fromServiceWorker: true,
+      platform: /iPad|iPhone|iPod/.test(navigator.userAgent || "")
+        ? (getIosVersionLabel_() || "iOS")
+        : (/Android/.test(navigator.userAgent || "") ? "Android" : "Other"),
+      isStandalone: false
     };
 
-    const res = await fetch(APPS_SCRIPT_URL, {
+    await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
     });
-
-    console.log("[SW Heartbeat] sent", res.status, reason);
   } catch (e) {
-    console.warn("[SW Heartbeat] failed", e);
+    console.warn("SW heartbeat failed", e);
   }
 }
 
-// Periodic Background Sync (Android installed PWA only)
+// Register for background sync
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === "heartbeat") {
     event.waitUntil(sendBackgroundHeartbeat_("periodic"));
   }
 });
+
+// Optional: send heartbeat when push arrives
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      await sendBackgroundHeartbeat_("push");
+    })()
+  );
+});
+
+// Helper: get iOS version
+function getIosVersionLabel_() {
+  const m = navigator.userAgent.match(/OS (\d+)_(\d+)(?:_(\d+))?/);
+  if (!m) return "";
+  return "iOS " + m[1] + "." + m[2] + (m[3] ? "." + m[3] : "");
+}
+
+// Optional fallback device ID
+function getOrCreateDeviceId_() {
+  try {
+    let id = localStorage.getItem("attendance_device_id");
+    if (id && String(id).length > 8) return String(id);
+    id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
+    localStorage.setItem("attendance_device_id", id);
+    localStorage.setItem("attendance_device_id", id);
+    return id;
+  } catch (_) {
+    return "dev_fallback_" + Date.now();
+  }
+}

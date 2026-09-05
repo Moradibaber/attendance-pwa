@@ -235,106 +235,30 @@ async function getLocalTodayAttendanceCount_() {
   return count;
 }
 // ========== PASTE THIS FUNCTION HERE (above DOMContentLoaded) ==========
-// async function sendHeartbeat() {
-//   const profile = await dbGet(STORE_PROFILE, "main");
-//   if (!profile || !profile.personnelCode) return;
-
-//   try {
-//     await fetch(APPS_SCRIPT_URL, {
-//       method: "POST",
-//       headers: { "Content-Type": "text/plain;charset=utf-8" },
-//       body: JSON.stringify({
-//         type: "Heartbeat",
-//         personnelCode: profile.personnelCode,
-//         deviceId: getOrCreateDeviceId_(),
-//         clientTime: new Date().toISOString()
-//       })
-//     });
-//   } catch (_) {}
-// }
 async function sendHeartbeat() {
+  const profile = await dbGet(STORE_PROFILE, "main");
+  if (!profile || !profile.personnelCode) return;
+
   try {
-    const profile = await dbGet(STORE_PROFILE, "main");
-    if (!profile || !profile.personnelCode) return;
-
-    const payload = {
-      type: "Heartbeat",
-      personnelCode: profile.personnelCode,
-      deviceId: getOrCreateDeviceId_(),
-      clientTime: new Date().toISOString(),
-      source: "heartbeat",
-      visibility: document.visibilityState
-    };
-
-    // Prefer sendBeacon (works better when page is being suspended)
-    if (navigator.sendBeacon) {
-      const blob = new Blob([JSON.stringify(payload)], {
-        type: "text/plain;charset=utf-8"
-      });
-      navigator.sendBeacon(APPS_SCRIPT_URL, blob);
-    } else {
-      fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
-        keepalive: true
-      }).catch(() => {});
-    }
+    await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        type: "Heartbeat",
+        personnelCode: profile.personnelCode,
+        deviceId: getOrCreateDeviceId_(),
+        clientTime: new Date().toISOString()
+      })
+    });
   } catch (_) {}
 }
-// let heartbeatTimer_ = null;
 
-// async function startHeartbeatWithInterval_() {
-//   if (heartbeatTimer_) {
-//     clearInterval(heartbeatTimer_);
-//     heartbeatTimer_ = null;
-//   }
-
-//   let intervalMinutes = 5; // default
-
-//   try {
-//     const profile = await dbGet(STORE_PROFILE, "main");
-//     if (profile && profile.personnelCode) {
-//       const res = await fetch(APPS_SCRIPT_URL, {
-//         method: "POST",
-//         headers: { "Content-Type": "text/plain;charset=utf-8" },
-//         body: JSON.stringify({
-//           type: "GetIntervalMinutes",
-//           personnelCode: profile.personnelCode
-//         })
-//       });
-
-//       let text = await res.text();
-
-//       // Clean the response (remove possible extra characters)
-//       text = text.trim();
-//       if (text.startsWith('{') && text.includes('intervalMinutes')) {
-//         const data = JSON.parse(text);
-//         if (data && data.ok && data.intervalMinutes) {
-//           intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 5);
-//         }
-//       }
-//     }
-//   } catch (e) {
-//     console.warn("Could not load interval, using 5 minutes", e);
-//   }
-
-//   const ms = intervalMinutes * 60 * 1000;
-//   sendHeartbeat();
-//   heartbeatTimer_ = setInterval(sendHeartbeat, ms);
-// }
 let heartbeatTimer_ = null;
-let aggressiveTimer_ = null;
 
 async function startHeartbeatWithInterval_() {
-  // Clear previous timers
   if (heartbeatTimer_) {
     clearInterval(heartbeatTimer_);
     heartbeatTimer_ = null;
-  }
-  if (aggressiveTimer_) {
-    clearInterval(aggressiveTimer_);
-    aggressiveTimer_ = null;
   }
 
   let intervalMinutes = 5; // default
@@ -352,8 +276,10 @@ async function startHeartbeatWithInterval_() {
       });
 
       let text = await res.text();
+
+      // Clean the response (remove possible extra characters)
       text = text.trim();
-      if (text.startsWith("{") && text.includes("intervalMinutes")) {
+      if (text.startsWith('{') && text.includes('intervalMinutes')) {
         const data = JSON.parse(text);
         if (data && data.ok && data.intervalMinutes) {
           intervalMinutes = Math.max(1, parseInt(data.intervalMinutes, 10) || 5);
@@ -364,19 +290,11 @@ async function startHeartbeatWithInterval_() {
     console.warn("Could not load interval, using 5 minutes", e);
   }
 
-  // Normal interval (from server)
-  const normalMs = intervalMinutes * 60 * 1000;
+  const ms = intervalMinutes * 60 * 1000;
   sendHeartbeat();
-  heartbeatTimer_ = setInterval(sendHeartbeat, normalMs);
-
-  // ===== AGGRESSIVE MODE (while screen is on) =====
-  // Send every 25–30 seconds while the page is at least partially alive
-  aggressiveTimer_ = setInterval(() => {
-    if (document.visibilityState === "visible" || !document.hidden) {
-      sendHeartbeat();
-    }
-  }, 28000);
+  heartbeatTimer_ = setInterval(sendHeartbeat, ms);
 }
+
 
 /* =========================
    Boot

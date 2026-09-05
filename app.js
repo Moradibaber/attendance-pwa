@@ -447,8 +447,9 @@ try {
     await startHeartbeatWithInterval_();
       try {
     await ensureDeviceIdInProfile_();
+    await startHeartbeatWithInterval_();
     await registerPeriodicHeartbeatSync_();
-  } catch (_) {}
+ 
   } catch (_) {}
     // Password placeholder
   
@@ -544,26 +545,22 @@ try {
 // When page becomes visible (app opened or resumed)
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
-    startHeartbeatWithInterval_();           // restart interval + send immediately
+    startHeartbeatWithInterval_();
   } else {
-    // Last chance before the page is hidden/frozen
     sendHeartbeat("hidden");
   }
 });
 
-// When internet comes back
 window.addEventListener("online", () => {
   sendHeartbeat("online");
   startHeartbeatWithInterval_();
 });
 
-// When user taps on the tab (focus)
 window.addEventListener("focus", () => {
   if (document.visibilityState === "visible") {
     sendHeartbeat("focus");
   }
 });
-
 // Android-specific: when app resumes from background
 document.addEventListener("resume", () => {
   startHeartbeatWithInterval_();

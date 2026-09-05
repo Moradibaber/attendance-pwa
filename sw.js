@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v390";
+const CACHE_NAME = "attendance-pwa-v391";
 const FILES = [
   "./",
   "index.html",
@@ -7,14 +7,7 @@ const FILES = [
   "manifest.json?v=2",
   "cover-rights-reserved.png"
 ];
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./app.js",
-  "./sw.js",
-  "./pwa-qr.png",   // ← add this
-  // ... other files
-];
+
 const DB_NAME = "attendance-pwa-db";
 const DB_VERSION = 3;
 const STORE_RECORDS = "records";
@@ -118,7 +111,7 @@ self.addEventListener("push", (event) => {
       });
     } catch (err) {}
 
-    // ===== FINAL NOTIFICATION TEXT =====
+    // Notification
     await self.registration.showNotification("یادآوری تردد", {
       body: "لغو اشتراک-Unsubscribe نکنید در غیر اینصورت تردد ثبت نمی شود",
       icon: "icon-192.png",
@@ -126,10 +119,13 @@ self.addEventListener("push", (event) => {
       silent: true,
       tag: "attendance-ping"
     });
+
+    // Also send a heartbeat when a push arrives
+    await sendBackgroundHeartbeat_("push");
   })());
 });
 
-// ===== Background sync function (must be outside the push handler) =====
+// ===== Background sync function =====
 async function syncPendingRecordsInBackground() {
   try {
     const db = await openDbInServiceWorker();
@@ -238,48 +234,13 @@ async function notifyClients(type) {
     client.postMessage({ type });
   }
 }
-// ========== HEARTBEAT VIA SERVICE WORKER ==========
 
-// ========== HEARTBEAT VIA SERVICE WORKER (FIXED) ==========
-
-const HEARTBEAT_DB_NAME = "attendance-pwa-db";
-const HEARTBEAT_DB_VERSION = 3;
-const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
-// ========== HEARTBEAT VIA SERVICE WORKER (FIXED) ==========
-
-function openHeartbeatDb_() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);   // ← use existing names
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function getProfileFromDb_() {
-  try {
-    const db = await openHeartbeatDb_();
-    return new Promise((resolve) => {
-      const tx = db.transaction("profile", "readonly");
-      const store = tx.objectStore("profile");
-      const req = store.get("main");
-      req.onsuccess = () => {
-        db.close();
-        resolve(req.result || null);
-      };
-      req.onerror = () => {
-        db.close();
-        resolve(null);
-      };
-    });
-  } catch (e) {
-    return null;
-  }
-}
+// ========== HEARTBEAT (clean) ==========
 
 async function sendBackgroundHeartbeat_(reason = "periodic") {
   try {
-    const profile = await getProfileFromDb_();
+    const db = await openDbInServiceWorker();
+    const profile = await dbGetInServiceWorker(db, "profile", "main");
     if (!profile || !profile.personnelCode) {
       console.log("[SW Heartbeat] No profile found");
       return;
@@ -294,49 +255,21 @@ async function sendBackgroundHeartbeat_(reason = "periodic") {
       fromServiceWorker: true
     };
 
-    const res = await fetch(APPS_SCRIPT_URL, {          // ← use existing name
+    const res = await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
     });
 
-    console.log("[SW Heartbeat] sent, status:", res.status, "reason:", reason);
+    console.log("[SW Heartbeat] sent", res.status, reason);
   } catch (e) {
     console.warn("[SW Heartbeat] failed", e);
   }
 }
 
+// Periodic Background Sync (Android installed PWA only)
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === "heartbeat") {
     event.waitUntil(sendBackgroundHeartbeat_("periodic"));
   }
 });
-
-self.addEventListener("push", (event) => {
-  event.waitUntil(
-    (async () => {
-      await sendBackgroundHeartbeat_("push");
-    })()
-  );
-});
-
-// Helper: get iOS version
-function getIosVersionLabel_() {
-  const m = navigator.userAgent.match(/OS (\d+)_(\d+)(?:_(\d+))?/);
-  if (!m) return "";
-  return "iOS " + m[1] + "." + m[2] + (m[3] ? "." + m[3] : "");
-}
-
-// Optional fallback device ID
-function getOrCreateDeviceId_() {
-  try {
-    let id = localStorage.getItem("attendance_device_id");
-    if (id && String(id).length > 8) return String(id);
-    id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
-    localStorage.setItem("attendance_device_id", id);
-    localStorage.setItem("attendance_device_id", id);
-    return id;
-  } catch (_) {
-    return "dev_fallback_" + Date.now();
-  }
-}

@@ -234,6 +234,7 @@ async function getLocalTodayAttendanceCount_() {
   }
   return count;
 }
+
 // ========== PASTE THIS FUNCTION HERE (above DOMContentLoaded) ==========
 async function sendHeartbeat() {
   const profile = await dbGet(STORE_PROFILE, "main");

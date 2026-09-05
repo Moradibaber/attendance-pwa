@@ -1,4 +1,4 @@
-const CACHE_NAME = "attendance-pwa-v369";
+const CACHE_NAME = "attendance-pwa-v390";
 const FILES = [
   "./",
   "index.html",
@@ -246,10 +246,11 @@ const HEARTBEAT_DB_NAME = "attendance-pwa-db";
 const HEARTBEAT_DB_VERSION = 3;
 const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbw9tfkpuRCpEM9HBvARnyX4N-NRLiJqNWaeEknXh2fnk7Qf6Tvix-NqfDQoRaL4PWv-/exec";
+// ========== HEARTBEAT VIA SERVICE WORKER (FIXED) ==========
 
 function openHeartbeatDb_() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HEARTBEAT_DB_NAME, HEARTBEAT_DB_VERSION);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);   // ← use existing names
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
@@ -293,7 +294,7 @@ async function sendBackgroundHeartbeat_(reason = "periodic") {
       fromServiceWorker: true
     };
 
-    const res = await fetch(APPS_SCRIPT_URL, {
+    const res = await fetch(APPS_SCRIPT_URL, {          // ← use existing name
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload)
@@ -305,18 +306,15 @@ async function sendBackgroundHeartbeat_(reason = "periodic") {
   }
 }
 
-// Periodic Background Sync (Android Chrome + installed PWA only)
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === "heartbeat") {
     event.waitUntil(sendBackgroundHeartbeat_("periodic"));
   }
 });
 
-// Also send a heartbeat whenever a push arrives (works on both Android & iOS)
 self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
-      // keep your existing push handling here if you have any
       await sendBackgroundHeartbeat_("push");
     })()
   );

@@ -445,22 +445,21 @@ try {
   // Start heartbeat with the person's IntervalMinutes
   try {
     await startHeartbeatWithInterval_();
-      try {
+       // Start heartbeat + deviceId + periodic sync
+  try {
     await ensureDeviceIdInProfile_();
     await startHeartbeatWithInterval_();
     await registerPeriodicHeartbeatSync_();
- 
   } catch (_) {}
-    // Password placeholder
-  
+
+  // Password placeholder
   try {
     const passInput = $("userPassword");
     if (passInput) {
-      passInput.placeholder = "رمز پیش فرض 1234";
+      passInput.placeholder = "رمز پیش فرض 1234 میباشد، در صورت تمایل به تغییر با ادمین تماس بگیرید";
     }
-  } catch (_) {}
-  // Small PWA QR icon — aligned with «ترددهای اخیر»
-  try {
+  } catch (_) {} 
+    try {
     if (!document.getElementById("pwa-qr-btn")) {
       const btn = document.createElement("button");
       btn.id = "pwa-qr-btn";
